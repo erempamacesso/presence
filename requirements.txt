@@ -1,0 +1,6 @@
+streamlit
+face-recognition
+numpy<2
+opencv-python-headless
+supabase
+python-dotenv
