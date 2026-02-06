@@ -1,7 +1,7 @@
 streamlit
 opencv-python-headless
-https://github.com/sachadee/Dlib/raw/main/dlib-19.24.1-cp310-cp310-linux_x86_64.whl
-face_recognition
+dlib-bin
+git+https://github.com/thetoby9944/face_recognition.git
 numpy
 pandas
 psycopg2-binary
