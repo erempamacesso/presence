@@ -1,6 +1,7 @@
 streamlit
-face-recognition
-numpy<2
 opencv-python-headless
-supabase
-python-dotenv
+https://github.com/sachadee/Dlib/raw/main/dlib-19.24.1-cp310-cp310-linux_x86_64.whl
+face_recognition
+numpy
+pandas
+psycopg2-binary
