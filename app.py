@@ -9,19 +9,24 @@ from datetime import datetime
 import pytz
 import json
 import time
+import base64
 
-# ---------------- CONFIGURAÇÃO DA PÁGINA ----------------
+# --------------------------------------------------
+# CONFIGURAÇÃO DA PÁGINA (MODO KIOSK)
+# --------------------------------------------------
 st.set_page_config(
-    page_title="Ponto",
+    page_title="Registro de Presença",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# ---------------- CSS ESTILO APP (9:16 REAL) ----------------
+# --------------------------------------------------
+# CSS – VISUAL DE TOTEM ESCOLAR
+# --------------------------------------------------
 st.markdown("""
 <style>
 
-/* LIMPEZA GERAL */
+/* LIMPEZA TOTAL */
 .block-container {
     padding: 0 !important;
     margin: 0 !important;
@@ -30,162 +35,215 @@ st.markdown("""
 header, footer, #MainMenu {
     display: none !important;
 }
+html, body {
+    overflow: hidden !important;
+}
 
-/* CONTAINER CENTRAL */
+/* INSTRUÇÃO */
+.instrucao {
+    text-align: center;
+    font-size: 18px;
+    margin: 12px 0;
+}
+
+/* CONTAINER DA CAMERA */
 div[data-testid="stCameraInput"] {
-    width: 100% !important;
     display: flex;
     justify-content: center;
 }
 
-/* FRAME 9:16 */
+/* FRAME */
 div[data-testid="stCameraInput"] > div {
-    width: 92% !important;
+    width: 94% !important;
     max-width: 420px !important;
-    aspect-ratio: 9 / 16 !important;
-
-    background-color: black;
+    background: #000;
     border-radius: 22px;
-    overflow: hidden;
+    padding: 10px;
+    box-shadow: 0 12px 30px rgba(0,0,0,.3);
+    position: relative;
 }
 
-/* VIDEO (DESKTOP) */
-div[data-testid="stCameraInput"] video {
-    width: 100% !important;
-    height: 100% !important;
-    object-fit: cover !important;
-}
-
-/* IMG (MOBILE / FALLBACK) */
+/* CAMERA */
+div[data-testid="stCameraInput"] video,
 div[data-testid="stCameraInput"] img {
     width: 100% !important;
-    height: 100% !important;
-    object-fit: cover !important;
+    border-radius: 16px;
+    object-fit: cover;
+}
+
+/* MÁSCARA OVAL */
+.mascara {
+    position: absolute;
+    inset: 10px;
+    pointer-events: none;
+}
+.mascara::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,.55);
+}
+.mascara::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 65%;
+    height: 55%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: transparent;
+    box-shadow: 0 0 0 9999px rgba(0,0,0,.55);
+    border: 3px solid rgba(255,255,255,.6);
 }
 
 /* BOTÃO */
 div[data-testid="stCameraInput"] button {
-    width: 65% !important;
-    margin: 16px auto 20px auto !important;
+    width: 80% !important;
+    height: 56px !important;
+    margin: 18px auto !important;
     display: block !important;
-    height: 54px !important;
-
-    border-radius: 27px !important;
-    background-color: #FF4B4B !important;
-    border: 2px solid white !important;
-    box-shadow: 0px 4px 10px rgba(0,0,0,0.4) !important;
-
+    background: #D32F2F !important;
+    border-radius: 28px !important;
+    border: none !important;
     color: transparent !important;
-    position: relative !important;
+    position: relative;
 }
-
-/* TEXTO DO BOTÃO */
 div[data-testid="stCameraInput"] button::after {
     content: "REGISTRAR PRESENÇA";
     color: white;
-    font-size: 15px;
+    font-size: 16px;
     font-weight: bold;
     position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* SUCESSO */
+.sucesso {
+    border: 4px solid #2ecc71 !important;
+    box-shadow: 0 0 25px #2ecc71 !important;
+}
+
+/* TELA VERDE */
+.tela-verde {
+    position: fixed;
+    inset: 0;
+    background: #2ecc71;
+    color: white;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    font-weight: bold;
 }
 
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- CONEXÃO COM O BANCO ----------------
+# --------------------------------------------------
+# SOM DE CONFIRMAÇÃO
+# --------------------------------------------------
+def beep():
+    som = base64.b64encode(open("beep.mp3", "rb").read()).decode()
+    st.markdown(f"""
+    <audio autoplay>
+        <source src="data:audio/mp3;base64,{som}" type="audio/mp3">
+    </audio>
+    """, unsafe_allow_html=True)
+
+# --------------------------------------------------
+# BANCO
+# --------------------------------------------------
 load_dotenv()
-url = os.environ.get("SUPABASE_URL")
-key = os.environ.get("SUPABASE_KEY")
-supabase: Client = create_client(url, key)
+supabase: Client = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_KEY")
+)
 
-# ---------------- FUNÇÕES ----------------
-def load_known_faces():
-    response = supabase.table('alunos').select("*").execute()
-    known_encodings, known_ids, known_names = [], [], []
-
-    for aluno in response.data:
-        if aluno.get("face_encoding"):
-            raw = aluno["face_encoding"]
+# --------------------------------------------------
+# FUNÇÕES
+# --------------------------------------------------
+def carregar_faces():
+    dados = supabase.table("alunos").select("*").execute().data
+    encs, ids, nomes = [], [], []
+    for a in dados:
+        if a.get("face_encoding"):
+            raw = a["face_encoding"]
             if isinstance(raw, str):
                 raw = json.loads(raw)
-            known_encodings.append(np.array(raw, dtype=np.float64))
-            known_ids.append(aluno["id"])
-            known_names.append(aluno.get("nome", "Sem Nome"))
+            encs.append(np.array(raw))
+            ids.append(a["id"])
+            nomes.append(a.get("nome", "Aluno"))
+    return encs, ids, nomes
 
-    return known_encodings, known_ids, known_names
-
-
-def registrar_presenca(pessoa_id, nome):
+def registrar(aluno_id, nome):
     tz = pytz.timezone("America/Recife")
     agora = datetime.now(tz)
-    inicio_dia = agora.strftime("%Y-%m-%d 00:00:00")
+    inicio = agora.strftime("%Y-%m-%d 00:00:00")
 
     check = supabase.table("presenca") \
         .select("*") \
-        .eq("aluno_id", pessoa_id) \
-        .gte("data_hora", inicio_dia) \
+        .eq("aluno_id", aluno_id) \
+        .gte("data_hora", inicio) \
         .execute()
 
     if not check.data:
         supabase.table("presenca").insert({
-            "aluno_id": pessoa_id,
+            "aluno_id": aluno_id,
             "nome_aluno": nome,
             "data_hora": agora.strftime("%Y-%m-%d %H:%M:%S")
         }).execute()
-        return True, f"✅ PRESENÇA REGISTRADA: {nome}"
-    else:
-        return False, f"⚠️ {nome} JÁ REGISTRADO"
+        return True
+    return False
 
+# --------------------------------------------------
+# ESTADO
+# --------------------------------------------------
+if "faces" not in st.session_state:
+    st.session_state.faces, st.session_state.ids, st.session_state.nomes = carregar_faces()
 
-# ---------------- ESTADO ----------------
-if "known_encodings" not in st.session_state:
-    st.session_state.known_encodings, st.session_state.known_ids, st.session_state.known_names = load_known_faces()
+if "key" not in st.session_state:
+    st.session_state.key = 0
 
-if "camera_key" not in st.session_state:
-    st.session_state.camera_key = 0
+# --------------------------------------------------
+# UI
+# --------------------------------------------------
+st.markdown('<div class="instrucao">📸 Centralize o rosto<br>👇 Toque em <b>Registrar Presença</b></div>', unsafe_allow_html=True)
 
-# ---------------- CÂMERA ----------------
-imagem = st.camera_input(
-    "Ponto",
-    label_visibility="hidden",
-    key=f"cam_{st.session_state.camera_key}"
-)
+img = st.camera_input("Ponto", label_visibility="hidden", key=f"cam_{st.session_state.key}")
 
-# ---------------- PROCESSAMENTO ----------------
-if imagem:
-    bytes_data = imagem.getvalue()
-    frame = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
+st.markdown('<div class="mascara"></div>', unsafe_allow_html=True)
+
+# --------------------------------------------------
+# PROCESSAMENTO
+# --------------------------------------------------
+if img:
+    frame = cv2.imdecode(np.frombuffer(img.getvalue(), np.uint8), cv2.IMREAD_COLOR)
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
     faces = face_recognition.face_encodings(rgb)
 
-    if not faces:
-        st.warning("Rosto não detectado. Aproxime-se.")
-    else:
-        encoding = faces[0]
-        matches = face_recognition.compare_faces(
-            st.session_state.known_encodings,
-            encoding,
-            tolerance=0.5
-        )
+    if faces:
+        enc = faces[0]
+        matches = face_recognition.compare_faces(st.session_state.faces, enc, tolerance=0.5)
 
         if True in matches:
             idx = matches.index(True)
-            ok, msg = registrar_presenca(
-                st.session_state.known_ids[idx],
-                st.session_state.known_names[idx]
-            )
+            sucesso = registrar(st.session_state.ids[idx], st.session_state.nomes[idx])
 
-            if ok:
-                st.success(msg)
-                st.balloons()
-            else:
-                st.info(msg)
+            if sucesso:
+                beep()
+                st.markdown('<div class="tela-verde">✅ PRESENÇA REGISTRADA<br>ACESSO LIBERADO</div>', unsafe_allow_html=True)
+                time.sleep(2)
         else:
-            st.error("Aluno não cadastrado.")
+            st.error("❌ ROSTO NÃO RECONHECIDO")
+            time.sleep(2)
+    else:
+        st.warning("Rosto não detectado")
+        time.sleep(2)
 
-    time.sleep(2)
-    st.session_state.camera_key += 1
+    st.session_state.key += 1
     st.rerun()
