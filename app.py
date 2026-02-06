@@ -24,11 +24,30 @@ st.markdown("""
         }
         header, footer, #MainMenu {display: none !important;}
         
-        /* 2. CÂMERA GRANDE (70% da tela) */
-        div[data-testid="stCameraInput"] {
-            width: 100% !important;
-            position: relative; /* Necessário para o botão flutuar */
-        }
+       /* CÂMERA ESTILO INSTAGRAM (9:16) */
+div[data-testid="stCameraInput"] {
+    width: 100% !important;
+    display: flex;
+    justify-content: center;
+}
+
+div[data-testid="stCameraInput"] > div {
+    width: 90% !important;           /* ocupa bem a tela do celular */
+    max-width: 420px !important;     /* limite elegante no desktop */
+    aspect-ratio: 9 / 16 !important; /* PROPORÇÃO INSTAGRAM */
+    
+    background-color: black;
+    border-radius: 20px;
+    overflow: hidden;
+}
+
+/* VÍDEO DENTRO DO FRAME */
+div[data-testid="stCameraInput"] video {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important; /* corta laterais como o Insta */
+}
+
 
        div[data-testid="stCameraInput"] > div {
     background-color: black;
@@ -202,4 +221,5 @@ if imagem_capturada:
                         st.rerun()
             except Exception as e:
                 st.error(f"Erro técnico: {e}")
+
 
