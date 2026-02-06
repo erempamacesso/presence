@@ -5,3 +5,4 @@ git+https://github.com/thetoby9944/face_recognition.git
 numpy
 pandas
 psycopg2-binary
+supabase
