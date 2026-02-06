@@ -8,14 +8,15 @@ import os
 from datetime import datetime
 import pytz 
 import json
-import time # <--- IMPORTANTE PARA A PAUSA
+import time 
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Ponto", layout="wide", initial_sidebar_state="collapsed")
 
-# --- CSS ESTILO "TOTEM DE ACADEMIA" ---
+# --- CSS AVANÇADO (BOTÃO PERSONALIZADO) ---
 st.markdown("""
     <style>
+        /* 1. Limpeza Geral */
         .block-container {
             padding: 0 !important;
             margin: 0 !important;
@@ -23,8 +24,10 @@ st.markdown("""
         }
         header, footer, #MainMenu {display: none !important;}
         
+        /* 2. CÂMERA GRANDE (70% da tela) */
         div[data-testid="stCameraInput"] {
             width: 100% !important;
+            position: relative; /* Necessário para o botão flutuar */
         }
 
         div[data-testid="stCameraInput"] > div {
@@ -41,24 +44,48 @@ st.markdown("""
             object-fit: cover !important;
         }
 
-        button {
-            margin-top: 20px !important;
-            width: 90% !important;
-            margin-left: 5% !important; 
-            height: 70px !important;
-            border-radius: 35px !important;
+        /* 3. O HACK DO BOTÃO (Trocar Texto e Posição) */
+        div[data-testid="stCameraInput"] button {
+            /* Tamanho e Posição */
+            width: 50% !important; /* 50% da largura, como pediu */
+            margin-left: auto !important;
+            margin-right: auto !important;
+            display: block !important;
+            height: 50px !important; /* Altura menor */
+            
+            /* Joga o botão para cima (para dentro da câmera) */
+            margin-top: -70px !important; 
+            margin-bottom: 20px !important;
+            position: relative !important;
+            z-index: 999 !important;
+            
+            /* Estilo Visual */
+            border-radius: 25px !important;
             background-color: #FF4B4B !important;
+            border: 2px solid white !important; /* Borda branca pra destacar */
+            box-shadow: 0px 4px 10px rgba(0,0,0,0.5) !important;
+            
+            /* ESCONDE O TEXTO "TAKE PHOTO" */
+            color: transparent !important; 
+        }
+
+        /* ESCREVE O NOVO TEXTO POR CIMA */
+        div[data-testid="stCameraInput"] button::after {
+            content: "REGISTRAR PRESENÇA";
             color: white !important;
-            font-size: 24px !important;
+            font-size: 14px !important;
             font-weight: bold !important;
-            border: none !important;
-            box-shadow: 0px 4px 15px rgba(0,0,0,0.2) !important;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 100%;
         }
         
-        div.stButton {
-            text-align: center;
-            background-color: white;
-            padding-bottom: 20px;
+        /* Centraliza status e mensagens */
+        .stStatus {
+            margin-top: 10px;
+            padding: 10px;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -116,7 +143,7 @@ def registrar_presenca(pessoa_id, nome_identificado):
             "data_hora": data_hora_formatada
         }
         supabase.table('presenca').insert(dados).execute()
-        return f"✅ ACESSO LIBERADO: {nome_identificado}", True # Retorna True se for novo registro
+        return f"✅ PRESENÇA REGISTRADA: {nome_identificado}", True 
     else:
         return f"⚠️ {nome_identificado} JÁ REGISTRADO!", False
 
@@ -124,19 +151,17 @@ def registrar_presenca(pessoa_id, nome_identificado):
 if 'known_encodings' not in st.session_state:
     st.session_state.known_encodings, st.session_state.known_ids, st.session_state.known_names = load_known_faces()
 
-# --- LÓGICA DO AUTO-RESET ---
-# Criamos uma chave única para a câmera. Se mudarmos esse número, a câmera reseta.
 if 'camera_key' not in st.session_state:
     st.session_state.camera_key = 0
 
-# Passamos a chave dinâmica para o componente
+# O label aqui fica hidden, quem manda é o CSS lá em cima
 imagem_capturada = st.camera_input("Ponto", label_visibility="hidden", key=f"camera_{st.session_state.camera_key}")
 
 if imagem_capturada:
     if not st.session_state.known_encodings:
-        st.error("ERRO: Nenhum aluno carregado do banco.")
+        st.error("ERRO: Nenhum aluno carregado.")
     else:
-        with st.status("Identificando...", expanded=True) as status:
+        with st.status("Verificando...", expanded=True) as status:
             try:
                 bytes_data = imagem_capturada.getvalue()
                 cv2_img = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
@@ -147,7 +172,10 @@ if imagem_capturada:
 
                 if not face_encodings:
                     status.update(label="Rosto não encontrado!", state="error", expanded=False)
-                    st.warning("Posicione o rosto no centro.")
+                    st.warning("Aproxime o rosto.")
+                    time.sleep(2)
+                    st.session_state.camera_key += 1
+                    st.rerun()
                 else:
                     face_encoding = face_encodings[0]
                     matches = face_recognition.compare_faces(st.session_state.known_encodings, face_encoding, tolerance=0.5)
@@ -160,27 +188,25 @@ if imagem_capturada:
                         
                         msg, sucesso = registrar_presenca(p_id, nome)
                         
-                        status.update(label="Processo Concluído!", state="complete", expanded=False)
+                        status.update(label="Concluído!", state="complete", expanded=False)
                         
                         if "✅" in msg:
                             st.success(msg)
                             st.balloons()
-                            
-                            # --- O SEGREDO DO RESET ---
-                            st.info("Reiniciando câmera em 3 segundos...")
-                            time.sleep(3) # Espera 3 segundos para ler
-                            st.session_state.camera_key += 1 # Muda a chave da câmera
-                            st.rerun() # Recarrega a página com a câmera limpa
-                            
+                            st.info("Reiniciando...")
+                            time.sleep(2) 
+                            st.session_state.camera_key += 1 
+                            st.rerun() 
                         else:
-                            st.info(msg) # Se já registrou, só avisa
-                            # Se quiser que resete mesmo se já tiver registrado, descomente abaixo:
+                            st.info(msg)
                             time.sleep(2)
                             st.session_state.camera_key += 1
                             st.rerun()
-                            
                     else:
                         status.update(label="Não reconhecido", state="error", expanded=False)
                         st.error("Aluno não cadastrado.")
+                        time.sleep(2)
+                        st.session_state.camera_key += 1
+                        st.rerun()
             except Exception as e:
                 st.error(f"Erro técnico: {e}")
