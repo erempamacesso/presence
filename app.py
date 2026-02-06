@@ -13,32 +13,94 @@ st.set_page_config(
 # ===============================
 # CSS – MODO TOTEM (CELULAR)
 # ===============================
+
 st.markdown("""
 <style>
 
-/* LIMPEZA TOTAL */
+/* RESET TOTAL */
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: black;
+    overflow: hidden;
+}
+
 .block-container {
     padding: 0 !important;
     margin: 0 !important;
     max-width: 100% !important;
 }
+
+/* REMOVE BLOCOS VAZIOS DO STREAMLIT */
+div[data-testid="stVerticalBlock"]:empty {
+    display: none !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+/* ESCONDE HEADER */
 header, footer, #MainMenu {
     display: none !important;
 }
-html, body {
-    background: #000;
-    overflow: hidden;
-}
 
-/* CONTAINER PRINCIPAL */
-.app-container {
-    min-height: 100vh;
+/* CAMERA COLADA NO TOPO */
+div[data-testid="stCameraInput"] {
+    width: 100vw !important;
+    height: 70vh !important;
+    margin: 0 !important;
+    padding: 0 !important;
     display: flex;
-    flex-direction: column;
-    justify-content: flex-start;
+    justify-content: center;
     align-items: center;
     background: black;
 }
+
+/* CONTAINER INTERNO */
+div[data-testid="stCameraInput"] > div {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* VIDEO */
+div[data-testid="stCameraInput"] video,
+div[data-testid="stCameraInput"] img {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+}
+
+/* BOTÃO */
+div[data-testid="stCameraInput"] button {
+    width: 80% !important;
+    height: 60px !important;
+    margin: 16px auto 0 auto !important;
+    display: block !important;
+
+    background: #D32F2F !important;
+    border-radius: 30px !important;
+    border: 3px solid white !important;
+
+    color: transparent !important;
+    position: relative !important;
+}
+
+/* TEXTO DO BOTÃO */
+div[data-testid="stCameraInput"] button::after {
+    content: "REGISTRAR PRESENÇA";
+    color: white;
+    font-size: 18px;
+    font-weight: bold;
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+</style>
+""", unsafe_allow_html=True)
 
 /* TÍTULO */
 .titulo {
@@ -192,3 +254,4 @@ elif st.session_state.status == "erro":
     st.experimental_rerun()
 
 st.markdown('</div>', unsafe_allow_html=True)
+
