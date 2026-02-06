@@ -30,12 +30,11 @@ st.markdown("""
             position: relative; /* Necessário para o botão flutuar */
         }
 
-        div[data-testid="stCameraInput"] > div {
-            height: 70vh !important;
-            background-color: black;
-            border-bottom-left-radius: 20px;
-            border-bottom-right-radius: 20px;
-            overflow: hidden;
+       div[data-testid="stCameraInput"] > div {
+    background-color: black;
+    border-bottom-left-radius: 20px;
+    border-bottom-right-radius: 20px;
+    overflow: hidden;
         }
         
         div[data-testid="stCameraInput"] video {
@@ -44,30 +43,23 @@ st.markdown("""
             object-fit: cover !important;
         }
 
-        /* 3. O HACK DO BOTÃO (Trocar Texto e Posição) */
+       
         div[data-testid="stCameraInput"] button {
-            /* Tamanho e Posição */
-            width: 50% !important; /* 50% da largura, como pediu */
-            margin-left: auto !important;
-            margin-right: auto !important;
-            display: block !important;
-            height: 50px !important; /* Altura menor */
-            
-            /* Joga o botão para cima (para dentro da câmera) */
-            margin-top: -70px !important; 
-            margin-bottom: 20px !important;
-            position: relative !important;
-            z-index: 999 !important;
-            
-            /* Estilo Visual */
-            border-radius: 25px !important;
-            background-color: #FF4B4B !important;
-            border: 2px solid white !important; /* Borda branca pra destacar */
-            box-shadow: 0px 4px 10px rgba(0,0,0,0.5) !important;
-            
-            /* ESCONDE O TEXTO "TAKE PHOTO" */
-            color: transparent !important; 
-        }
+    width: 50% !important;
+    margin: 16px auto 20px auto !important;
+    display: block !important;
+    height: 50px !important;
+
+    position: relative !important;
+    z-index: 10 !important;
+
+    border-radius: 25px !important;
+    background-color: #FF4B4B !important;
+    border: 2px solid white !important;
+    box-shadow: 0px 4px 10px rgba(0,0,0,0.4) !important;
+
+    color: transparent !important;
+}
 
         /* ESCREVE O NOVO TEXTO POR CIMA */
         div[data-testid="stCameraInput"] button::after {
@@ -210,3 +202,4 @@ if imagem_capturada:
                         st.rerun()
             except Exception as e:
                 st.error(f"Erro técnico: {e}")
+
