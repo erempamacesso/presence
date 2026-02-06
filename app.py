@@ -9,36 +9,66 @@ from datetime import datetime
 import pytz 
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
-# layout="wide" é essencial para ocupar a tela toda
 st.set_page_config(page_title="Ponto", layout="wide", initial_sidebar_state="collapsed")
 
-# --- CSS PARA AUMENTAR A CÂMERA (SEM BORDAS) ---
+# --- CSS ESTILO "TOTEM DE ACADEMIA" ---
 st.markdown("""
     <style>
-        /* 1. Remove as margens laterais da página inteira */
+        /* 1. Remove todo o espaçamento padrão do Streamlit */
         .block-container {
-            padding-left: 0rem !important;
-            padding-right: 0rem !important;
-            padding-top: 1rem !important; /* Um tiquinho no topo pra não colar na barra de status */
-            padding-bottom: 0rem !important;
+            padding: 0 !important;
+            margin: 0 !important;
             max-width: 100% !important;
         }
         
-        /* 2. Esconde menus que ocupam espaço */
-        #MainMenu {visibility: hidden;}
-        footer {visibility: hidden;}
-        header {visibility: hidden;}
+        /* Remove barras superiores e rodapés */
+        header, footer, #MainMenu {display: none !important;}
         
-        /* 3. Garante que a câmera use 100% da largura disponível */
+        /* 2. CONFIGURAÇÃO DA CÂMERA (O PULO DO GATO) */
+        
+        /* Força o container da câmera a ter 70% da altura da tela */
         div[data-testid="stCameraInput"] {
             width: 100% !important;
         }
-        
-        /* Opcional: Aumenta o botão de tirar foto para ficar fácil de clicar */
-        button {
-            min-height: 50px !important;
-            font-weight: bold !important;
+
+        /* Acessa a div interna que segura o vídeo e estica ela */
+        div[data-testid="stCameraInput"] > div {
+            height: 70vh !important; /* 70% da Altura da Tela */
+            background-color: black; /* Fundo preto se sobrar espaço */
+            border-bottom-left-radius: 20px;
+            border-bottom-right-radius: 20px;
+            overflow: hidden; /* Corta o excesso */
         }
+        
+        /* Força o vídeo a dar ZOOM para preencher tudo (Object-fit Cover) */
+        div[data-testid="stCameraInput"] video {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover !important; /* Esse comando faz ocupar a área toda */
+        }
+
+        /* 3. BOTÃO DE TIRAR FOTO */
+        button {
+            margin-top: 20px !important;
+            width: 90% !important; /* Quase a largura toda */
+            margin-left: 5% !important; 
+            height: 70px !important; /* Botão bem alto */
+            border-radius: 35px !important; /* Redondinho */
+            background-color: #FF4B4B !important;
+            color: white !important;
+            font-size: 24px !important; /* Letra grande */
+            font-weight: bold !important;
+            border: none !important;
+            box-shadow: 0px 4px 15px rgba(0,0,0,0.2) !important;
+        }
+        
+        /* Centraliza o botão se ele tentar fugir */
+        div.stButton {
+            text-align: center;
+            background-color: white;
+            padding-bottom: 20px;
+        }
+
     </style>
     """, unsafe_allow_html=True)
 
@@ -51,7 +81,6 @@ supabase: Client = create_client(url, key)
 # --- FUNÇÕES ---
 def load_known_faces():
     try:
-        # Busca na tabela 'alunos'
         response = supabase.table('alunos').select("*").execute()
         data = response.data
         known_encodings = []
@@ -63,11 +92,10 @@ def load_known_faces():
                 encoding = np.array(aluno['face_encoding'])
                 known_encodings.append(encoding)
                 known_ids.append(aluno['id'])
-                # Tenta pegar 'nome', se não tiver tenta 'nome_aluno'
                 nome = aluno.get('nome', aluno.get('nome_aluno', 'Sem Nome'))
                 known_names.append(nome)
         return known_encodings, known_ids, known_names
-    except Exception:
+    except:
         return [], [], []
 
 def registrar_presenca(pessoa_id, nome_identificado):
@@ -88,23 +116,24 @@ def registrar_presenca(pessoa_id, nome_identificado):
             "data_hora": data_hora_formatada
         }
         supabase.table('presenca').insert(dados).execute()
-        return f"✅ Presença: {nome_identificado}"
+        return f"✅ ACESSO LIBERADO: {nome_identificado}"
     else:
-        return f"⚠️ {nome_identificado} (Já registrado)"
+        return f"⚠️ {nome_identificado} JÁ REGISTRADO!"
 
 # --- TELA PRINCIPAL ---
-
 if 'known_encodings' not in st.session_state:
     st.session_state.known_encodings, st.session_state.known_ids, st.session_state.known_names = load_known_faces()
 
-# A câmera agora vai encostar nas bordas laterais
+# O Widget da câmera
 imagem_capturada = st.camera_input("Ponto", label_visibility="hidden")
 
+# Lógica de processamento
 if imagem_capturada:
     if not st.session_state.known_encodings:
-        st.error("Sem alunos cadastrados.")
+        st.error("ERRO: Sem base de dados.")
     else:
-        with st.spinner('Verificando...'):
+        # Usa st.status para feedback visual moderno
+        with st.status("Processando...", expanded=True) as status:
             bytes_data = imagem_capturada.getvalue()
             cv2_img = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
             rgb_img = cv2.cvtColor(cv2_img, cv2.COLOR_BGR2RGB)
@@ -113,12 +142,12 @@ if imagem_capturada:
             face_encodings = face_recognition.face_encodings(rgb_img, face_locations)
 
             if not face_encodings:
-                st.warning("Rosto não encontrado.")
+                status.update(label="Rosto não encontrado!", state="error", expanded=False)
+                st.warning("Posicione o rosto no centro.")
             else:
                 face_encoding = face_encodings[0]
                 matches = face_recognition.compare_faces(st.session_state.known_encodings, face_encoding, tolerance=0.5)
                 face_distances = face_recognition.face_distance(st.session_state.known_encodings, face_encoding)
-                
                 best_match_index = np.argmin(face_distances)
                 
                 if matches[best_match_index]:
@@ -127,9 +156,13 @@ if imagem_capturada:
                     
                     msg = registrar_presenca(p_id, nome)
                     
+                    status.update(label="Identificado!", state="complete", expanded=False)
+                    
                     if "✅" in msg:
                         st.success(msg)
+                        st.balloons()
                     else:
                         st.info(msg)
                 else:
-                    st.error("Aluno não reconhecido.")
+                    status.update(label="Não reconhecido", state="error", expanded=False)
+                    st.error("Aluno não encontrado no sistema.")
