@@ -11,62 +11,60 @@ import pytz
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Ponto", layout="wide", initial_sidebar_state="collapsed")
 
-# --- CSS ESTILO "TOTEM DE ACADEMIA" ---
+# --- CSS: O SEGREDO DO MODO RETRATO ---
 st.markdown("""
     <style>
-        /* 1. Remove todo o espaçamento padrão do Streamlit */
+        /* 1. Limpa margens para usar a tela toda */
         .block-container {
             padding: 0 !important;
             margin: 0 !important;
             max-width: 100% !important;
         }
         
-        /* Remove barras superiores e rodapés */
-        header, footer, #MainMenu {display: none !important;}
+        /* Remove cabeçalho e rodapé */
+        #MainMenu, footer, header {visibility: hidden;}
         
-        /* 2. CONFIGURAÇÃO DA CÂMERA (O PULO DO GATO) */
-        
-        /* Força o container da câmera a ter 70% da altura da tela */
-        div[data-testid="stCameraInput"] {
+        /* 2. FORÇA O FORMATO VERTICAL (RETRATO) */
+        /* Define que o container da câmera deve ter proporção de celular (3:4 ou 9:16) */
+        [data-testid="stCameraInput"] {
             width: 100% !important;
+            margin: 0 auto !important;
+            aspect-ratio: 3/4 !important; /* Aqui define que será mais alto que largo */
+            overflow: hidden !important;
+            border-radius: 0px !important;
         }
 
-        /* Acessa a div interna que segura o vídeo e estica ela */
-        div[data-testid="stCameraInput"] > div {
-            height: 70vh !important; /* 70% da Altura da Tela */
-            background-color: black; /* Fundo preto se sobrar espaço */
-            border-bottom-left-radius: 20px;
-            border-bottom-right-radius: 20px;
-            overflow: hidden; /* Corta o excesso */
-        }
-        
-        /* Força o vídeo a dar ZOOM para preencher tudo (Object-fit Cover) */
-        div[data-testid="stCameraInput"] video {
+        /* 3. AJUSTA O VÍDEO DENTRO DO RETÂNGULO */
+        [data-testid="stCameraInput"] video {
             width: 100% !important;
             height: 100% !important;
-            object-fit: cover !important; /* Esse comando faz ocupar a área toda */
-        }
-
-        /* 3. BOTÃO DE TIRAR FOTO */
-        button {
-            margin-top: 20px !important;
-            width: 90% !important; /* Quase a largura toda */
-            margin-left: 5% !important; 
-            height: 70px !important; /* Botão bem alto */
-            border-radius: 35px !important; /* Redondinho */
-            background-color: #FF4B4B !important;
-            color: white !important;
-            font-size: 24px !important; /* Letra grande */
-            font-weight: bold !important;
-            border: none !important;
-            box-shadow: 0px 4px 15px rgba(0,0,0,0.2) !important;
+            object-fit: cover !important; /* ISSO É O IMPORTANTE: Corta as laterais para preencher a altura */
         }
         
-        /* Centraliza o botão se ele tentar fugir */
+        /* 4. BOTÃO MAIOR E FIXO EMBAIXO */
+        button {
+            width: 90% !important;
+            margin-left: 5% !important;
+            margin-right: 5% !important;
+            height: 60px !important;
+            font-size: 18px !important;
+            font-weight: bold !important;
+            border-radius: 30px !important;
+            background-color: #FF4B4B !important;
+            color: white !important;
+            border: none !important;
+            position: fixed !important;
+            bottom: 20px !important;
+            z-index: 999 !important;
+        }
+        
+        /* Ajuste fino para não sobrepor o botão na câmera se a tela for pequena */
         div.stButton {
-            text-align: center;
-            background-color: white;
-            padding-bottom: 20px;
+            position: fixed;
+            bottom: 20px;
+            width: 100%;
+            display: flex;
+            justify-content: center;
         }
 
     </style>
@@ -116,24 +114,23 @@ def registrar_presenca(pessoa_id, nome_identificado):
             "data_hora": data_hora_formatada
         }
         supabase.table('presenca').insert(dados).execute()
-        return f"✅ ACESSO LIBERADO: {nome_identificado}"
+        return f"✅ {nome_identificado}"
     else:
-        return f"⚠️ {nome_identificado} JÁ REGISTRADO!"
+        return f"⚠️ {nome_identificado} (Já registrado)"
 
 # --- TELA PRINCIPAL ---
 if 'known_encodings' not in st.session_state:
     st.session_state.known_encodings, st.session_state.known_ids, st.session_state.known_names = load_known_faces()
 
-# O Widget da câmera
+# Câmera
 imagem_capturada = st.camera_input("Ponto", label_visibility="hidden")
 
-# Lógica de processamento
 if imagem_capturada:
     if not st.session_state.known_encodings:
-        st.error("ERRO: Sem base de dados.")
+        st.error("Sem alunos cadastrados.")
     else:
-        # Usa st.status para feedback visual moderno
-        with st.status("Processando...", expanded=True) as status:
+        # Mostra spinner flutuante
+        with st.spinner('Verificando...'):
             bytes_data = imagem_capturada.getvalue()
             cv2_img = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
             rgb_img = cv2.cvtColor(cv2_img, cv2.COLOR_BGR2RGB)
@@ -142,8 +139,7 @@ if imagem_capturada:
             face_encodings = face_recognition.face_encodings(rgb_img, face_locations)
 
             if not face_encodings:
-                status.update(label="Rosto não encontrado!", state="error", expanded=False)
-                st.warning("Posicione o rosto no centro.")
+                st.toast("Rosto não encontrado.", icon="❌")
             else:
                 face_encoding = face_encodings[0]
                 matches = face_recognition.compare_faces(st.session_state.known_encodings, face_encoding, tolerance=0.5)
@@ -153,10 +149,7 @@ if imagem_capturada:
                 if matches[best_match_index]:
                     nome = st.session_state.known_names[best_match_index]
                     p_id = st.session_state.known_ids[best_match_index]
-                    
                     msg = registrar_presenca(p_id, nome)
-                    
-                    status.update(label="Identificado!", state="complete", expanded=False)
                     
                     if "✅" in msg:
                         st.success(msg)
@@ -164,5 +157,4 @@ if imagem_capturada:
                     else:
                         st.info(msg)
                 else:
-                    status.update(label="Não reconhecido", state="error", expanded=False)
-                    st.error("Aluno não encontrado no sistema.")
+                    st.error("Aluno não reconhecido.")
