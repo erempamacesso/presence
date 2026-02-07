@@ -1,46 +1,35 @@
 import streamlit as st
 import time
 
-# ===============================
+# ==================================================
 # CONFIGURAÇÃO DA PÁGINA
-# ===============================
+# ==================================================
 st.set_page_config(
     page_title="Registro de Presença",
     layout="centered",
     initial_sidebar_state="collapsed"
 )
 
-# ===============================
-# CSS – MODO TOTEM (CELULAR)
-# ===============================
+# ==================================================
+# CSS – LAYOUT TOTEM LIMPO
+# ==================================================
 st.markdown("""
 <style>
 
-/* RESET TOTAL */
+/* RESET */
 html, body {
     margin: 0;
     padding: 0;
-    height: 100%;
     background: black;
     overflow: hidden;
 }
 
-/* CONTAINER PRINCIPAL */
 .block-container {
     padding: 0 !important;
     margin: 0 !important;
     max-width: 100% !important;
 }
 
-/* REMOVE BLOCOS VAZIOS DO STREAMLIT */
-div[data-testid="stVerticalBlock"]:empty {
-    display: none !important;
-    height: 0 !important;
-    margin: 0 !important;
-    padding: 0 !important;
-}
-
-/* ESCONDE HEADER / MENU */
 header, footer, #MainMenu {
     display: none !important;
 }
@@ -48,42 +37,37 @@ header, footer, #MainMenu {
 /* TÍTULO */
 .titulo {
     color: white;
-    font-size: 22px;
+    font-size: 20px;
     font-weight: bold;
-    margin: 12px 0;
     text-align: center;
+    margin: 10px 0;
 }
 
-/* ÁREA DA CÂMERA */
+/* CAMERA */
 div[data-testid="stCameraInput"] {
-    width: 100vw !important;
-    margin: 0 !important;
-    padding: 0 !important;
+    width: 100%;
     display: flex;
     justify-content: center;
     background: black;
 }
 
-/* CONTAINER INTERNO */
 div[data-testid="stCameraInput"] > div {
     width: 100% !important;
     max-width: 480px !important;
 }
 
-/* VÍDEO / FOTO */
 div[data-testid="stCameraInput"] video,
 div[data-testid="stCameraInput"] img {
     width: 100% !important;
-    height: auto !important;
-    max-height: 65vh !important;
+    max-height: 60vh !important;
     object-fit: cover !important;
 }
 
-/* BOTÃO */
+/* BOTÃO (NORMAL, SEM FLUTUAR) */
 div[data-testid="stCameraInput"] button {
-    width: 75% !important;
+    width: 80% !important;
     height: 60px !important;
-    margin: 18px auto !important;
+    margin: 16px auto !important;
     display: block !important;
 
     background: #D32F2F !important;
@@ -94,7 +78,7 @@ div[data-testid="stCameraInput"] button {
     position: relative !important;
 }
 
-/* TEXTO DO BOTÃO */
+/* TEXTO BOTÃO */
 div[data-testid="stCameraInput"] button::after {
     content: "REGISTRAR PRESENÇA";
     color: white;
@@ -107,85 +91,81 @@ div[data-testid="stCameraInput"] button::after {
     justify-content: center;
 }
 
-/* OVERLAY DE FEEDBACK */
-.overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 9999;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-family: sans-serif;
-}
-
-.overlay.sucesso { background: #2ecc71; }
-.overlay.erro { background: #e74c3c; }
-
-.icon {
-    font-size: 72px;
-    margin-bottom: 20px;
-}
-
-.msg {
-    font-size: 32px;
-    font-weight: bold;
+/* TARJA DE STATUS */
+.status-bar {
+    width: 100%;
+    padding: 14px;
     text-align: center;
+    font-size: 20px;
+    font-weight: bold;
+    color: white;
 }
+
+.status-verde { background: #2ecc71; }
+.status-amarelo { background: #f1c40f; color: #333; }
+.status-vermelho { background: #e74c3c; }
 
 </style>
 """, unsafe_allow_html=True)
 
-# ===============================
+# ==================================================
 # ESTADO
-# ===============================
+# ==================================================
 if "status" not in st.session_state:
     st.session_state.status = None
 
-# ===============================
+# ==================================================
 # INTERFACE
-# ===============================
+# ==================================================
 st.markdown('<div class="titulo">Aproxime o rosto e toque no botão</div>', unsafe_allow_html=True)
 
-# CÂMERA
 foto = st.camera_input("", label_visibility="hidden")
 
-# ===============================
-# PROCESSAMENTO (SIMULADO)
-# ===============================
+# ==================================================
+# PROCESSAMENTO (SIMULAÇÃO)
+# ==================================================
 if foto is not None and st.session_state.status is None:
-    # 👉 AQUI entra seu reconhecimento facial real
-    reconhecimento_ok = True  # simulação
+    """
+    Aqui você substitui pela sua lógica real:
+    resultado = reconhecer_rosto(foto)
+    """
 
-    if reconhecimento_ok:
-        st.session_state.status = "sucesso"
-    else:
-        st.session_state.status = "erro"
+    # SIMULAÇÃO
+    resultado = "novo"  
+    # opções: "novo", "duplicado", "erro"
 
-# ===============================
-# OVERLAY DE RESULTADO
-# ===============================
-if st.session_state.status == "sucesso":
+    st.session_state.status = resultado
+
+# ==================================================
+# TARJA DE FEEDBACK
+# ==================================================
+if st.session_state.status == "novo":
     st.markdown("""
-    <div class="overlay sucesso">
-        <div class="icon">✅</div>
-        <div class="msg">PRESENÇA<br>REGISTRADA</div>
+    <div class="status-bar status-verde">
+        ✅ ACESSO REGISTRADO
     </div>
     """, unsafe_allow_html=True)
-
     time.sleep(2)
-    st.session_state.status = None
-    st.experimental_rerun()
+
+elif st.session_state.status == "duplicado":
+    st.markdown("""
+    <div class="status-bar status-amarelo">
+        ⚠️ FREQUÊNCIA JÁ REGISTRADA
+    </div>
+    """, unsafe_allow_html=True)
+    time.sleep(2)
 
 elif st.session_state.status == "erro":
     st.markdown("""
-    <div class="overlay erro">
-        <div class="icon">❌</div>
-        <div class="msg">ROSTO NÃO<br>RECONHECIDO</div>
+    <div class="status-bar status-vermelho">
+        ❌ NÃO CADASTRADO
     </div>
     """, unsafe_allow_html=True)
-
     time.sleep(2)
+
+# ==================================================
+# RESET
+# ==================================================
+if st.session_state.status is not None:
     st.session_state.status = None
     st.experimental_rerun()
