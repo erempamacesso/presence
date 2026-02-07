@@ -20,86 +20,71 @@ st.set_page_config(
 )
 
 # --------------------------------------------------
-# CSS OTIMIZADO E RESPONSIVO (CORRIGIDO)
+# CSS NOVO (BOTÃO EMBAIXO DA CÂMERA - SEM QUEBRAR)
 # --------------------------------------------------
 st.markdown("""
 <style>
-    /* RESET BÁSICO */
+    /* 1. FUNDO E RESET GERAL */
     html, body, .stApp {
         background-color: #111;
         margin: 0;
         font-family: sans-serif;
     }
 
-    /* REMOVE O PADDING PADRÃO DO STREAMLIT QUE EMPURRA TUDO PRA BAIXO */
+    /* 2. CENTRALIZAR TUDO NA TELA */
     .block-container {
-        padding-top: 1rem !important;
-        padding-bottom: 1rem !important;
-        padding-left: 0 !important;
-        padding-right: 0 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: center !important;
+        min-height: 100vh !important; /* Centraliza verticalmente */
+        padding: 20px !important;
         max-width: 100% !important;
     }
     
     header, footer, #MainMenu { display: none !important; }
 
-    /* CENTRALIZA O CONTEÚDO VERTICALMENTE */
-    div[data-testid="stVerticalBlock"] {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        min-height: 80vh; /* Garante que fique centralizado na tela */
-        gap: 20px;
-    }
-
-    /* ESTILO DO CONTAINER DA CÂMERA */
+    /* 3. CONTAINER DA CÂMERA (SEM ALTURA FIXA) */
     div[data-testid="stCameraInput"] {
         width: 100% !important;
-        height: auto !important; /* IMPORTANTE: Deixa a altura automática */
+        max-width: 450px !important; /* Limite para tablet/pc */
         position: relative !important;
-        margin: 0 auto;
+        margin-bottom: 20px !important; /* Espaço extra embaixo */
     }
 
-    /* ESTILO DO VÍDEO (ARREDONDADO E SEM BORDAS BRANCAS) */
+    /* 4. VÍDEO ARREDONDADO */
     div[data-testid="stCameraInput"] video {
-        border-radius: 20px !important; /* Borda arredondada moderna */
-        max-height: 70vh !important; /* Não deixa o vídeo ficar maior que a tela */
+        border-radius: 15px !important;
+        border: 2px solid #333 !important;
         width: 100% !important;
         object-fit: cover !important;
         box-shadow: 0 4px 15px rgba(0,0,0,0.5);
     }
 
-    /* BOTÃO DE AÇÃO (Centralizado SOBRE a parte inferior do vídeo) */
+    /* 5. BOTÃO (LOGO ABAIXO DO VÍDEO) */
     div[data-testid="stCameraInput"] button {
-        width: 80% !important;
-        max-width: 300px !important;
+        width: 100% !important;
         height: 60px !important;
-        border-radius: 30px !important;
+        border-radius: 12px !important;
         background-color: #D32F2F !important;
-        border: 2px solid rgba(255,255,255,0.3) !important;
-        
-        /* Posicionamento absoluto DENTRO do container da câmera */
-        position: absolute !important;
-        bottom: 20px !important; /* 20px da borda de baixo do vídeo */
-        left: 50% !important;
-        transform: translateX(-50%) !important;
-        
-        z-index: 100 !important;
-        box-shadow: 0 10px 20px rgba(0,0,0,0.4) !important;
-        color: transparent !important; /* Esconde o texto original "Take Photo" */
-        transition: transform 0.2s, background-color 0.2s;
+        border: none !important;
+        margin-top: 15px !important; /* Empurra para baixo do vídeo */
+        color: transparent !important;
+        position: relative !important;
+        transition: transform 0.2s;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
     }
     
     div[data-testid="stCameraInput"] button:active {
-        transform: translateX(-50%) scale(0.95) !important;
+        transform: scale(0.98) !important;
         background-color: #B71C1C !important;
     }
 
-    /* TEXTO NOVO DO BOTÃO */
+    /* TEXTO DO BOTÃO */
     div[data-testid="stCameraInput"] button::after {
         content: "REGISTRAR PRESENÇA";
         color: white;
-        font-size: 16px;
+        font-size: 18px;
         font-weight: 700;
         position: absolute;
         inset: 0;
@@ -110,7 +95,7 @@ st.markdown("""
         letter-spacing: 1px;
     }
 
-    /* --- FEEDBACK (MANTIVE IGUAL, POIS ESTAVA BOM) --- */
+    /* --- POPUP DE FEEDBACK (MANTIDO) --- */
     .hud-badge {
         position: fixed;
         top: 50%;
@@ -118,33 +103,32 @@ st.markdown("""
         transform: translate(-50%, -50%);
         width: 85%;
         max-width: 400px;
-        padding: 25px;
+        padding: 30px 20px;
         border-radius: 20px;
         color: white;
         text-align: center;
         z-index: 99999;
-        box-shadow: 0 20px 50px rgba(0,0,0,0.9);
-        border: 1px solid rgba(255,255,255,0.2);
-        backdrop-filter: blur(12px);
+        box-shadow: 0 20px 50px rgba(0,0,0,0.8);
+        border: 2px solid rgba(255,255,255,0.1);
+        backdrop-filter: blur(10px);
+        background: rgba(20,20,20, 0.95);
         animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     }
 
-    .status-ok { background: rgba(39, 174, 96, 0.95); }
-    .status-warn { background: rgba(243, 156, 18, 0.95); }
-    .status-err { background: rgba(192, 57, 43, 0.95); }
+    .status-ok { border-top: 5px solid #2ecc71; }
+    .status-warn { border-top: 5px solid #f1c40f; }
+    .status-err { border-top: 5px solid #e74c3c; }
 
-    .hud-icon { font-size: 50px; display: block; margin-bottom: 10px; }
+    .hud-icon { font-size: 50px; display: block; margin-bottom: 15px; }
     .hud-title { font-size: 24px; font-weight: 800; display: block; margin-bottom: 5px; text-transform: uppercase;}
-    .hud-sub { font-size: 18px; font-weight: 400; opacity: 0.95; }
+    .hud-sub { font-size: 18px; font-weight: 400; opacity: 0.8; }
 
     @keyframes popIn {
-        0% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+        0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
         100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
     }
 </style>
 """, unsafe_allow_html=True)
-
-
 
 # --------------------------------------------------
 # BANCO E CONFIG
@@ -253,7 +237,7 @@ if img:
                     
                 elif resultado == "DUPLICADO":
                     status_tipo = "aviso"
-                    mensagem_titulo = "ACESSO JÁ REGISTRADO" # <--- O QUE VC PEDIU
+                    mensagem_titulo = "JÁ REGISTRADO"
                     mensagem_sub = f"{p_nome}, você já marcou hoje."
                     cor_classe = "status-warn" # Amarelo
             else:
@@ -263,7 +247,6 @@ if img:
         mensagem_sub = "Centralize seu rosto na câmera"
 
     # 2. Exibe o Feedback (Badge Flutuante)
-    # Note que usamos o placeholder criado ANTES do camera_input, mas o CSS position fixed joga ele por cima
     feedback_placeholder.markdown(f"""
     <div class="hud-badge {cor_classe}">
         <div class="hud-icon">
@@ -278,4 +261,3 @@ if img:
     time.sleep(2.5) # Tempo suficiente para ler
     st.session_state.cam_key += 1
     st.rerun()
-
