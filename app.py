@@ -20,71 +20,86 @@ st.set_page_config(
 )
 
 # --------------------------------------------------
-# CSS OTIMIZADO (ESTILO HUD / BADGE)
+# CSS OTIMIZADO E RESPONSIVO (CORRIGIDO)
 # --------------------------------------------------
 st.markdown("""
 <style>
-    /* RESET E FUNDO */
+    /* RESET BÁSICO */
     html, body, .stApp {
-        background-color: #111; /* Cinza muito escuro é melhor que preto absoluto para contraste */
+        background-color: #111;
         margin: 0;
-        overflow: hidden;
+        font-family: sans-serif;
     }
 
+    /* REMOVE O PADDING PADRÃO DO STREAMLIT QUE EMPURRA TUDO PRA BAIXO */
     .block-container {
-        padding: 0 !important;
+        padding-top: 1rem !important;
+        padding-bottom: 1rem !important;
+        padding-left: 0 !important;
+        padding-right: 0 !important;
         max-width: 100% !important;
     }
     
     header, footer, #MainMenu { display: none !important; }
 
-    /* CÂMERA FULL HEIGHT */
-    div[data-testid="stCameraInput"] {
-        width: 100vw !important;
-        height: 100vh !important; /* Ocupa tudo */
+    /* CENTRALIZA O CONTEÚDO VERTICALMENTE */
+    div[data-testid="stVerticalBlock"] {
         display: flex;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
-        background: #000;
+        min-height: 80vh; /* Garante que fique centralizado na tela */
+        gap: 20px;
     }
 
-    div[data-testid="stCameraInput"] > div {
-        height: 100% !important;
+    /* ESTILO DO CONTAINER DA CÂMERA */
+    div[data-testid="stCameraInput"] {
         width: 100% !important;
-        border-radius: 0 !important;
+        height: auto !important; /* IMPORTANTE: Deixa a altura automática */
+        position: relative !important;
+        margin: 0 auto;
     }
 
-    div[data-testid="stCameraInput"] video, 
-    div[data-testid="stCameraInput"] img {
-        object-fit: cover !important; /* Garante preenchimento sem bordas */
+    /* ESTILO DO VÍDEO (ARREDONDADO E SEM BORDAS BRANCAS) */
+    div[data-testid="stCameraInput"] video {
+        border-radius: 20px !important; /* Borda arredondada moderna */
+        max-height: 70vh !important; /* Não deixa o vídeo ficar maior que a tela */
+        width: 100% !important;
+        object-fit: cover !important;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.5);
     }
 
-    /* BOTÃO DE AÇÃO (Floating Action Button style) */
+    /* BOTÃO DE AÇÃO (Centralizado SOBRE a parte inferior do vídeo) */
     div[data-testid="stCameraInput"] button {
-        width: 70% !important;
-        max-width: 400px !important;
-        height: 65px !important;
-        border-radius: 35px !important;
+        width: 80% !important;
+        max-width: 300px !important;
+        height: 60px !important;
+        border-radius: 30px !important;
         background-color: #D32F2F !important;
-        border: 2px solid rgba(255,255,255,0.8) !important;
+        border: 2px solid rgba(255,255,255,0.3) !important;
+        
+        /* Posicionamento absoluto DENTRO do container da câmera */
         position: absolute !important;
-        bottom: 50px !important; /* Fixo embaixo */
+        bottom: 20px !important; /* 20px da borda de baixo do vídeo */
         left: 50% !important;
         transform: translateX(-50%) !important;
+        
         z-index: 100 !important;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.5) !important;
-        color: transparent !important;
-        transition: transform 0.2s;
+        box-shadow: 0 10px 20px rgba(0,0,0,0.4) !important;
+        color: transparent !important; /* Esconde o texto original "Take Photo" */
+        transition: transform 0.2s, background-color 0.2s;
     }
     
     div[data-testid="stCameraInput"] button:active {
         transform: translateX(-50%) scale(0.95) !important;
+        background-color: #B71C1C !important;
     }
 
+    /* TEXTO NOVO DO BOTÃO */
     div[data-testid="stCameraInput"] button::after {
         content: "REGISTRAR PRESENÇA";
         color: white;
-        font-size: 20px;
+        font-size: 16px;
         font-weight: 700;
         position: absolute;
         inset: 0;
@@ -95,41 +110,41 @@ st.markdown("""
         letter-spacing: 1px;
     }
 
-    /* --- O NOVO FEEDBACK (CARD FLUTUANTE) --- */
+    /* --- FEEDBACK (MANTIVE IGUAL, POIS ESTAVA BOM) --- */
     .hud-badge {
         position: fixed;
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
         width: 85%;
-        max-width: 500px;
-        padding: 30px 20px;
-        border-radius: 25px;
+        max-width: 400px;
+        padding: 25px;
+        border-radius: 20px;
         color: white;
         text-align: center;
         z-index: 99999;
-        box-shadow: 0 20px 50px rgba(0,0,0,0.8);
-        border: 4px solid rgba(255,255,255,0.2);
-        backdrop-filter: blur(10px); /* Efeito de vidro */
+        box-shadow: 0 20px 50px rgba(0,0,0,0.9);
+        border: 1px solid rgba(255,255,255,0.2);
+        backdrop-filter: blur(12px);
         animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     }
 
-    /* CORES DOS ESTADOS */
-    .status-ok { background: rgba(46, 204, 113, 0.9); } /* Verde */
-    .status-warn { background: rgba(241, 196, 15, 0.95); color: #222; } /* Amarelo */
-    .status-err { background: rgba(231, 76, 60, 0.9); } /* Vermelho */
+    .status-ok { background: rgba(39, 174, 96, 0.95); }
+    .status-warn { background: rgba(243, 156, 18, 0.95); }
+    .status-err { background: rgba(192, 57, 43, 0.95); }
 
-    .hud-icon { font-size: 60px; display: block; margin-bottom: 10px; }
-    .hud-title { font-size: 28px; font-weight: 900; display: block; margin-bottom: 5px; text-transform: uppercase;}
-    .hud-sub { font-size: 20px; font-weight: 400; opacity: 0.9; }
+    .hud-icon { font-size: 50px; display: block; margin-bottom: 10px; }
+    .hud-title { font-size: 24px; font-weight: 800; display: block; margin-bottom: 5px; text-transform: uppercase;}
+    .hud-sub { font-size: 18px; font-weight: 400; opacity: 0.95; }
 
     @keyframes popIn {
-        0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+        0% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
         100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
     }
-
 </style>
 """, unsafe_allow_html=True)
+
+
 
 # --------------------------------------------------
 # BANCO E CONFIG
@@ -263,3 +278,4 @@ if img:
     time.sleep(2.5) # Tempo suficiente para ler
     st.session_state.cam_key += 1
     st.rerun()
+
