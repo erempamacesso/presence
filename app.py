@@ -1,263 +1,252 @@
 import streamlit as st
-import face_recognition
-import cv2
-import numpy as np
-from supabase import create_client, Client
-from dotenv import load_dotenv
+import pandas as pd
+from supabase import create_client
 import os
-from datetime import datetime
-import pytz
-import json
+from dotenv import load_dotenv
+import unicodedata
 import time
 
-# --------------------------------------------------
-# CONFIGURAÇÃO DA PÁGINA
-# --------------------------------------------------
-st.set_page_config(
-    page_title="Ponto Facial",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
+# ==================================================
+# 1. CONFIGURAÇÃO E CONEXÃO
+# ==================================================
+st.set_page_config(page_title="Gestão Escolar", layout="wide")
 
-# --------------------------------------------------
-# CSS NOVO (BOTÃO EMBAIXO DA CÂMERA - SEM QUEBRAR)
-# --------------------------------------------------
-st.markdown("""
-<style>
-    /* 1. FUNDO E RESET GERAL */
-    html, body, .stApp {
-        background-color: #111;
-        margin: 0;
-        font-family: sans-serif;
-    }
-
-    /* 2. CENTRALIZAR TUDO NA TELA */
-    .block-container {
-        display: flex !important;
-        flex-direction: column !important;
-        align-items: center !important;
-        justify-content: center !important;
-        min-height: 100vh !important; /* Centraliza verticalmente */
-        padding: 20px !important;
-        max-width: 100% !important;
-    }
-    
-    header, footer, #MainMenu { display: none !important; }
-
-    /* 3. CONTAINER DA CÂMERA (SEM ALTURA FIXA) */
-    div[data-testid="stCameraInput"] {
-        width: 100% !important;
-        max-width: 450px !important; /* Limite para tablet/pc */
-        position: relative !important;
-        margin-bottom: 20px !important; /* Espaço extra embaixo */
-    }
-
-    /* 4. VÍDEO ARREDONDADO */
-    div[data-testid="stCameraInput"] video {
-        border-radius: 15px !important;
-        border: 2px solid #333 !important;
-        width: 100% !important;
-        object-fit: cover !important;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-    }
-
-    /* 5. BOTÃO (LOGO ABAIXO DO VÍDEO) */
-    div[data-testid="stCameraInput"] button {
-        width: 100% !important;
-        height: 60px !important;
-        border-radius: 12px !important;
-        background-color: #D32F2F !important;
-        border: none !important;
-        margin-top: 15px !important; /* Empurra para baixo do vídeo */
-        color: transparent !important;
-        position: relative !important;
-        transition: transform 0.2s;
-        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-    }
-    
-    div[data-testid="stCameraInput"] button:active {
-        transform: scale(0.98) !important;
-        background-color: #B71C1C !important;
-    }
-
-    /* TEXTO DO BOTÃO */
-    div[data-testid="stCameraInput"] button::after {
-        content: "REGISTRAR PRESENÇA";
-        color: white;
-        font-size: 18px;
-        font-weight: 700;
-        position: absolute;
-        inset: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-    }
-
-    /* --- POPUP DE FEEDBACK (MANTIDO) --- */
-    .hud-badge {
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        width: 85%;
-        max-width: 400px;
-        padding: 30px 20px;
-        border-radius: 20px;
-        color: white;
-        text-align: center;
-        z-index: 99999;
-        box-shadow: 0 20px 50px rgba(0,0,0,0.8);
-        border: 2px solid rgba(255,255,255,0.1);
-        backdrop-filter: blur(10px);
-        background: rgba(20,20,20, 0.95);
-        animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    }
-
-    .status-ok { border-top: 5px solid #2ecc71; }
-    .status-warn { border-top: 5px solid #f1c40f; }
-    .status-err { border-top: 5px solid #e74c3c; }
-
-    .hud-icon { font-size: 50px; display: block; margin-bottom: 15px; }
-    .hud-title { font-size: 24px; font-weight: 800; display: block; margin-bottom: 5px; text-transform: uppercase;}
-    .hud-sub { font-size: 18px; font-weight: 400; opacity: 0.8; }
-
-    @keyframes popIn {
-        0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
-        100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# --------------------------------------------------
-# BANCO E CONFIG
-# --------------------------------------------------
+# Tenta carregar do arquivo .env (local) ou dos Segredos do Streamlit (nuvem)
 load_dotenv()
+SUPABASE_URL = st.secrets.get("SUPABASE_URL") or os.getenv("SUPABASE_URL")
+SUPABASE_KEY = st.secrets.get("SUPABASE_KEY") or os.getenv("SUPABASE_KEY")
+
+# Trava de segurança se não tiver senha
+if not SUPABASE_URL or not SUPABASE_KEY:
+    st.error("ERRO CRÍTICO: Credenciais do Supabase não encontradas. Configure os 'Secrets' no Streamlit Cloud.")
+    st.stop()
+
+# Conecta ao banco
 try:
-    supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
-except:
-    st.error("Erro de conexão com Banco de Dados")
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+except Exception as e:
+    st.error(f"Erro ao conectar no Supabase: {e}")
+    st.stop()
 
-# --------------------------------------------------
-# LOGICA
-# --------------------------------------------------
-def carregar_faces():
+# ==================================================
+# 2. FUNÇÕES INTELIGENTES (Lógica de Arquivos)
+# ==================================================
+def limpar_texto(texto):
+    """
+    Remove acentos, espaços e deixa minúsculo para facilitar a busca.
+    Ex: "João da Silva.jpg" -> "joaodasilva"
+    """
+    if not texto: return ""
+    texto = str(texto)
+    # Se tiver extensão de arquivo, remove
+    if "." in texto:
+        texto = texto.rsplit(".", 1)[0]
+    
+    nfkd = unicodedata.normalize('NFKD', texto)
+    sem_acento = "".join([c for c in nfkd if not unicodedata.combining(c)])
+    return sem_acento.lower().replace(" ", "").replace("_", "").strip()
+
+def listar_arquivos_bucket():
+    """
+    Busca TODOS os arquivos da pasta 'fotos-alunos' de uma vez.
+    Retorna um dicionário: {'joaodasilva': 'Joao Da Silva.jpg'}
+    Isso evita erros de extensão (png/jpg) e formatação.
+    """
     try:
-        dados = supabase.table("alunos").select("*").execute().data
-        encs, ids, nomes = [], [], []
-        for a in dados:
-            if a.get("face_encoding"):
-                try:
-                    raw = json.loads(a["face_encoding"]) if isinstance(a["face_encoding"], str) else a["face_encoding"]
-                    encs.append(np.array(raw, dtype=np.float64))
-                    ids.append(a["id"])
-                    nomes.append(a.get("nome", "Aluno"))
-                except: pass
-        return encs, ids, nomes
-    except: return [], [], []
+        arquivos = supabase.storage.from_('fotos-alunos').list()
+        mapa = {}
+        if arquivos:
+            for arq in arquivos:
+                nome_real = arq['name']
+                # Ignora arquivos de sistema
+                if nome_real == ".emptyFolderPlaceholder": continue
+                
+                chave = limpar_texto(nome_real)
+                mapa[chave] = nome_real
+        return mapa
+    except Exception as e:
+        # Se der erro, retorna vazio mas não trava o app
+        print(f"Erro bucket: {e}")
+        return {}
 
-def registrar_ponto(aluno_id, nome):
-    tz = pytz.timezone("America/Recife")
-    agora = datetime.now(tz)
-    inicio_dia = agora.strftime("%Y-%m-%d 00:00:00")
-
+def get_foto_url(nome_real_arquivo):
+    """Gera o link público da foto"""
     try:
-        # Verifica se já bateu hoje
-        check = supabase.table("presenca").select("id").eq("aluno_id", aluno_id).gte("data_hora", inicio_dia).execute()
-        
-        if check.data:
-            return "DUPLICADO" # <--- JÁ REGISTRADO HOJE
-        
-        # Se não, registra
-        supabase.table("presenca").insert({
-            "aluno_id": aluno_id,
-            "nome_aluno": nome,
-            "data_hora": agora.strftime("%Y-%m-%d %H:%M:%S")
-        }).execute()
-        return "SUCESSO"
+        url = supabase.storage.from_('fotos-alunos').get_public_url(nome_real_arquivo)
+        # Adiciona timestamp para atualizar a imagem se ela mudar e evitar cache
+        return f"{url}?t={int(time.time())}" 
     except:
-        return "ERRO"
+        return None
+
+# ==================================================
+# 3. INTERFACE DO USUÁRIO
+# ==================================================
+st.title("🏫 Sistema de Gestão Escolar")
+
+# Abas de navegação
+aba1, aba2, aba3 = st.tabs(["📤 Importação em Massa", "👤 Cadastro Manual", "📸 Mapa de Sala (Gestão)"])
 
 # --------------------------------------------------
-# ESTADO
+# ABA 1: IMPORTAÇÃO
 # --------------------------------------------------
-if "faces" not in st.session_state:
-    st.session_state.faces, st.session_state.ids, st.session_state.nomes = carregar_faces()
-
-if "cam_key" not in st.session_state:
-    st.session_state.cam_key = 0
-
-# --------------------------------------------------
-# INTERFACE PRINCIPAL
-# --------------------------------------------------
-
-# O container vazio é onde injetaremos o feedback DEPOIS da foto
-feedback_placeholder = st.empty()
-
-# Câmera
-img = st.camera_input("Ponto", label_visibility="hidden", key=f"cam_{st.session_state.cam_key}")
-
-# --------------------------------------------------
-# PROCESSAMENTO PÓS-CLICK
-# --------------------------------------------------
-if img:
-    # 1. Processa Imagem
-    bytes_data = img.getvalue()
-    frame = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
-    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+with aba1:
+    st.write("### Importar planilha (Excel ou CSV)")
+    st.info("Colunas necessárias: **Nome**, **Turma** (ou Serie + Turma)")
     
-    face_locations = face_recognition.face_locations(rgb)
+    arquivo = st.file_uploader("Upload Arquivo", type=["csv", "xlsx"])
     
-    # Lógica de decisão
-    status_tipo = "erro"
-    mensagem_titulo = "NÃO RECONHECIDO"
-    mensagem_sub = "Tente aproximar o rosto"
-    cor_classe = "status-err" # Vermelho padrão
-
-    if face_locations:
-        face_encodings = face_recognition.face_encodings(rgb, face_locations)
-        if face_encodings:
-            match_results = face_recognition.compare_faces(st.session_state.faces, face_encodings[0], tolerance=0.5)
-            
-            if True in match_results:
-                idx = match_results.index(True)
-                p_id = st.session_state.ids[idx]
-                p_nome = st.session_state.nomes[idx]
+    if arquivo: 
+        if st.button("Processar Arquivo"):
+            try:
+                if arquivo.name.endswith('.csv'): df = pd.read_csv(arquivo)
+                else: df = pd.read_excel(arquivo)
                 
-                # TENTA REGISTRAR
-                resultado = registrar_ponto(p_id, p_nome)
+                # Normaliza cabeçalhos para minúsculo
+                df.columns = [str(c).lower().strip() for c in df.columns]
                 
-                if resultado == "SUCESSO":
-                    status_tipo = "sucesso"
-                    mensagem_titulo = "ACESSO LIBERADO"
-                    mensagem_sub = p_nome
-                    cor_classe = "status-ok" # Verde
-                    st.balloons()
+                count = 0
+                # Barra de progresso visual
+                barra = st.progress(0)
+                total = len(df)
+                
+                for index, row in df.iterrows():
+                    # Atualiza barra
+                    if total > 0: barra.progress((index + 1) / total)
                     
-                elif resultado == "DUPLICADO":
-                    status_tipo = "aviso"
-                    mensagem_titulo = "JÁ REGISTRADO"
-                    mensagem_sub = f"{p_nome}, você já marcou hoje."
-                    cor_classe = "status-warn" # Amarelo
+                    try:
+                        nome = str(row['nome']).upper().strip()
+                        
+                        # Tenta montar a turma de formas diferentes
+                        turma_final = ""
+                        if 'turma' in df.columns and 'serie' in df.columns:
+                            turma_final = f"{row['serie']} {row['turma']}".strip()
+                        elif 'turma' in df.columns:
+                            turma_final = str(row['turma']).strip()
+                        else:
+                            turma_final = "SEM TURMA"
+
+                        # Verifica se já existe para não duplicar
+                        existe = supabase.table("alunos").select("id").eq("nome", nome).execute()
+                        if not existe.data:
+                            supabase.table("alunos").insert({
+                                "nome": nome, 
+                                "turma": turma_final
+                            }).execute()
+                            count += 1
+                    except: pass
+                
+                st.success(f"✅ Processamento concluído! {count} novos alunos importados.")
+                time.sleep(2)
+                st.rerun() # Atualiza a tela
+            except Exception as e: 
+                st.error(f"Erro ao ler arquivo: {e}")
+
+# --------------------------------------------------
+# ABA 2: CADASTRO MANUAL
+# --------------------------------------------------
+with aba2:
+    st.write("### Cadastro Individual")
+    with st.form("form_manual", clear_on_submit=True):
+        col_a, col_b = st.columns(2)
+        with col_a:
+            nome_man = st.text_input("Nome Completo")
+        with col_b:
+            turma_man = st.text_input("Turma (Ex: 1º A)")
+            
+        if st.form_submit_button("Cadastrar Aluno"):
+            if nome_man and turma_man:
+                try:
+                    supabase.table("alunos").insert({
+                        "nome": nome_man.upper(), 
+                        "turma": turma_man.upper()
+                    }).execute()
+                    st.success(f"Aluno {nome_man} salvo com sucesso!")
+                except Exception as e:
+                    st.error(f"Erro ao salvar: {e}")
             else:
-                mensagem_sub = "Cadastro não encontrado."
+                st.warning("Preencha todos os campos.")
+
+# --------------------------------------------------
+# ABA 3: MAPA DE SALA (GESTÃO)
+# --------------------------------------------------
+with aba3:
+    st.header("Visualização de Turmas")
+
+    # 1. Carregar lista de turmas disponíveis
+    try:
+        res = supabase.table("alunos").select("turma").execute()
+        # Cria lista única, remove vazios e ordena
+        lista_turmas = sorted(list(set([x['turma'] for x in res.data if x.get('turma')])))
+        
+        if not lista_turmas:
+            st.warning("Nenhuma turma encontrada. Cadastre alunos primeiro.")
+            st.stop()
+    except Exception as e:
+        st.error("Erro ao buscar turmas. Verifique a conexão.")
+        st.stop()
+
+    # Dropdown de seleção
+    turma_escolhida = st.selectbox("Selecione a Turma:", lista_turmas)
+    
+    # 2. Busca Alunos da turma
+    res_alunos = supabase.table("alunos").select("*").eq("turma", turma_escolhida).order("nome").execute()
+    alunos = res_alunos.data
+
+    # 3. Carrega o mapa de arquivos (MÁGICA ACONTECE AQUI)
+    mapa_arquivos = listar_arquivos_bucket()
+
+    st.markdown("---")
+    
+    # Cabeçalho da Tabela Visual
+    c_h1, c_h2, c_h3 = st.columns([1, 4, 2])
+    c_h1.write("**FOTO**")
+    c_h2.write("**NOME**")
+    c_h3.write("**AÇÃO**")
+
+    # Loop dos Alunos
+    if not alunos:
+        st.info("Nenhum aluno nesta turma.")
     else:
-        mensagem_titulo = "ROSTO NÃO DETECTADO"
-        mensagem_sub = "Centralize seu rosto na câmera"
+        for aluno in alunos:
+            st.divider()
+            c1, c2, c3 = st.columns([1, 4, 2])
+            uid = aluno['id']
 
-    # 2. Exibe o Feedback (Badge Flutuante)
-    feedback_placeholder.markdown(f"""
-    <div class="hud-badge {cor_classe}">
-        <div class="hud-icon">
-            {'✅' if status_tipo == 'sucesso' else '⚠️' if status_tipo == 'aviso' else '❌'}
-        </div>
-        <div class="hud-title">{mensagem_titulo}</div>
-        <div class="hud-sub">{mensagem_sub}</div>
-    </div>
-    """, unsafe_allow_html=True)
+            # --- COLUNA FOTO ---
+            with c1:
+                # Cria a chave de busca (ex: kaio -> kaio)
+                chave_busca = limpar_texto(aluno['nome'])
+                # Tenta achar o nome real do arquivo no mapa
+                nome_arquivo_real = mapa_arquivos.get(chave_busca)
+                
+                if nome_arquivo_real:
+                    url_img = get_foto_url(nome_arquivo_real)
+                    st.image(url_img, width=60)
+                else:
+                    # Se não achar foto, mostra um ícone
+                    st.markdown("👤")
 
-    # 3. Pausa para leitura e Reset
-    time.sleep(2.5) # Tempo suficiente para ler
-    st.session_state.cam_key += 1
-    st.rerun()
+            # --- COLUNA NOME ---
+            with c2:
+                st.write("") # Espaço vertical
+                st.write(f"**{aluno['nome']}**")
+
+            # --- COLUNA AÇÃO (MUDAR TURMA) ---
+            with c3:
+                try: idx = lista_turmas.index(aluno['turma'])
+                except: idx = 0
+                
+                # Dropdown para mudar de turma na hora
+                nova_turma = st.selectbox(
+                    "Mudar Turma", 
+                    lista_turmas, 
+                    index=idx, 
+                    key=f"sel_{uid}", 
+                    label_visibility="collapsed"
+                )
+                
+                if nova_turma != aluno['turma']:
+                    supabase.table("alunos").update({"turma": nova_turma}).eq("id", uid).execute()
+                    st.toast(f"✅ {aluno['nome']} movido para {nova_turma}!")
+                    time.sleep(1)
+                    st.rerun()
