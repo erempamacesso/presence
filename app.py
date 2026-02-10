@@ -66,12 +66,11 @@ def get_foto_url(nome_real_arquivo):
 # 3. SIDEBAR E MENU
 # ==================================================
 
-# Controle de estado para saber quando o menu mudou
 if 'menu_atual' not in st.session_state:
     st.session_state['menu_atual'] = "Fotograma"
 
 with st.sidebar:
-    # --- LOGO MENU LATERAL ---
+    # --- LOGO SIDEBAR ---
     col_e, col_centro, col_d = st.columns([1, 1, 1])
     with col_centro:
         if os.path.exists("logo_erempam.png"):
@@ -87,7 +86,6 @@ with st.sidebar:
         unsafe_allow_html=True
     )
     
-    # --- MENU ---
     menu_escolhido = option_menu(
         menu_title=None,
         options=["Fotograma", "Reposicionar Estudante", "Cadastro", "Importação"],
@@ -102,44 +100,40 @@ with st.sidebar:
         }
     )
 
-# ==================================================
-# 4. LÓGICA DO "CLICOU, RECOLHEU"
-# ==================================================
+# --- AUTO-FECHAMENTO DA SIDEBAR ---
 if st.session_state['menu_atual'] != menu_escolhido:
     st.session_state['menu_atual'] = menu_escolhido
     components.html("""
         <script>
             setTimeout(function(){
                 const sidebarButton = window.parent.document.querySelector('[data-testid="stSidebar"] button');
-                if(sidebarButton){
-                    sidebarButton.click();
-                }
+                if(sidebarButton){ sidebarButton.click(); }
             }, 300); 
         </script>
     """, height=0, width=0)
 
 # ==================================================
-# 5. CONTEÚDO DAS TELAS
+# 4. CONTEÚDO DAS TELAS
 # ==================================================
 
 # --------------------------------------------------
-# TELA 1: FOTOGRAMA (ALTERADA AQUI)
+# TELA 1: FOTOGRAMA (COM CORREÇÃO DE ORDEM)
 # --------------------------------------------------
 if menu_escolhido == "Fotograma":
     
-    # --- CABEÇALHO PERSONALIZADO ---
-    # Colunas para centralizar a logo e o texto
-    c1, c2, c3 = st.columns([3, 2, 3]) # O meio (2) é onde fica a logo
+    # --- CABEÇALHO CENTRALIZADO ---
+    # Colunas [3, 2, 3] forçam a coluna do meio a ser estreita e no centro.
+    # use_container_width=True faz a imagem preencher essa coluna estreita.
+    c1, c2, c3 = st.columns([3, 2, 3]) 
     with c2:
         if os.path.exists("logo_erempam.png"):
-            # Width=180px (menor que 200px)
-            st.image("logo_erempam.png", width=180) 
+            st.image("logo_erempam.png", use_container_width=True)
+        else:
+            st.markdown("<h1 style='text-align:center'>🏫</h1>", unsafe_allow_html=True)
     
-    # Título FOTOGRAMA centralizado
     st.markdown("<h1 style='text-align: center; margin-top: -10px;'>FOTOGRAMA</h1>", unsafe_allow_html=True)
     st.markdown("---")
     
-    # Lógica de buscar turmas...
     try:
         res = supabase.table("alunos").select("turma").execute()
         lista_turmas = sorted(list(set([x['turma'] for x in res.data if x.get('turma')])))
@@ -150,7 +144,8 @@ if menu_escolhido == "Fotograma":
         st.stop()
 
     turma_selecionada = st.selectbox("📂 Selecione a Turma:", lista_turmas)
-
+    
+    # Busca alunos ordenados por nome
     alunos = supabase.table("alunos").select("*").eq("turma", turma_selecionada).order("nome").execute().data
     mapa_fotos = listar_arquivos_bucket()
 
@@ -159,22 +154,32 @@ if menu_escolhido == "Fotograma":
     if not alunos:
         st.info("Turma vazia.")
     else:
-        colunas_por_linha = 4
-        cols = st.columns(colunas_por_linha)
+        # --- FIX PARA ORDEM NO MOBILE ---
+        # Processamos em lotes de 4. 
+        # Isso garante que a linha 1 seja preenchida (Alunos 1,2,3,4) antes de criar a linha 2.
+        # No celular, ele mostra o lote 1, depois o lote 2, mantendo a ordem.
         
-        for index, aluno in enumerate(alunos):
-            col_atual = cols[index % colunas_por_linha]
-            with col_atual:
-                with st.container(border=True):
-                    chave = limpar_texto(aluno['nome'])
-                    arq_real = mapa_fotos.get(chave)
-                    
-                    if arq_real:
-                        st.image(get_foto_url(arq_real), use_container_width=True)
-                    else:
-                        st.markdown("<div style='height:80px; display:flex; align-items:center; justify-content:center; background:#f0f0f0; border-radius:5px;'>👤</div>", unsafe_allow_html=True)
-                    
-                    st.markdown(f"<p style='text-align:center; font-weight:bold; font-size:12px; margin-top:5px;'>{aluno['nome']}</p>", unsafe_allow_html=True)
+        qtde_por_linha = 4
+        
+        for i in range(0, len(alunos), qtde_por_linha):
+            # Pega um grupo de 4 alunos
+            grupo = alunos[i : i + qtde_por_linha]
+            
+            # Cria 4 colunas para esse grupo
+            cols = st.columns(qtde_por_linha)
+            
+            for index, aluno in enumerate(grupo):
+                with cols[index]:
+                    with st.container(border=True):
+                        chave = limpar_texto(aluno['nome'])
+                        arq_real = mapa_fotos.get(chave)
+                        
+                        if arq_real:
+                            st.image(get_foto_url(arq_real), use_container_width=True)
+                        else:
+                            st.markdown("<div style='height:80px; display:flex; align-items:center; justify-content:center; background:#f0f0f0; border-radius:5px;'>👤</div>", unsafe_allow_html=True)
+                        
+                        st.markdown(f"<p style='text-align:center; font-weight:bold; font-size:12px; margin-top:5px;'>{aluno['nome']}</p>", unsafe_allow_html=True)
 
 # --------------------------------------------------
 # TELA 2: REPOSICIONAR ESTUDANTE
