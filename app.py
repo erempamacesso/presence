@@ -71,7 +71,7 @@ if 'menu_atual' not in st.session_state:
     st.session_state['menu_atual'] = "Fotograma"
 
 with st.sidebar:
-    # --- LOGO (Opção 1) ---
+    # --- LOGO MENU LATERAL ---
     col_e, col_centro, col_d = st.columns([1, 1, 1])
     with col_centro:
         if os.path.exists("logo_erempam.png"):
@@ -103,12 +103,10 @@ with st.sidebar:
     )
 
 # ==================================================
-# 4. LÓGICA DO "CLICOU, RECOLHEU" (CORRIGIDA)
+# 4. LÓGICA DO "CLICOU, RECOLHEU"
 # ==================================================
 if st.session_state['menu_atual'] != menu_escolhido:
     st.session_state['menu_atual'] = menu_escolhido
-    # JavaScript injetado com um pequeno atraso (setTimeout) para garantir a execução
-    # Isso clica no botão "X" da sidebar automaticamente
     components.html("""
         <script>
             setTimeout(function(){
@@ -125,11 +123,23 @@ if st.session_state['menu_atual'] != menu_escolhido:
 # ==================================================
 
 # --------------------------------------------------
-# TELA 1: FOTOGRAMA
+# TELA 1: FOTOGRAMA (ALTERADA AQUI)
 # --------------------------------------------------
 if menu_escolhido == "Fotograma":
-    st.title("📸 Mapa de Sala")
     
+    # --- CABEÇALHO PERSONALIZADO ---
+    # Colunas para centralizar a logo e o texto
+    c1, c2, c3 = st.columns([3, 2, 3]) # O meio (2) é onde fica a logo
+    with c2:
+        if os.path.exists("logo_erempam.png"):
+            # Width=180px (menor que 200px)
+            st.image("logo_erempam.png", width=180) 
+    
+    # Título FOTOGRAMA centralizado
+    st.markdown("<h1 style='text-align: center; margin-top: -10px;'>FOTOGRAMA</h1>", unsafe_allow_html=True)
+    st.markdown("---")
+    
+    # Lógica de buscar turmas...
     try:
         res = supabase.table("alunos").select("turma").execute()
         lista_turmas = sorted(list(set([x['turma'] for x in res.data if x.get('turma')])))
