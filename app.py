@@ -9,16 +9,20 @@ import time
 # ==================================================
 # 1. CONFIGURAÇÃO E CONEXÃO
 # ==================================================
-st.set_page_config(page_title="Gestão Escolar", layout="wide")
+st.set_page_config(
+    page_title="SIGPAM - EREMPAM", 
+    layout="wide", 
+    initial_sidebar_state="expanded"
+)
 
 # Tenta carregar do arquivo .env (local) ou dos Segredos do Streamlit (nuvem)
 load_dotenv()
 SUPABASE_URL = st.secrets.get("SUPABASE_URL") or os.getenv("SUPABASE_URL")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY") or os.getenv("SUPABASE_KEY")
 
-# Trava de segurança se não tiver senha
+# Trava de segurança
 if not SUPABASE_URL or not SUPABASE_KEY:
-    st.error("ERRO CRÍTICO: Credenciais do Supabase não encontradas. Configure os 'Secrets' no Streamlit Cloud.")
+    st.error("ERRO CRÍTICO: Credenciais do Supabase não encontradas.")
     st.stop()
 
 # Conecta ao banco
@@ -29,224 +33,208 @@ except Exception as e:
     st.stop()
 
 # ==================================================
-# 2. FUNÇÕES INTELIGENTES (Lógica de Arquivos)
+# 2. FUNÇÕES AUXILIARES
 # ==================================================
 def limpar_texto(texto):
-    """
-    Remove acentos, espaços e deixa minúsculo para facilitar a busca.
-    Ex: "João da Silva.jpg" -> "joaodasilva"
-    """
+    """Padroniza textos para busca de fotos"""
     if not texto: return ""
     texto = str(texto)
-    # Se tiver extensão de arquivo, remove
-    if "." in texto:
-        texto = texto.rsplit(".", 1)[0]
-    
+    if "." in texto: texto = texto.rsplit(".", 1)[0]
     nfkd = unicodedata.normalize('NFKD', texto)
     sem_acento = "".join([c for c in nfkd if not unicodedata.combining(c)])
     return sem_acento.lower().replace(" ", "").replace("_", "").strip()
 
 def listar_arquivos_bucket():
-    """
-    Busca TODOS os arquivos da pasta 'fotos-alunos' de uma vez.
-    Retorna um dicionário: {'joaodasilva': 'Joao Da Silva.jpg'}
-    Isso evita erros de extensão (png/jpg) e formatação.
-    """
+    """Busca o mapa de fotos"""
     try:
         arquivos = supabase.storage.from_('fotos-alunos').list()
         mapa = {}
         if arquivos:
             for arq in arquivos:
                 nome_real = arq['name']
-                # Ignora arquivos de sistema
                 if nome_real == ".emptyFolderPlaceholder": continue
-                
                 chave = limpar_texto(nome_real)
                 mapa[chave] = nome_real
         return mapa
-    except Exception as e:
-        # Se der erro, retorna vazio mas não trava o app
-        print(f"Erro bucket: {e}")
-        return {}
+    except: return {}
 
 def get_foto_url(nome_real_arquivo):
-    """Gera o link público da foto"""
+    """Gera link público da foto"""
     try:
         url = supabase.storage.from_('fotos-alunos').get_public_url(nome_real_arquivo)
-        # Adiciona timestamp para atualizar a imagem se ela mudar e evitar cache
-        return f"{url}?t={int(time.time())}" 
-    except:
-        return None
+        return f"{url}?t={int(time.time())}"
+    except: return None
 
 # ==================================================
-# 3. INTERFACE DO USUÁRIO
+# 3. SIDEBAR (MENU E LOGO)
 # ==================================================
-st.title("🏫 Sistema de Gestão Escolar")
 
-# Abas de navegação
-aba1, aba2, aba3 = st.tabs(["📤 Importação em Massa", "👤 Cadastro Manual", "📸 Mapa de Sala (Gestão)"])
+# --- LOGO E TÍTULO CENTRALIZADOS ---
+with st.sidebar:
+    # Verifica se a logo existe no repositório antes de tentar mostrar
+    if os.path.exists("logo_erempam.png"):
+        c_logo1, c_logo2, c_logo3 = st.columns([1, 2, 1])
+        with c_logo2:
+            st.image("logo_erempam.png", use_container_width=True)
+    else:
+        # Se não tiver logo, mostra um ícone
+        st.markdown("<h1 style='text-align: center;'>🏫</h1>", unsafe_allow_html=True)
 
-# --------------------------------------------------
-# ABA 1: IMPORTAÇÃO
-# --------------------------------------------------
-with aba1:
-    st.write("### Importar planilha (Excel ou CSV)")
-    st.info("Colunas necessárias: **Nome**, **Turma** (ou Serie + Turma)")
+    st.markdown(
+        """
+        <div style='text-align: center; margin-bottom: 20px;'>
+            <h1 style='margin:0; font-size: 32px; color: #E63946;'>SIGPAM</h1>
+            <h3 style='margin:0; font-size: 14px; color: #666;'>Sistema de Gerenciamento EREMPAM</h3>
+        </div>
+        """, 
+        unsafe_allow_html=True
+    )
     
-    arquivo = st.file_uploader("Upload Arquivo", type=["csv", "xlsx"])
+    st.markdown("---")
     
-    if arquivo: 
-        if st.button("Processar Arquivo"):
-            try:
-                if arquivo.name.endswith('.csv'): df = pd.read_csv(arquivo)
-                else: df = pd.read_excel(arquivo)
-                
-                # Normaliza cabeçalhos para minúsculo
-                df.columns = [str(c).lower().strip() for c in df.columns]
-                
-                count = 0
-                # Barra de progresso visual
-                barra = st.progress(0)
-                total = len(df)
-                
-                for index, row in df.iterrows():
-                    # Atualiza barra
-                    if total > 0: barra.progress((index + 1) / total)
-                    
-                    try:
-                        nome = str(row['nome']).upper().strip()
-                        
-                        # Tenta montar a turma de formas diferentes
-                        turma_final = ""
-                        if 'turma' in df.columns and 'serie' in df.columns:
-                            turma_final = f"{row['serie']} {row['turma']}".strip()
-                        elif 'turma' in df.columns:
-                            turma_final = str(row['turma']).strip()
-                        else:
-                            turma_final = "SEM TURMA"
+    # Menu Radio
+    menu_escolhido = st.radio(
+        "Navegação:",
+        ("📸 Fotograma", 
+         "🔄 Reposicionar", 
+         "👤 Cadastro", 
+         "📤 Importação")
+    )
 
-                        # Verifica se já existe para não duplicar
-                        existe = supabase.table("alunos").select("id").eq("nome", nome).execute()
-                        if not existe.data:
-                            supabase.table("alunos").insert({
-                                "nome": nome, 
-                                "turma": turma_final
-                            }).execute()
-                            count += 1
-                    except: pass
-                
-                st.success(f"✅ Processamento concluído! {count} novos alunos importados.")
-                time.sleep(2)
-                st.rerun() # Atualiza a tela
-            except Exception as e: 
-                st.error(f"Erro ao ler arquivo: {e}")
+# ==================================================
+# 4. LÓGICA DAS TELAS
+# ==================================================
 
 # --------------------------------------------------
-# ABA 2: CADASTRO MANUAL
+# TELA 1: FOTOGRAMA
 # --------------------------------------------------
-with aba2:
-    st.write("### Cadastro Individual")
-    with st.form("form_manual", clear_on_submit=True):
-        col_a, col_b = st.columns(2)
-        with col_a:
-            nome_man = st.text_input("Nome Completo")
-        with col_b:
-            turma_man = st.text_input("Turma (Ex: 1º A)")
-            
-        if st.form_submit_button("Cadastrar Aluno"):
-            if nome_man and turma_man:
-                try:
-                    supabase.table("alunos").insert({
-                        "nome": nome_man.upper(), 
-                        "turma": turma_man.upper()
-                    }).execute()
-                    st.success(f"Aluno {nome_man} salvo com sucesso!")
-                except Exception as e:
-                    st.error(f"Erro ao salvar: {e}")
-            else:
-                st.warning("Preencha todos os campos.")
-
-# --------------------------------------------------
-# ABA 3: MAPA DE SALA (GESTÃO)
-# --------------------------------------------------
-with aba3:
-    st.header("Visualização de Turmas")
-
-    # 1. Carregar lista de turmas disponíveis
+if menu_escolhido == "📸 Fotograma":
+    st.title("📸 Mapa de Sala (Fotograma)")
+    
+    # 1. Seleção de Turma
     try:
         res = supabase.table("alunos").select("turma").execute()
-        # Cria lista única, remove vazios e ordena
         lista_turmas = sorted(list(set([x['turma'] for x in res.data if x.get('turma')])))
-        
-        if not lista_turmas:
-            st.warning("Nenhuma turma encontrada. Cadastre alunos primeiro.")
-            st.stop()
-    except Exception as e:
-        st.error("Erro ao buscar turmas. Verifique a conexão.")
+    except: lista_turmas = []
+
+    if not lista_turmas:
+        st.warning("Nenhuma turma cadastrada.")
         st.stop()
 
-    # Dropdown de seleção
-    turma_escolhida = st.selectbox("Selecione a Turma:", lista_turmas)
-    
-    # 2. Busca Alunos da turma
-    res_alunos = supabase.table("alunos").select("*").eq("turma", turma_escolhida).order("nome").execute()
-    alunos = res_alunos.data
+    turma_selecionada = st.selectbox("📂 Selecione a Turma:", lista_turmas)
 
-    # 3. Carrega o mapa de arquivos (MÁGICA ACONTECE AQUI)
-    mapa_arquivos = listar_arquivos_bucket()
+    # 2. Busca Alunos
+    alunos = supabase.table("alunos").select("*").eq("turma", turma_selecionada).order("nome").execute().data
+    mapa_fotos = listar_arquivos_bucket()
 
     st.markdown("---")
     
-    # Cabeçalho da Tabela Visual
-    c_h1, c_h2, c_h3 = st.columns([1, 4, 2])
-    c_h1.write("**FOTO**")
-    c_h2.write("**NOME**")
-    c_h3.write("**AÇÃO**")
-
-    # Loop dos Alunos
     if not alunos:
-        st.info("Nenhum aluno nesta turma.")
+        st.info("Turma vazia.")
     else:
-        for aluno in alunos:
-            st.divider()
-            c1, c2, c3 = st.columns([1, 4, 2])
-            uid = aluno['id']
+        # GRADE (4 por linha)
+        colunas_por_linha = 4
+        cols = st.columns(colunas_por_linha)
+        
+        for index, aluno in enumerate(alunos):
+            col_atual = cols[index % colunas_por_linha]
+            
+            with col_atual:
+                with st.container(border=True):
+                    chave = limpar_texto(aluno['nome'])
+                    arq_real = mapa_fotos.get(chave)
+                    
+                    if arq_real:
+                        st.image(get_foto_url(arq_real), use_container_width=True)
+                    else:
+                        st.markdown("<div style='height:100px; display:flex; align-items:center; justify-content:center; background:#eee;'>👤</div>", unsafe_allow_html=True)
+                    
+                    st.markdown(f"<div style='text-align:center; font-weight:bold; font-size:14px;'>{aluno['nome']}</div>", unsafe_allow_html=True)
 
-            # --- COLUNA FOTO ---
-            with c1:
-                # Cria a chave de busca (ex: kaio -> kaio)
-                chave_busca = limpar_texto(aluno['nome'])
-                # Tenta achar o nome real do arquivo no mapa
-                nome_arquivo_real = mapa_arquivos.get(chave_busca)
-                
-                if nome_arquivo_real:
-                    url_img = get_foto_url(nome_arquivo_real)
-                    st.image(url_img, width=60)
-                else:
-                    # Se não achar foto, mostra um ícone
-                    st.markdown("👤")
+# --------------------------------------------------
+# TELA 2: REPOSICIONAR
+# --------------------------------------------------
+elif menu_escolhido == "🔄 Reposicionar":
+    st.title("🔄 Reposicionar Alunos")
+    
+    try:
+        res = supabase.table("alunos").select("turma").execute()
+        lista_turmas = sorted(list(set([x['turma'] for x in res.data if x.get('turma')])))
+    except: lista_turmas = []
 
-            # --- COLUNA NOME ---
-            with c2:
-                st.write("") # Espaço vertical
+    turma_origem = st.selectbox("Filtrar Turma Atual:", lista_turmas)
+    alunos = supabase.table("alunos").select("*").eq("turma", turma_origem).order("nome").execute().data
+    mapa_fotos = listar_arquivos_bucket()
+
+    st.divider()
+
+    c1, c2, c3 = st.columns([1, 4, 3])
+    c1.write("**Foto**")
+    c2.write("**Nome**")
+    c3.write("**Nova Turma**")
+
+    for aluno in alunos:
+        with st.container():
+            col1, col2, col3 = st.columns([1, 4, 3])
+            with col1:
+                chave = limpar_texto(aluno['nome'])
+                arq = mapa_fotos.get(chave)
+                if arq: st.image(get_foto_url(arq), width=50)
+                else: st.write("👤")
+            with col2:
                 st.write(f"**{aluno['nome']}**")
-
-            # --- COLUNA AÇÃO (MUDAR TURMA) ---
-            with c3:
+            with col3:
                 try: idx = lista_turmas.index(aluno['turma'])
                 except: idx = 0
-                
-                # Dropdown para mudar de turma na hora
-                nova_turma = st.selectbox(
-                    "Mudar Turma", 
-                    lista_turmas, 
-                    index=idx, 
-                    key=f"sel_{uid}", 
-                    label_visibility="collapsed"
-                )
-                
-                if nova_turma != aluno['turma']:
-                    supabase.table("alunos").update({"turma": nova_turma}).eq("id", uid).execute()
-                    st.toast(f"✅ {aluno['nome']} movido para {nova_turma}!")
-                    time.sleep(1)
+                nova = st.selectbox("Mudar", lista_turmas, index=idx, key=f"r_{aluno['id']}", label_visibility="collapsed")
+                if nova != aluno['turma']:
+                    supabase.table("alunos").update({"turma": nova}).eq("id", aluno['id']).execute()
+                    st.toast(f"✅ Movido para {nova}")
+                    time.sleep(0.5)
                     st.rerun()
+            st.markdown("---")
+
+# --------------------------------------------------
+# TELA 3: CADASTRO
+# --------------------------------------------------
+elif menu_escolhido == "👤 Cadastro":
+    st.title("👤 Novo Aluno")
+    with st.form("form_cad"):
+        nome = st.text_input("Nome Completo")
+        turma = st.text_input("Turma (Ex: 1º A)")
+        if st.form_submit_button("Salvar"):
+            if nome and turma:
+                supabase.table("alunos").insert({"nome": nome.upper().strip(), "turma": turma.upper().strip()}).execute()
+                st.success("Salvo!")
+
+# --------------------------------------------------
+# TELA 4: IMPORTAÇÃO
+# --------------------------------------------------
+elif menu_escolhido == "📤 Importação":
+    st.title("📤 Importar em Massa")
+    st.info("Arquivo Excel ou CSV com colunas: **Nome**, **Turma**")
+    
+    arquivo = st.file_uploader("Arquivo", type=["csv", "xlsx"])
+    if arquivo and st.button("Processar"):
+        if arquivo.name.endswith('.csv'): df = pd.read_csv(arquivo)
+        else: df = pd.read_excel(arquivo)
+        
+        df.columns = [str(c).lower().strip() for c in df.columns]
+        count = 0
+        bar = st.progress(0)
+        
+        for i, row in df.iterrows():
+            bar.progress((i+1)/len(df))
+            try:
+                nome = str(row['nome']).upper().strip()
+                t = row.get('turma', 'SEM TURMA')
+                if 'serie' in df.columns: t = f"{row['serie']} {t}"
+                
+                check = supabase.table("alunos").select("id").eq("nome", nome).execute()
+                if not check.data:
+                    supabase.table("alunos").insert({"nome": nome, "turma": str(t).strip()}).execute()
+                    count += 1
+            except: pass
+        st.success(f"{count} alunos importados.")
+        time.sleep(2)
+        st.rerun()
