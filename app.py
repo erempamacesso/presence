@@ -63,15 +63,15 @@ def get_foto_url(nome_real_arquivo):
     except: return None
 
 # ==================================================
-# 3. SIDEBAR E LÓGICA DE MENU
+# 3. SIDEBAR E MENU
 # ==================================================
 
-# Inicializa variável de sessão para controlar a mudança de menu
+# Controle de estado para saber quando o menu mudou
 if 'menu_atual' not in st.session_state:
     st.session_state['menu_atual'] = "Fotograma"
 
 with st.sidebar:
-    # --- LOGO MENOR (OPÇÃO 1 - 33% da largura) ---
+    # --- LOGO (Opção 1) ---
     col_e, col_centro, col_d = st.columns([1, 1, 1])
     with col_centro:
         if os.path.exists("logo_erempam.png"):
@@ -87,7 +87,7 @@ with st.sidebar:
         unsafe_allow_html=True
     )
     
-    # --- MENU RENOMEADO ---
+    # --- MENU ---
     menu_escolhido = option_menu(
         menu_title=None,
         options=["Fotograma", "Reposicionar Estudante", "Cadastro", "Importação"],
@@ -102,25 +102,26 @@ with st.sidebar:
         }
     )
 
-# --- LÓGICA DO "CLICOU, RECOLHEU" ---
-# Se o menu mudou, injeta JavaScript para fechar a sidebar
+# ==================================================
+# 4. LÓGICA DO "CLICOU, RECOLHEU" (CORRIGIDA)
+# ==================================================
 if st.session_state['menu_atual'] != menu_escolhido:
     st.session_state['menu_atual'] = menu_escolhido
-    # Script JS para clicar no botão de fechar (X) da sidebar
-    js = """
-    <script>
-        var sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
-        if (sidebar) {
-            var closeBtn = window.parent.document.querySelector('[data-testid="stSidebar"] button');
-            if (closeBtn) { closeBtn.click(); }
-        }
-    </script>
-    """
-    components.html(js, height=0, width=0)
-    st.rerun()
+    # JavaScript injetado com um pequeno atraso (setTimeout) para garantir a execução
+    # Isso clica no botão "X" da sidebar automaticamente
+    components.html("""
+        <script>
+            setTimeout(function(){
+                const sidebarButton = window.parent.document.querySelector('[data-testid="stSidebar"] button');
+                if(sidebarButton){
+                    sidebarButton.click();
+                }
+            }, 300); 
+        </script>
+    """, height=0, width=0)
 
 # ==================================================
-# 4. CONTEÚDO DAS TELAS
+# 5. CONTEÚDO DAS TELAS
 # ==================================================
 
 # --------------------------------------------------
