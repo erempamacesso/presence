@@ -5,7 +5,8 @@ import os
 from dotenv import load_dotenv
 import unicodedata
 import time
-from streamlit_option_menu import option_menu # NOVA BIBLIOTECA
+from streamlit_option_menu import option_menu
+import streamlit.components.v1 as components
 
 # ==================================================
 # 1. CONFIGURAÇÃO E CONEXÃO
@@ -16,7 +17,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Carrega variáveis de ambiente
+# Carrega variáveis
 load_dotenv()
 SUPABASE_URL = st.secrets.get("SUPABASE_URL") or os.getenv("SUPABASE_URL")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY") or os.getenv("SUPABASE_KEY")
@@ -62,20 +63,22 @@ def get_foto_url(nome_real_arquivo):
     except: return None
 
 # ==================================================
-# 3. SIDEBAR PROFISSIONAL (A GRANDE MUDANÇA)
+# 3. SIDEBAR E LÓGICA DE MENU
 # ==================================================
+
+# Inicializa variável de sessão para controlar a mudança de menu
+if 'menu_atual' not in st.session_state:
+    st.session_state['menu_atual'] = "Fotograma"
+
 with st.sidebar:
-    # --- LOGO MENOR E CENTRALIZADA ---
-    # Usamos colunas [1, 2, 1] para criar "margens" vazias nas laterais
-    # Isso força a logo a ficar no meio e menor, ocupando apenas 50% da largura
-    col_e, col_centro, col_d = st.columns([1, 2, 1])
+    # --- LOGO MENOR (OPÇÃO 1 - 33% da largura) ---
+    col_e, col_centro, col_d = st.columns([1, 1, 1])
     with col_centro:
         if os.path.exists("logo_erempam.png"):
             st.image("logo_erempam.png", use_container_width=True)
         else:
             st.markdown("<h1>🏫</h1>", unsafe_allow_html=True)
     
-    # Título estilizado e limpo
     st.markdown(
         """<div style='text-align: center; margin-bottom: 20px;'>
             <h2 style='margin:0; font-size: 24px; color: #333;'>SIGPAM</h2>
@@ -84,23 +87,40 @@ with st.sidebar:
         unsafe_allow_html=True
     )
     
-    # --- MENU MODERNO (OPTION MENU) ---
+    # --- MENU RENOMEADO ---
     menu_escolhido = option_menu(
-        menu_title=None, # Título oculto para ficar limpo
-        options=["Fotograma", "Reposicionar", "Cadastro", "Importação"],
+        menu_title=None,
+        options=["Fotograma", "Reposicionar Estudante", "Cadastro", "Importação"],
         icons=["camera-fill", "arrow-left-right", "person-plus-fill", "cloud-upload-fill"],
         menu_icon="cast",
         default_index=0,
         styles={
             "container": {"padding": "0!important", "background-color": "#f0f2f6"},
             "icon": {"color": "orange", "font-size": "18px"}, 
-            "nav-link": {"font-size": "16px", "text-align": "left", "margin":"0px", "--hover-color": "#eee"},
+            "nav-link": {"font-size": "15px", "text-align": "left", "margin":"0px", "--hover-color": "#eee"},
             "nav-link-selected": {"background-color": "#ff4b4b"},
         }
     )
 
+# --- LÓGICA DO "CLICOU, RECOLHEU" ---
+# Se o menu mudou, injeta JavaScript para fechar a sidebar
+if st.session_state['menu_atual'] != menu_escolhido:
+    st.session_state['menu_atual'] = menu_escolhido
+    # Script JS para clicar no botão de fechar (X) da sidebar
+    js = """
+    <script>
+        var sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
+        if (sidebar) {
+            var closeBtn = window.parent.document.querySelector('[data-testid="stSidebar"] button');
+            if (closeBtn) { closeBtn.click(); }
+        }
+    </script>
+    """
+    components.html(js, height=0, width=0)
+    st.rerun()
+
 # ==================================================
-# 4. LÓGICA DAS TELAS
+# 4. CONTEÚDO DAS TELAS
 # ==================================================
 
 # --------------------------------------------------
@@ -108,7 +128,6 @@ with st.sidebar:
 # --------------------------------------------------
 if menu_escolhido == "Fotograma":
     st.title("📸 Mapa de Sala")
-    st.caption("Visualização em grade da turma")
     
     try:
         res = supabase.table("alunos").select("turma").execute()
@@ -129,7 +148,6 @@ if menu_escolhido == "Fotograma":
     if not alunos:
         st.info("Turma vazia.")
     else:
-        # Layout responsivo: Cards
         colunas_por_linha = 4
         cols = st.columns(colunas_por_linha)
         
@@ -145,14 +163,13 @@ if menu_escolhido == "Fotograma":
                     else:
                         st.markdown("<div style='height:80px; display:flex; align-items:center; justify-content:center; background:#f0f0f0; border-radius:5px;'>👤</div>", unsafe_allow_html=True)
                     
-                    # Nome menor para caber melhor
                     st.markdown(f"<p style='text-align:center; font-weight:bold; font-size:12px; margin-top:5px;'>{aluno['nome']}</p>", unsafe_allow_html=True)
 
 # --------------------------------------------------
-# TELA 2: REPOSICIONAR
+# TELA 2: REPOSICIONAR ESTUDANTE
 # --------------------------------------------------
-elif menu_escolhido == "Reposicionar":
-    st.title("🔄 Reposicionar Alunos")
+elif menu_escolhido == "Reposicionar Estudante":
+    st.title("🔄 Reposicionar Estudante")
     
     try:
         res = supabase.table("alunos").select("turma").execute()
