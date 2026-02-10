@@ -5,6 +5,7 @@ import os
 from dotenv import load_dotenv
 import unicodedata
 import time
+from streamlit_option_menu import option_menu # NOVA BIBLIOTECA
 
 # ==================================================
 # 1. CONFIGURAÇÃO E CONEXÃO
@@ -15,17 +16,15 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Tenta carregar do arquivo .env (local) ou dos Segredos do Streamlit (nuvem)
+# Carrega variáveis de ambiente
 load_dotenv()
 SUPABASE_URL = st.secrets.get("SUPABASE_URL") or os.getenv("SUPABASE_URL")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY") or os.getenv("SUPABASE_KEY")
 
-# Trava de segurança
 if not SUPABASE_URL or not SUPABASE_KEY:
     st.error("ERRO CRÍTICO: Credenciais do Supabase não encontradas.")
     st.stop()
 
-# Conecta ao banco
 try:
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
@@ -36,7 +35,6 @@ except Exception as e:
 # 2. FUNÇÕES AUXILIARES
 # ==================================================
 def limpar_texto(texto):
-    """Padroniza textos para busca de fotos"""
     if not texto: return ""
     texto = str(texto)
     if "." in texto: texto = texto.rsplit(".", 1)[0]
@@ -45,7 +43,6 @@ def limpar_texto(texto):
     return sem_acento.lower().replace(" ", "").replace("_", "").strip()
 
 def listar_arquivos_bucket():
-    """Busca o mapa de fotos"""
     try:
         arquivos = supabase.storage.from_('fotos-alunos').list()
         mapa = {}
@@ -59,46 +56,47 @@ def listar_arquivos_bucket():
     except: return {}
 
 def get_foto_url(nome_real_arquivo):
-    """Gera link público da foto"""
     try:
         url = supabase.storage.from_('fotos-alunos').get_public_url(nome_real_arquivo)
         return f"{url}?t={int(time.time())}"
     except: return None
 
 # ==================================================
-# 3. SIDEBAR (MENU E LOGO)
+# 3. SIDEBAR PROFISSIONAL (A GRANDE MUDANÇA)
 # ==================================================
-
-# --- LOGO E TÍTULO CENTRALIZADOS ---
 with st.sidebar:
-    # Verifica se a logo existe no repositório antes de tentar mostrar
-    if os.path.exists("logo_erempam.png"):
-        c_logo1, c_logo2, c_logo3 = st.columns([1, 2, 1])
-        with c_logo2:
+    # --- LOGO MENOR E CENTRALIZADA ---
+    # Usamos colunas [1, 2, 1] para criar "margens" vazias nas laterais
+    # Isso força a logo a ficar no meio e menor, ocupando apenas 50% da largura
+    col_e, col_centro, col_d = st.columns([1, 2, 1])
+    with col_centro:
+        if os.path.exists("logo_erempam.png"):
             st.image("logo_erempam.png", use_container_width=True)
-    else:
-        # Se não tiver logo, mostra um ícone
-        st.markdown("<h1 style='text-align: center;'>🏫</h1>", unsafe_allow_html=True)
-
+        else:
+            st.markdown("<h1>🏫</h1>", unsafe_allow_html=True)
+    
+    # Título estilizado e limpo
     st.markdown(
-        """
-        <div style='text-align: center; margin-bottom: 20px;'>
-            <h1 style='margin:0; font-size: 32px; color: #E63946;'>SIGPAM</h1>
-            <h3 style='margin:0; font-size: 14px; color: #666;'>Sistema de Gerenciamento EREMPAM</h3>
-        </div>
-        """, 
+        """<div style='text-align: center; margin-bottom: 20px;'>
+            <h2 style='margin:0; font-size: 24px; color: #333;'>SIGPAM</h2>
+            <p style='margin:0; font-size: 12px; color: #888;'>Gestão Escolar Inteligente</p>
+        </div>""", 
         unsafe_allow_html=True
     )
     
-    st.markdown("---")
-    
-    # Menu Radio
-    menu_escolhido = st.radio(
-        "Navegação:",
-        ("📸 Fotograma", 
-         "🔄 Reposicionar", 
-         "👤 Cadastro", 
-         "📤 Importação")
+    # --- MENU MODERNO (OPTION MENU) ---
+    menu_escolhido = option_menu(
+        menu_title=None, # Título oculto para ficar limpo
+        options=["Fotograma", "Reposicionar", "Cadastro", "Importação"],
+        icons=["camera-fill", "arrow-left-right", "person-plus-fill", "cloud-upload-fill"],
+        menu_icon="cast",
+        default_index=0,
+        styles={
+            "container": {"padding": "0!important", "background-color": "#f0f2f6"},
+            "icon": {"color": "orange", "font-size": "18px"}, 
+            "nav-link": {"font-size": "16px", "text-align": "left", "margin":"0px", "--hover-color": "#eee"},
+            "nav-link-selected": {"background-color": "#ff4b4b"},
+        }
     )
 
 # ==================================================
@@ -108,10 +106,10 @@ with st.sidebar:
 # --------------------------------------------------
 # TELA 1: FOTOGRAMA
 # --------------------------------------------------
-if menu_escolhido == "📸 Fotograma":
-    st.title("📸 Mapa de Sala (Fotograma)")
+if menu_escolhido == "Fotograma":
+    st.title("📸 Mapa de Sala")
+    st.caption("Visualização em grade da turma")
     
-    # 1. Seleção de Turma
     try:
         res = supabase.table("alunos").select("turma").execute()
         lista_turmas = sorted(list(set([x['turma'] for x in res.data if x.get('turma')])))
@@ -123,7 +121,6 @@ if menu_escolhido == "📸 Fotograma":
 
     turma_selecionada = st.selectbox("📂 Selecione a Turma:", lista_turmas)
 
-    # 2. Busca Alunos
     alunos = supabase.table("alunos").select("*").eq("turma", turma_selecionada).order("nome").execute().data
     mapa_fotos = listar_arquivos_bucket()
 
@@ -132,13 +129,12 @@ if menu_escolhido == "📸 Fotograma":
     if not alunos:
         st.info("Turma vazia.")
     else:
-        # GRADE (4 por linha)
+        # Layout responsivo: Cards
         colunas_por_linha = 4
         cols = st.columns(colunas_por_linha)
         
         for index, aluno in enumerate(alunos):
             col_atual = cols[index % colunas_por_linha]
-            
             with col_atual:
                 with st.container(border=True):
                     chave = limpar_texto(aluno['nome'])
@@ -147,14 +143,15 @@ if menu_escolhido == "📸 Fotograma":
                     if arq_real:
                         st.image(get_foto_url(arq_real), use_container_width=True)
                     else:
-                        st.markdown("<div style='height:100px; display:flex; align-items:center; justify-content:center; background:#eee;'>👤</div>", unsafe_allow_html=True)
+                        st.markdown("<div style='height:80px; display:flex; align-items:center; justify-content:center; background:#f0f0f0; border-radius:5px;'>👤</div>", unsafe_allow_html=True)
                     
-                    st.markdown(f"<div style='text-align:center; font-weight:bold; font-size:14px;'>{aluno['nome']}</div>", unsafe_allow_html=True)
+                    # Nome menor para caber melhor
+                    st.markdown(f"<p style='text-align:center; font-weight:bold; font-size:12px; margin-top:5px;'>{aluno['nome']}</p>", unsafe_allow_html=True)
 
 # --------------------------------------------------
 # TELA 2: REPOSICIONAR
 # --------------------------------------------------
-elif menu_escolhido == "🔄 Reposicionar":
+elif menu_escolhido == "Reposicionar":
     st.title("🔄 Reposicionar Alunos")
     
     try:
@@ -169,9 +166,9 @@ elif menu_escolhido == "🔄 Reposicionar":
     st.divider()
 
     c1, c2, c3 = st.columns([1, 4, 3])
-    c1.write("**Foto**")
-    c2.write("**Nome**")
-    c3.write("**Nova Turma**")
+    c1.markdown("**Foto**")
+    c2.markdown("**Nome**")
+    c3.markdown("**Nova Turma**")
 
     for aluno in alunos:
         with st.container():
@@ -179,10 +176,10 @@ elif menu_escolhido == "🔄 Reposicionar":
             with col1:
                 chave = limpar_texto(aluno['nome'])
                 arq = mapa_fotos.get(chave)
-                if arq: st.image(get_foto_url(arq), width=50)
-                else: st.write("👤")
+                if arq: st.image(get_foto_url(arq), width=40)
+                else: st.markdown("👤")
             with col2:
-                st.write(f"**{aluno['nome']}**")
+                st.markdown(f"<span style='font-size:14px'>{aluno['nome']}</span>", unsafe_allow_html=True)
             with col3:
                 try: idx = lista_turmas.index(aluno['turma'])
                 except: idx = 0
@@ -197,25 +194,27 @@ elif menu_escolhido == "🔄 Reposicionar":
 # --------------------------------------------------
 # TELA 3: CADASTRO
 # --------------------------------------------------
-elif menu_escolhido == "👤 Cadastro":
+elif menu_escolhido == "Cadastro":
     st.title("👤 Novo Aluno")
-    with st.form("form_cad"):
-        nome = st.text_input("Nome Completo")
-        turma = st.text_input("Turma (Ex: 1º A)")
-        if st.form_submit_button("Salvar"):
-            if nome and turma:
-                supabase.table("alunos").insert({"nome": nome.upper().strip(), "turma": turma.upper().strip()}).execute()
-                st.success("Salvo!")
+    with st.container(border=True):
+        with st.form("form_cad"):
+            st.write("Dados do Estudante")
+            nome = st.text_input("Nome Completo")
+            turma = st.text_input("Turma (Ex: 1º A)")
+            if st.form_submit_button("💾 Salvar Cadastro", use_container_width=True):
+                if nome and turma:
+                    supabase.table("alunos").insert({"nome": nome.upper().strip(), "turma": turma.upper().strip()}).execute()
+                    st.success("Aluno salvo com sucesso!")
 
 # --------------------------------------------------
 # TELA 4: IMPORTAÇÃO
 # --------------------------------------------------
-elif menu_escolhido == "📤 Importação":
-    st.title("📤 Importar em Massa")
-    st.info("Arquivo Excel ou CSV com colunas: **Nome**, **Turma**")
+elif menu_escolhido == "Importação":
+    st.title("📤 Importação em Massa")
+    st.info("Suporta arquivos Excel (.xlsx) ou CSV.")
     
-    arquivo = st.file_uploader("Arquivo", type=["csv", "xlsx"])
-    if arquivo and st.button("Processar"):
+    arquivo = st.file_uploader("Arraste o arquivo aqui", type=["csv", "xlsx"])
+    if arquivo and st.button("🚀 Processar Arquivo", use_container_width=True):
         if arquivo.name.endswith('.csv'): df = pd.read_csv(arquivo)
         else: df = pd.read_excel(arquivo)
         
@@ -235,6 +234,6 @@ elif menu_escolhido == "📤 Importação":
                     supabase.table("alunos").insert({"nome": nome, "turma": str(t).strip()}).execute()
                     count += 1
             except: pass
-        st.success(f"{count} alunos importados.")
+        st.success(f"Sucesso! {count} alunos importados.")
         time.sleep(2)
         st.rerun()
