@@ -34,7 +34,7 @@ except Exception as e:
     st.stop()
 
 # ==================================================
-# 2. FUNÇÕES AUXILIARES (ATUALIZADAS)
+# 2. FUNÇÕES AUXILIARES
 # ==================================================
 def limpar_texto(texto):
     """
@@ -48,16 +48,15 @@ def limpar_texto(texto):
     nfkd = unicodedata.normalize('NFKD', texto)
     sem_acento = "".join([c for c in nfkd if not unicodedata.combining(c)])
     
-    # A REGRA NOVA: Remove tudo que não for letra/número para garantir o match
+    # Remove tudo que não for letra/número para garantir o match
     return sem_acento.lower().replace(" ", "").replace("_", "").replace("-", "").strip()
 
 def listar_arquivos_bucket():
     """
     Cria um MAPA (Dicionário) de fotos.
-    Agora busca até 5000 arquivos (antes travava em 100).
+    Busca até 5000 arquivos para não faltar foto.
     """
     try:
-        # --- CORREÇÃO AQUI: LIMIT 5000 ---
         arquivos = supabase.storage.from_('fotos-alunos').list(path=None, options={'limit': 5000})
         
         mapa = {}
@@ -73,7 +72,6 @@ def listar_arquivos_bucket():
                 mapa[chave] = nome_real
         return mapa
     except Exception as e: 
-        # print(e) # Debug se precisar
         return {}
 
 def get_foto_url(nome_real_arquivo):
@@ -157,27 +155,28 @@ if menu_escolhido == "Fotograma":
     turma_selecionada = st.selectbox("📂 Selecione a Turma:", lista_turmas)
 
     # Busca alunos
-    alunos = supabase.table("alunos").select("*").eq("turma", turma_selecionada).order("nome").execute().data
+    data_alunos = supabase.table("alunos").select("*").eq("turma", turma_selecionada).execute().data
     
-    # Busca Mapa de Fotos (Agora com todas as fotos)
+    # --- CORREÇÃO DE ORDEM (FORÇA PYTHON A ORDENAR) ---
+    if data_alunos:
+        data_alunos.sort(key=lambda x: x['nome']) # Garante A-Z no celular
+
+    # Busca Mapa de Fotos
     mapa_fotos = listar_arquivos_bucket()
 
     st.markdown("---")
     
-    if not alunos:
+    if not data_alunos:
         st.info("Turma vazia.")
     else:
         colunas_por_linha = 4
         cols = st.columns(colunas_por_linha)
         
-        for index, aluno in enumerate(alunos):
+        for index, aluno in enumerate(data_alunos):
             col_atual = cols[index % colunas_por_linha]
             with col_atual:
                 with st.container(border=True):
-                    # Gera chave limpa do aluno
                     chave = limpar_texto(aluno['nome'])
-                    
-                    # Procura no mapa
                     arq_real = mapa_fotos.get(chave)
                     
                     if arq_real:
@@ -202,7 +201,13 @@ elif menu_escolhido == "Reposicionar Estudante":
     with col_filtro:
         turma_origem = st.selectbox("Filtrar Turma Atual:", lista_turmas)
     
-    alunos = supabase.table("alunos").select("*").eq("turma", turma_origem).order("nome").execute().data
+    # Busca alunos
+    data_alunos = supabase.table("alunos").select("*").eq("turma", turma_origem).execute().data
+    
+    # --- CORREÇÃO DE ORDEM ---
+    if data_alunos:
+        data_alunos.sort(key=lambda x: x['nome']) # Garante A-Z no celular
+
     mapa_fotos = listar_arquivos_bucket()
 
     st.divider()
@@ -212,7 +217,7 @@ elif menu_escolhido == "Reposicionar Estudante":
     c2.markdown("**Nome**")
     c3.markdown("**Nova Turma**")
 
-    for aluno in alunos:
+    for aluno in data_alunos:
         with st.container():
             col1, col2, col3 = st.columns([1, 4, 3])
             with col1:
