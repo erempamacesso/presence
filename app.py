@@ -37,38 +37,22 @@ except Exception as e:
 # 2. FUNÇÕES AUXILIARES
 # ==================================================
 def limpar_texto(texto):
-    """
-    Padronização ROBUSTA (Igual ao Upload Web).
-    Remove acentos, espaços, underlines e traços.
-    """
     if not texto: return ""
     texto = str(texto)
     if "." in texto: texto = texto.rsplit(".", 1)[0]
-    
     nfkd = unicodedata.normalize('NFKD', texto)
     sem_acento = "".join([c for c in nfkd if not unicodedata.combining(c)])
-    
-    # Remove tudo que não for letra/número para garantir o match
     return sem_acento.lower().replace(" ", "").replace("_", "").replace("-", "").strip()
 
 def listar_arquivos_bucket():
-    """
-    Cria um MAPA (Dicionário) de fotos.
-    Busca até 5000 arquivos para não faltar foto.
-    """
     try:
         arquivos = supabase.storage.from_('fotos-alunos').list(path=None, options={'limit': 5000})
-        
         mapa = {}
         if arquivos:
             for arq in arquivos:
                 nome_real = arq.get('name') if isinstance(arq, dict) else getattr(arq, 'name', '')
-                
                 if not nome_real or nome_real == ".emptyFolderPlaceholder": continue
-                
-                # Cria a chave limpa para busca
                 chave = limpar_texto(nome_real)
-                # Guarda o nome real para o link
                 mapa[chave] = nome_real
         return mapa
     except Exception as e: 
@@ -76,7 +60,6 @@ def listar_arquivos_bucket():
 
 def get_foto_url(nome_real_arquivo):
     try:
-        # Usa quote para garantir que espaços no nome do arquivo não quebrem o link
         path_seguro = quote(nome_real_arquivo)
         url_base = f"{SUPABASE_URL}/storage/v1/object/public/fotos-alunos/{path_seguro}"
         return f"{url_base}?t={int(time.time())}"
@@ -138,7 +121,7 @@ if st.session_state['menu_atual'] != menu_escolhido:
 # ==================================================
 
 # --------------------------------------------------
-# TELA 1: FOTOGRAMA
+# TELA 1: FOTOGRAMA (CORRIGIDO PARA MOBILE)
 # --------------------------------------------------
 if menu_escolhido == "Fotograma":
     st.title("📸 Mapa de Sala")
@@ -154,14 +137,11 @@ if menu_escolhido == "Fotograma":
 
     turma_selecionada = st.selectbox("📂 Selecione a Turma:", lista_turmas)
 
-    # Busca alunos
     data_alunos = supabase.table("alunos").select("*").eq("turma", turma_selecionada).execute().data
     
-    # --- CORREÇÃO DE ORDEM (FORÇA PYTHON A ORDENAR) ---
     if data_alunos:
-        data_alunos.sort(key=lambda x: x['nome']) # Garante A-Z no celular
+        data_alunos.sort(key=lambda x: x['nome']) 
 
-    # Busca Mapa de Fotos
     mapa_fotos = listar_arquivos_bucket()
 
     st.markdown("---")
@@ -169,22 +149,27 @@ if menu_escolhido == "Fotograma":
     if not data_alunos:
         st.info("Turma vazia.")
     else:
-        colunas_por_linha = 4
-        cols = st.columns(colunas_por_linha)
+        # --- LÓGICA CORRIGIDA: Renderiza LINHA por LINHA ---
+        # Isso garante que no celular a ordem seja 1, 2, 3, 4, 5...
+        qtde_por_linha = 4
         
-        for index, aluno in enumerate(data_alunos):
-            col_atual = cols[index % colunas_por_linha]
-            with col_atual:
-                with st.container(border=True):
-                    chave = limpar_texto(aluno['nome'])
-                    arq_real = mapa_fotos.get(chave)
-                    
-                    if arq_real:
-                        st.image(get_foto_url(arq_real), use_container_width=True)
-                    else:
-                        st.markdown("<div style='height:80px; display:flex; align-items:center; justify-content:center; background:#f0f0f0; border-radius:5px;'>👤</div>", unsafe_allow_html=True)
-                    
-                    st.markdown(f"<p style='text-align:center; font-weight:bold; font-size:12px; margin-top:5px;'>{aluno['nome']}</p>", unsafe_allow_html=True)
+        # Processa em lotes de 4 em 4 (chunks)
+        for i in range(0, len(data_alunos), qtde_por_linha):
+            batch = data_alunos[i : i + qtde_por_linha]
+            cols = st.columns(qtde_por_linha)
+            
+            for idx, aluno in enumerate(batch):
+                with cols[idx]:
+                    with st.container(border=True):
+                        chave = limpar_texto(aluno['nome'])
+                        arq_real = mapa_fotos.get(chave)
+                        
+                        if arq_real:
+                            st.image(get_foto_url(arq_real), use_container_width=True)
+                        else:
+                            st.markdown("<div style='height:80px; display:flex; align-items:center; justify-content:center; background:#f0f0f0; border-radius:5px;'>👤</div>", unsafe_allow_html=True)
+                        
+                        st.markdown(f"<p style='text-align:center; font-weight:bold; font-size:12px; margin-top:5px;'>{aluno['nome']}</p>", unsafe_allow_html=True)
 
 # --------------------------------------------------
 # TELA 2: REPOSICIONAR ESTUDANTE
@@ -201,12 +186,10 @@ elif menu_escolhido == "Reposicionar Estudante":
     with col_filtro:
         turma_origem = st.selectbox("Filtrar Turma Atual:", lista_turmas)
     
-    # Busca alunos
     data_alunos = supabase.table("alunos").select("*").eq("turma", turma_origem).execute().data
     
-    # --- CORREÇÃO DE ORDEM ---
     if data_alunos:
-        data_alunos.sort(key=lambda x: x['nome']) # Garante A-Z no celular
+        data_alunos.sort(key=lambda x: x['nome'])
 
     mapa_fotos = listar_arquivos_bucket()
 
