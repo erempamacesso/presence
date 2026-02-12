@@ -5,9 +5,8 @@ import os
 from dotenv import load_dotenv
 import unicodedata
 import time
-from datetime import datetime
+from datetime import datetime, date
 from streamlit_option_menu import option_menu
-import streamlit.components.v1 as components
 from urllib.parse import quote
 
 # ==================================================
@@ -19,16 +18,11 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# A MÁGICA ACONTECE AQUI:
-# 1. load_dotenv() lê o seu arquivo .env automaticamente
 load_dotenv()
 
-# 2. O código tenta pegar a senha dos Segredos do Streamlit (para quando for pra nuvem)
-# 3. Se não achar, ele pega do os.getenv (que leu do seu .env local)
 SUPABASE_URL = st.secrets.get("SUPABASE_URL") or os.getenv("SUPABASE_URL")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY") or os.getenv("SUPABASE_KEY")
 
-# Verificação de segurança
 if not SUPABASE_URL or not SUPABASE_KEY:
     st.error("ERRO: Credenciais não encontradas. Verifique seu arquivo .env")
     st.stop()
@@ -40,7 +34,16 @@ except Exception as e:
     st.stop()
 
 # ==================================================
-# 2. FUNÇÕES AUXILIARES
+# 2. CONFIGURAÇÃO DOS TRIMESTRES (2026)
+# ==================================================
+TRIMESTRES = {
+    "1º Trimestre": (date(2026, 2, 2), date(2026, 5, 20)),
+    "2º Trimestre": (date(2026, 5, 21), date(2026, 9, 11)),
+    "3º Trimestre": (date(2026, 9, 12), date(2026, 12, 30))
+}
+
+# ==================================================
+# 3. FUNÇÕES AUXILIARES
 # ==================================================
 def limpar_texto(texto):
     if not texto: return ""
@@ -72,7 +75,7 @@ def get_foto_url(nome_real_arquivo):
     except: return None
 
 # ==================================================
-# 3. SIDEBAR
+# 4. SIDEBAR
 # ==================================================
 
 if 'menu_atual' not in st.session_state:
@@ -104,7 +107,7 @@ if st.session_state['menu_atual'] != menu_escolhido:
     st.rerun()
 
 # ==================================================
-# 4. CONTEÚDO
+# 5. CONTEÚDO
 # ==================================================
 
 # --- FOTOGRAMA ---
@@ -143,36 +146,149 @@ if menu_escolhido == "Fotograma":
                                 st.markdown("<div style='height:80px; display:flex; align-items:center; justify-content:center; background:#f0f0f0; border-radius:5px;'>👤</div>", unsafe_allow_html=True)
                             st.markdown(f"<p style='text-align:center; font-weight:bold; font-size:12px; margin-top:5px;'>{aluno['nome']}</p>", unsafe_allow_html=True)
 
-# --- FREQUÊNCIA ---
+# --- FREQUÊNCIA (COM TRIMESTRES INTELIGENTES) ---
 elif menu_escolhido == "Frequência":
-    st.title("📊 Painel de Frequência")
-    col_data, _ = st.columns([1, 3])
-    with col_data:
-        data_selecionada = st.date_input("📅 Data", value=datetime.now(), format="DD/MM/YYYY")
-    
-    data_str = data_selecionada.strftime('%Y-%m-%d')
+    st.title("📊 Gestão de Frequência")
+
+    # Busca TODOS os dados de frequência
     try:
-        rows = supabase.table("frequencia").select("*").eq("data_chamada", data_str).execute().data
-    except: rows = []
-    
-    st.divider()
-    if not rows:
-        st.info(f"Nenhuma chamada registrada para {data_selecionada.strftime('%d/%m/%Y')}.")
+        response = supabase.table("frequencia").select("*").execute()
+        dados = response.data
+    except Exception as e:
+        st.error(f"Erro ao buscar dados: {e}")
+        dados = []
+
+    if not dados:
+        st.warning("Ainda não há chamadas registradas no sistema.")
     else:
-        df = pd.DataFrame(rows)
-        total = len(df)
-        presencas = len(df[df['status'] == 'P'])
-        faltas = len(df[df['status'] == 'F'])
-        
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Total", total)
-        c2.metric("Presentes", presencas)
-        c3.metric("Faltas", faltas, delta_color="inverse")
-        
-        st.markdown("### ⚠️ Ausências")
-        df_faltas = df[df['status'] == 'F'][['turma', 'aluno_nome']].sort_values(['turma', 'aluno_nome'])
-        if df_faltas.empty: st.success("Todos presentes!")
-        else: st.dataframe(df_faltas, use_container_width=True, hide_index=True)
+        # Prepara o DataFrame
+        df = pd.DataFrame(dados)
+        df['data_chamada'] = pd.to_datetime(df['data_chamada']).dt.date
+
+        # CRIAÇÃO DAS ABAS
+        aba1, aba2, aba3 = st.tabs(["📅 Visão Diária", "🚨 Busca Ativa (Trimestres)", "👤 Histórico do Aluno"])
+
+        # --- ABA 1: VISÃO DIÁRIA ---
+        with aba1:
+            st.markdown("### Quem veio hoje?")
+            c1, c2 = st.columns(2)
+            with c1:
+                data_selecionada = st.date_input("Escolha a Data:", value=datetime.now())
+            with c2:
+                turmas_disponiveis = sorted(df['turma'].unique())
+                turma_sel = st.selectbox("Filtrar Turma:", ["Todas"] + turmas_disponiveis)
+
+            df_dia = df[df['data_chamada'] == data_selecionada]
+            if turma_sel != "Todas":
+                df_dia = df_dia[df_dia['turma'] == turma_sel]
+
+            if df_dia.empty:
+                st.info("Nenhuma chamada encontrada para esta data/turma.")
+            else:
+                total = len(df_dia)
+                presentes = len(df_dia[df_dia['status'] == 'P'])
+                faltas = len(df_dia[df_dia['status'] == 'F'])
+                perc = int((presentes/total)*100) if total > 0 else 0
+
+                k1, k2, k3 = st.columns(3)
+                k1.metric("Total", total)
+                k2.metric("Presentes", presentes, f"{perc}%")
+                k3.metric("Faltas", faltas, delta_color="inverse")
+
+                st.divider()
+                st.write("📋 **Lista de Presença:**")
+                df_dia['Status Visual'] = df_dia['status'].apply(lambda x: "✅ Presente" if x == "P" else "❌ Falta")
+                
+                st.dataframe(
+                    df_dia[['turma', 'aluno_nome', 'Status Visual']].sort_values(by=['turma', 'aluno_nome']),
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+        # --- ABA 2: BUSCA ATIVA (COM TRIMESTRES) ---
+        with aba2:
+            st.markdown("### 🕵️‍♂️ Monitoramento de Faltas")
+            st.info("Analise quem está faltando muito em cada período letivo.")
+            
+            # SELETOR DE PERÍODO
+            opcoes_periodo = list(TRIMESTRES.keys()) + ["Personalizado"]
+            escolha_periodo = st.radio("Selecione o Período:", options=opcoes_periodo, horizontal=True)
+            
+            # Lógica das Datas
+            if escolha_periodo == "Personalizado":
+                c1, c2 = st.columns(2)
+                inicio = c1.date_input("Início", value=date(2026, 1, 1))
+                fim = c2.date_input("Fim", value=datetime.now().date())
+            else:
+                inicio, fim = TRIMESTRES[escolha_periodo]
+                st.success(f"🗓️ Período Selecionado: **{inicio.strftime('%d/%m/%Y')}** até **{fim.strftime('%d/%m/%Y')}**")
+                
+                if escolha_periodo == "2º Trimestre":
+                    st.caption("ℹ️ *Atenção: O recesso escolar ocorre entre 10/07 e 24/07.*")
+
+            st.divider()
+
+            # Filtra pelo período
+            mask = (df['data_chamada'] >= inicio) & (df['data_chamada'] <= fim)
+            df_periodo = df.loc[mask]
+
+            if not df_periodo.empty:
+                # Conta apenas as FALTAS ("F")
+                df_faltas = df_periodo[df_periodo['status'] == 'F']
+                
+                if not df_faltas.empty:
+                    # Agrupa e Conta
+                    ranking = df_faltas.groupby(['turma', 'aluno_nome']).size().reset_index(name='Total de Faltas')
+                    ranking = ranking.sort_values(by='Total de Faltas', ascending=False)
+                    
+                    # FILTRO DE ALERTA
+                    alerta = st.slider(f"⚠️ Mostrar alunos com mais de X faltas neste {escolha_periodo}:", 0, 20, 5)
+                    ranking_critico = ranking[ranking['Total de Faltas'] >= alerta]
+                    
+                    if not ranking_critico.empty:
+                        st.error(f"🚩 **{len(ranking_critico)} Alunos** em situação crítica:")
+                        st.dataframe(ranking_critico, use_container_width=True, hide_index=True)
+                    else:
+                        st.success("🎉 Nenhum aluno atingiu esse limite de faltas neste período.")
+                else:
+                    st.success("🎉 Nenhuma falta registrada neste período! Frequência perfeita.")
+            else:
+                st.warning("📭 Sem dados de chamada lançados dentro destas datas.")
+
+        # --- ABA 3: HISTÓRICO DO ALUNO ---
+        with aba3:
+            st.markdown("### 📄 Ficha Individual")
+            
+            lista_alunos = sorted(df['aluno_nome'].unique())
+            aluno_search = st.selectbox("Pesquisar Aluno:", lista_alunos)
+            
+            if aluno_search:
+                df_aluno = df[df['aluno_nome'] == aluno_search].sort_values(by='data_chamada', ascending=False)
+                
+                total_aulas = len(df_aluno)
+                total_faltas = len(df_aluno[df_aluno['status'] == 'F'])
+                freq_perc = 100 - ((total_faltas / total_aulas) * 100) if total_aulas > 0 else 0
+                
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Total de Aulas", total_aulas)
+                m2.metric("Total de Faltas", total_faltas, delta_color="inverse")
+                m3.metric("Frequência Global", f"{freq_perc:.1f}%")
+                
+                # Barra de Progresso
+                cor_barra = ":green" if freq_perc >= 75 else ":red"
+                st.write(f"Situação: **{freq_perc:.1f}%** de Presença {cor_barra}[{'▮'*int(freq_perc/5)}{'▯'*(20-int(freq_perc/5))}]")
+
+                st.divider()
+                st.write("Histórico Detalhado:")
+                
+                df_aluno['Status'] = df_aluno['status'].apply(lambda x: "🔴 Falta" if x == "F" else "🟢 Presente")
+                df_aluno['Data'] = df_aluno['data_chamada'].apply(lambda x: x.strftime('%d/%m/%Y'))
+                
+                st.dataframe(
+                    df_aluno[['Data', 'turma', 'Status']],
+                    use_container_width=True,
+                    hide_index=True
+                )
 
 # --- REPOSICIONAR ---
 elif menu_escolhido == "Reposicionar Estudante":
