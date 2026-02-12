@@ -90,7 +90,6 @@ with st.sidebar:
         unsafe_allow_html=True
     )
     
-    # ADICIONEI "Frequência" AQUI
     menu_escolhido = option_menu(
         menu_title=None,
         options=["Fotograma", "Frequência", "Reposicionar Estudante", "Cadastro", "Importação"],
@@ -172,17 +171,20 @@ if menu_escolhido == "Fotograma":
                         st.markdown(f"<p style='text-align:center; font-weight:bold; font-size:12px; margin-top:5px;'>{aluno['nome']}</p>", unsafe_allow_html=True)
 
 # --------------------------------------------------
-# TELA 2: FREQUÊNCIA (NOVO!)
+# TELA 2: FREQUÊNCIA (AGORA EM PORTUGUÊS)
 # --------------------------------------------------
 elif menu_escolhido == "Frequência":
     st.title("📊 Painel de Frequência")
     
-    # Seletor de Data (Padrão: Hoje)
+    # Seletor de Data (Forçando formato DD/MM/YYYY)
     col_data, col_vazia = st.columns([1, 3])
     with col_data:
-        data_selecionada = st.date_input("📅 Data da Chamada", value=datetime.now())
+        data_selecionada = st.date_input("📅 Data da Chamada", value=datetime.now(), format="DD/MM/YYYY")
     
+    # Formata para o banco (YYYY-MM-DD)
     data_str = data_selecionada.strftime('%Y-%m-%d')
+    # Formata para exibir na tela (DD/MM/YYYY)
+    data_exibicao = data_selecionada.strftime('%d/%m/%Y')
     
     # Busca dados no Supabase
     try:
@@ -192,8 +194,8 @@ elif menu_escolhido == "Frequência":
     st.divider()
     
     if not rows:
-        st.info(f"Nenhuma chamada registrada para {data_selecionada.strftime('%d/%m/%Y')}.")
-        st.markdown("Wait for the class leaders to submit the data via the Student Link.")
+        st.info(f"Nenhuma chamada registrada para {data_exibicao}.")
+        st.markdown("⚠️ **Aguarde os Líderes de Turma enviarem os dados pelo Link.**")
     else:
         df = pd.DataFrame(rows)
         
@@ -232,6 +234,10 @@ elif menu_escolhido == "Frequência":
         # Pequeno gráfico de barras empilhadas (P vs F)
         if not df.empty:
             chart_data = df.groupby(['turma', 'status']).size().unstack(fill_value=0)
+            # Traduzindo a legenda do gráfico
+            if 'P' in chart_data.columns: chart_data = chart_data.rename(columns={'P': 'Presentes'})
+            if 'F' in chart_data.columns: chart_data = chart_data.rename(columns={'F': 'Faltas'})
+            
             st.bar_chart(chart_data)
 
 
@@ -304,30 +310,4 @@ elif menu_escolhido == "Cadastro":
 # TELA 5: IMPORTAÇÃO
 # --------------------------------------------------
 elif menu_escolhido == "Importação":
-    st.title("📤 Importação em Massa")
-    st.info("Suporta arquivos Excel (.xlsx) ou CSV.")
-    
-    arquivo = st.file_uploader("Arraste o arquivo aqui", type=["csv", "xlsx"])
-    if arquivo and st.button("🚀 Processar Arquivo", use_container_width=True):
-        if arquivo.name.endswith('.csv'): df = pd.read_csv(arquivo)
-        else: df = pd.read_excel(arquivo)
-        
-        df.columns = [str(c).lower().strip() for c in df.columns]
-        count = 0
-        bar = st.progress(0)
-        
-        for i, row in df.iterrows():
-            bar.progress((i+1)/len(df))
-            try:
-                nome = str(row['nome']).upper().strip()
-                t = row.get('turma', 'SEM TURMA')
-                if 'serie' in df.columns: t = f"{row['serie']} {t}"
-                
-                check = supabase.table("alunos").select("id").eq("nome", nome).execute()
-                if not check.data:
-                    supabase.table("alunos").insert({"nome": nome, "turma": str(t).strip()}).execute()
-                    count += 1
-            except: pass
-        st.success(f"Sucesso! {count} alunos importados.")
-        time.sleep(2)
-        st.rerun()
+    st.title
