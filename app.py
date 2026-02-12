@@ -146,7 +146,7 @@ if menu_escolhido == "Fotograma":
                                 st.markdown("<div style='height:80px; display:flex; align-items:center; justify-content:center; background:#f0f0f0; border-radius:5px;'>👤</div>", unsafe_allow_html=True)
                             st.markdown(f"<p style='text-align:center; font-weight:bold; font-size:12px; margin-top:5px;'>{aluno['nome']}</p>", unsafe_allow_html=True)
 
-# --- FREQUÊNCIA (COM TRIMESTRES INTELIGENTES) ---
+# --- FREQUÊNCIA (COM PAINEL GERAL DIÁRIO) ---
 elif menu_escolhido == "Frequência":
     st.title("📊 Gestão de Frequência")
 
@@ -170,37 +170,64 @@ elif menu_escolhido == "Frequência":
 
         # --- ABA 1: VISÃO DIÁRIA ---
         with aba1:
-            st.markdown("### Quem veio hoje?")
-            c1, c2 = st.columns(2)
-            with c1:
-                data_selecionada = st.date_input("Escolha a Data:", value=datetime.now())
-            with c2:
-                turmas_disponiveis = sorted(df['turma'].unique())
-                turma_sel = st.selectbox("Filtrar Turma:", ["Todas"] + turmas_disponiveis)
-
-            df_dia = df[df['data_chamada'] == data_selecionada]
-            if turma_sel != "Todas":
-                df_dia = df_dia[df_dia['turma'] == turma_sel]
-
-            if df_dia.empty:
-                st.info("Nenhuma chamada encontrada para esta data/turma.")
+            st.markdown("### Resumo do Dia")
+            
+            # Seletor de Data (Controla tudo nesta aba)
+            data_selecionada = st.date_input("Data de Análise:", value=datetime.now())
+            
+            # 1. FILTRO GERAL POR DATA (Para o Painel da Escola)
+            df_hoje_geral = df[df['data_chamada'] == data_selecionada]
+            
+            if df_hoje_geral.empty:
+                st.info(f"Nenhuma chamada registrada em {data_selecionada.strftime('%d/%m/%Y')}.")
             else:
-                total = len(df_dia)
-                presentes = len(df_dia[df_dia['status'] == 'P'])
-                faltas = len(df_dia[df_dia['status'] == 'F'])
-                perc = int((presentes/total)*100) if total > 0 else 0
-
-                k1, k2, k3 = st.columns(3)
-                k1.metric("Total", total)
-                k2.metric("Presentes", presentes, f"{perc}%")
-                k3.metric("Faltas", faltas, delta_color="inverse")
-
-                st.divider()
-                st.write("📋 **Lista de Presença:**")
-                df_dia['Status Visual'] = df_dia['status'].apply(lambda x: "✅ Presente" if x == "P" else "❌ Falta")
+                # --- MÉTRICAS GERAIS DA ESCOLA ---
+                total_alunos_hoje = len(df_hoje_geral)
+                total_presentes_hoje = len(df_hoje_geral[df_hoje_geral['status'] == 'P'])
+                total_faltas_hoje = len(df_hoje_geral[df_hoje_geral['status'] == 'F'])
+                perc_hoje = int((total_presentes_hoje / total_alunos_hoje) * 100) if total_alunos_hoje > 0 else 0
                 
+                # Container Visual de Resumo
+                with st.container(border=True):
+                    st.markdown(f"**Situação da Escola em {data_selecionada.strftime('%d/%m/%Y')}**")
+                    k1, k2, k3 = st.columns(3)
+                    k1.metric("Alunos Presentes (Total)", total_presentes_hoje)
+                    k2.metric("Alunos Faltosos", total_faltas_hoje, delta_color="inverse")
+                    k3.metric("Adesão Geral", f"{perc_hoje}%")
+                    
+                    st.markdown("---")
+                    st.markdown("**📊 Presença por Turma:**")
+                    
+                    # Calcula Presença por Turma
+                    df_presencas_apenas = df_hoje_geral[df_hoje_geral['status'] == 'P']
+                    if not df_presencas_apenas.empty:
+                        # Agrupa e conta
+                        resumo_turmas = df_presencas_apenas['turma'].value_counts().reset_index()
+                        resumo_turmas.columns = ['Turma', 'Qtd Presentes']
+                        resumo_turmas = resumo_turmas.sort_values(by='Turma')
+                        
+                        # Mostra em duas colunas: Gráfico e Tabela
+                        rc1, rc2 = st.columns([2, 1])
+                        with rc1:
+                            st.bar_chart(resumo_turmas.set_index('Turma'), color="#4CAF50")
+                        with rc2:
+                            st.dataframe(resumo_turmas, use_container_width=True, hide_index=True)
+                    else:
+                        st.warning("Nenhum aluno presente registrado hoje.")
+
+                # --- LISTAGEM DETALHADA ---
+                st.markdown("### 📋 Detalhes da Chamada")
+                turmas_disponiveis = sorted(df_hoje_geral['turma'].unique())
+                turma_sel = st.selectbox("Filtrar Turma Específica:", ["Todas"] + turmas_disponiveis)
+
+                df_detalhe = df_hoje_geral.copy()
+                if turma_sel != "Todas":
+                    df_detalhe = df_detalhe[df_detalhe['turma'] == turma_sel]
+
+                # Tabela Colorida
+                df_detalhe['Status Visual'] = df_detalhe['status'].apply(lambda x: "✅ Presente" if x == "P" else "❌ Falta")
                 st.dataframe(
-                    df_dia[['turma', 'aluno_nome', 'Status Visual']].sort_values(by=['turma', 'aluno_nome']),
+                    df_detalhe[['turma', 'aluno_nome', 'Status Visual']].sort_values(by=['turma', 'aluno_nome']),
                     use_container_width=True,
                     hide_index=True
                 )
