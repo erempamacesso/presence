@@ -2,6 +2,7 @@ streamlit
 pandas
 supabase
 python-dotenv
-openpyxl
-xlsxwriter
+opencv-python-headless
+pytz
 streamlit-option-menu
+openpyxl
