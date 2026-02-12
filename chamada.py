@@ -4,6 +4,7 @@ import os
 from dotenv import load_dotenv
 from datetime import datetime
 import pytz
+import time # <--- O QUE ESTAVA FALTANDO
 
 # Configuração da Página (Mobile First)
 st.set_page_config(page_title="Chamada", page_icon="📝", layout="centered")
@@ -12,23 +13,21 @@ st.set_page_config(page_title="Chamada", page_icon="📝", layout="centered")
 st.markdown("""
     <style>
         /* --- GERAL --- */
-        /* Remove espaços em branco gigantes do Streamlit */
         .block-container {
             padding-top: 1rem !important;
             padding-bottom: 3rem !important;
         }
-        /* Remove padding das colunas internas para compactar */
         div[data-testid="column"] {
             padding: 0px !important;
         }
 
-        /* --- AVATAR (LINDO E LEVE) --- */
+        /* --- AVATAR --- */
         .avatar-circle {
             width: 38px;
             height: 38px;
-            background-color: #e9ecef; /* Cinza claro */
-            color: #495057; /* Cinza escuro para texto */
-            border-radius: 50%; /* Faz ficar redondo */
+            background-color: #e9ecef;
+            color: #495057;
+            border-radius: 50%;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -38,37 +37,31 @@ st.markdown("""
             margin-left: 5px;
         }
 
-        /* --- NOME DO ALUNO --- */
+        /* --- NOME --- */
         .aluno-nome {
             font-size: 15px !important;
             font-weight: 600 !important;
             color: #212529;
             margin: 0;
             line-height: 1.1;
-            white-space: nowrap; /* Evita quebra de linha se possível */
+            white-space: nowrap;
             overflow: hidden;
-            text-overflow: ellipsis; /* Adiciona ... se o nome for muito longo */
+            text-overflow: ellipsis;
         }
         
-        /* --- LINHA DIVISÓRIA MAIS SUTIL --- */
         hr {
             margin-top: 0.5rem;
             margin-bottom: 0.5rem;
             border-top: 1px solid #e9ecef;
         }
 
-        /* --- HACK DE CSS PARA CORES DO TOGGLE (VERDE/VERMELHO) --- */
-        /* Quando ATIVO (Presente) -> Fica VERDE */
+        /* --- CORES DO TOGGLE --- */
         div[data-testid="stToggleButton"] span[aria-checked="true"] {
-            background-color: #28a745 !important; /* Verde Sucesso */
+            background-color: #28a745 !important; 
         }
-        
-        /* Quando INATIVO (Ausente) -> Fica VERMELHO */
         div[data-testid="stToggleButton"] span[aria-checked="false"] {
-             background-color: #dc3545 !important; /* Vermelho Erro */
+             background-color: #dc3545 !important; 
         }
-        
-        /* Ajuste fino para alinhar o toggle verticalmente */
         .stToggle {
             margin-top: -2px;
         }
@@ -143,21 +136,17 @@ except Exception as e:
 if not alunos:
     st.info("Nenhum aluno nesta turma.")
 else:
-    # Usando container para agrupar
     with st.container():
         presencas = {}
         
-        # Loop para criar as linhas dos alunos
         for aluno in alunos:
             nome = aluno['nome']
-            aluno_id = aluno.get('id', nome) # Usa ID se tiver, senão usa o nome
+            aluno_id = aluno.get('id', nome)
             
             st.markdown("---") 
-            # Layout bem apertado: Ícone(1) | Nome(5) | Toggle(1.5)
             c1, c2, c3 = st.columns([1.2, 5, 1.8], vertical_alignment="center")
             
             with c1:
-                # GERA AS INICIAIS (Ex: João Silva -> JS)
                 partes = nome.split()
                 iniciais = ""
                 if len(partes) >= 2:
@@ -165,25 +154,16 @@ else:
                 elif len(partes) == 1:
                      iniciais = partes[0][:2]
                 iniciais = iniciais.upper()
-                
-                # HTML do círculo com iniciais
                 st.markdown(f"<div class='avatar-circle'>{iniciais}</div>", unsafe_allow_html=True)
             
             with c2:
-                # Nome compacto com tratamento para nomes longos
                 st.markdown(f"<div class='aluno-nome' title='{nome}'>{nome}</div>", unsafe_allow_html=True)
             
             with c3:
-                # Toggle (Chavinha)
-                # O CSS lá em cima fará ele ficar Verde(True) ou Vermelho(False)
                 presencas[nome] = st.toggle("P/F", value=True, key=f"t_{aluno_id}", label_visibility="collapsed")
 
         st.markdown("---")
-        
-        # Botão Enviar
         st.markdown("<br>", unsafe_allow_html=True)
-        # Usamos type="primary" para ele pegar a cor de destaque (geralmente vermelho no Streamlit padrão)
-        # Se quiser ele verde, precisa de mais CSS, mas o padrão já destaca bem.
         enviar = st.button("🚀 CONFIRMAR CHAMADA", type="primary", use_container_width=True)
         
         if enviar:
@@ -203,11 +183,13 @@ else:
                 })
             
             try:
+                # ⚠️ ATENÇÃO: Salvando na tabela 'frequencia'.
+                # Se quiser na tabela 'presenca', mude o nome abaixo.
                 supabase.table("frequencia").delete().match({"turma": nome_oficial_banco, "data_chamada": data_hoje}).execute()
                 supabase.table("frequencia").insert(dados_para_enviar).execute()
                 
                 st.toast(f"✅ Chamada Salva! {total_presentes} presentes.", icon="🎉")
-                time.sleep(2) # Dá tempo de ler o toast
+                time.sleep(2) # Agora vai funcionar porque importamos o time!
                  
             except Exception as e:
                 st.error(f"Erro ao salvar: {e}")
