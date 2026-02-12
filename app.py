@@ -5,6 +5,8 @@ import os
 from dotenv import load_dotenv
 import unicodedata
 import time
+from datetime import datetime, date
+import pytz
 from streamlit_option_menu import option_menu
 import streamlit.components.v1 as components
 from urllib.parse import quote
@@ -88,10 +90,11 @@ with st.sidebar:
         unsafe_allow_html=True
     )
     
+    # ADICIONEI "Frequência" AQUI
     menu_escolhido = option_menu(
         menu_title=None,
-        options=["Fotograma", "Reposicionar Estudante", "Cadastro", "Importação"],
-        icons=["camera-fill", "arrow-left-right", "person-plus-fill", "cloud-upload-fill"],
+        options=["Fotograma", "Frequência", "Reposicionar Estudante", "Cadastro", "Importação"],
+        icons=["camera-fill", "clipboard-check-fill", "arrow-left-right", "person-plus-fill", "cloud-upload-fill"],
         menu_icon="cast",
         default_index=0,
         styles={
@@ -121,7 +124,7 @@ if st.session_state['menu_atual'] != menu_escolhido:
 # ==================================================
 
 # --------------------------------------------------
-# TELA 1: FOTOGRAMA (CORRIGIDO PARA MOBILE)
+# TELA 1: FOTOGRAMA
 # --------------------------------------------------
 if menu_escolhido == "Fotograma":
     st.title("📸 Mapa de Sala")
@@ -149,11 +152,8 @@ if menu_escolhido == "Fotograma":
     if not data_alunos:
         st.info("Turma vazia.")
     else:
-        # --- LÓGICA CORRIGIDA: Renderiza LINHA por LINHA ---
-        # Isso garante que no celular a ordem seja 1, 2, 3, 4, 5...
+        # LÓGICA LINHA POR LINHA (MOBILE FIX)
         qtde_por_linha = 4
-        
-        # Processa em lotes de 4 em 4 (chunks)
         for i in range(0, len(data_alunos), qtde_por_linha):
             batch = data_alunos[i : i + qtde_por_linha]
             cols = st.columns(qtde_por_linha)
@@ -172,7 +172,71 @@ if menu_escolhido == "Fotograma":
                         st.markdown(f"<p style='text-align:center; font-weight:bold; font-size:12px; margin-top:5px;'>{aluno['nome']}</p>", unsafe_allow_html=True)
 
 # --------------------------------------------------
-# TELA 2: REPOSICIONAR ESTUDANTE
+# TELA 2: FREQUÊNCIA (NOVO!)
+# --------------------------------------------------
+elif menu_escolhido == "Frequência":
+    st.title("📊 Painel de Frequência")
+    
+    # Seletor de Data (Padrão: Hoje)
+    col_data, col_vazia = st.columns([1, 3])
+    with col_data:
+        data_selecionada = st.date_input("📅 Data da Chamada", value=datetime.now())
+    
+    data_str = data_selecionada.strftime('%Y-%m-%d')
+    
+    # Busca dados no Supabase
+    try:
+        rows = supabase.table("frequencia").select("*").eq("data_chamada", data_str).execute().data
+    except: rows = []
+    
+    st.divider()
+    
+    if not rows:
+        st.info(f"Nenhuma chamada registrada para {data_selecionada.strftime('%d/%m/%Y')}.")
+        st.markdown("Wait for the class leaders to submit the data via the Student Link.")
+    else:
+        df = pd.DataFrame(rows)
+        
+        # Métricas Gerais
+        total_alunos = len(df)
+        total_presentes = len(df[df['status'] == 'P'])
+        total_faltas = len(df[df['status'] == 'F'])
+        perc_presenca = (total_presentes / total_alunos * 100) if total_alunos > 0 else 0
+        
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Total Computado", total_alunos)
+        c2.metric("Presentes", total_presentes, delta=f"{perc_presenca:.1f}%")
+        c3.metric("Faltas", total_faltas, delta_color="inverse")
+        c4.metric("Turmas Enviadas", df['turma'].nunique())
+        
+        st.markdown("### ⚠️ Relatório de Ausências")
+        
+        # Filtra apenas quem faltou
+        df_faltas = df[df['status'] == 'F'][['turma', 'aluno_nome']].sort_values(['turma', 'aluno_nome'])
+        
+        if df_faltas.empty:
+            st.success("🎉 Todos presentes hoje nas turmas informadas!")
+        else:
+            # Mostra tabela de faltas com opção de download
+            st.dataframe(
+                df_faltas, 
+                use_container_width=True, 
+                column_config={
+                    "turma": "Turma",
+                    "aluno_nome": "Nome do Aluno"
+                },
+                hide_index=True
+            )
+        
+        st.markdown("### 📊 Visão por Turma")
+        # Pequeno gráfico de barras empilhadas (P vs F)
+        if not df.empty:
+            chart_data = df.groupby(['turma', 'status']).size().unstack(fill_value=0)
+            st.bar_chart(chart_data)
+
+
+# --------------------------------------------------
+# TELA 3: REPOSICIONAR ESTUDANTE
 # --------------------------------------------------
 elif menu_escolhido == "Reposicionar Estudante":
     st.title("🔄 Reposicionar Estudante")
@@ -222,7 +286,7 @@ elif menu_escolhido == "Reposicionar Estudante":
             st.markdown("---")
 
 # --------------------------------------------------
-# TELA 3: CADASTRO
+# TELA 4: CADASTRO
 # --------------------------------------------------
 elif menu_escolhido == "Cadastro":
     st.title("👤 Novo Aluno")
@@ -237,7 +301,7 @@ elif menu_escolhido == "Cadastro":
                     st.success("Aluno salvo com sucesso!")
 
 # --------------------------------------------------
-# TELA 4: IMPORTAÇÃO
+# TELA 5: IMPORTAÇÃO
 # --------------------------------------------------
 elif menu_escolhido == "Importação":
     st.title("📤 Importação em Massa")
