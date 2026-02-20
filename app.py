@@ -84,7 +84,7 @@ if st.session_state.pagina == 'home':
     
     with col_l:
         if os.path.exists("logo_erempam.png"):
-            st.image("logo_erempam.png", width=180)
+            st.image("logo_erempam.png", width=150)
         else:
             st.title("🏫")
             
@@ -133,3 +133,4 @@ elif st.session_state.pagina == 'cadastro':
 
 elif st.session_state.pagina == 'importacao':
     exibir_importacao(supabase)
+
