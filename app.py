@@ -18,6 +18,29 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# CSS para esconder o teclado em dispositivos móveis e ajustar o layout
+st.markdown("""
+    <style>
+        /* Ajuste para evitar que o teclado empurre o layout */
+        .stSelectbox div[data-baseweb="select"] input {
+            inputmode: none !important;
+        }
+        /* Estilização para os nomes dos alunos */
+        .nome-card {
+            text-align: center;
+            font-weight: bold;
+            font-size: 12px;
+            margin-top: 5px;
+            color: #333;
+            line-height: 1.1;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 @st.cache_resource
 def init_connection():
     load_dotenv()
@@ -30,7 +53,6 @@ def init_connection():
 
 supabase = init_connection()
 
-# Configuração dos Trimestres (Regra 2026)
 TRIMESTRES = {
     "1º Trimestre": (date(2026, 2, 2), date(2026, 5, 20)),
     "2º Trimestre": (date(2026, 5, 21), date(2026, 9, 11)),
@@ -38,7 +60,7 @@ TRIMESTRES = {
 }
 
 # ==================================================
-# 2. FUNÇÕES AUXILIARES COM CACHE
+# 2. FUNÇÕES AUXILIARES
 # ==================================================
 def limpar_texto(texto):
     if not texto: return ""
@@ -74,7 +96,7 @@ def carregar_dados_frequencia():
         return pd.DataFrame()
 
 # ==================================================
-# 3. SIDEBAR E NAVEGAÇÃO
+# 3. SIDEBAR
 # ==================================================
 with st.sidebar:
     col_e, col_centro, col_d = st.columns([1, 1, 1])
@@ -98,45 +120,41 @@ with st.sidebar:
     )
 
 # ==================================================
-# 4. CONTEÚDO DAS TELAS
+# 4. TELAS
 # ==================================================
 
-# --- TELA: FOTOGRAMA (MAPA DE SALA) ---
 if menu_escolhido == "Fotograma":
     st.title("📸 Mapa de Sala")
     
-    # Busca turmas únicas para o selectbox
+    # 1. Busca turmas
     res_t = supabase.table("alunos").select("turma").execute()
     lista_turmas = sorted(list(set([x['turma'] for x in res_t.data if x.get('turma')])))
 
     if not lista_turmas:
         st.warning("Nenhuma turma cadastrada.")
     else:
-        # Correção da barra vertical e do campo de texto: 
-        # Usamos colunas mais largas e removemos entradas manuais.
-        col_sel, col_info = st.columns([2, 1])
-        with col_sel:
-            turma_sel = st.selectbox(
-                "📂 Selecione a Turma:", 
-                options=lista_turmas,
-                index=0,
-                placeholder="Escolha a turma..."
-            )
-        
-        # Busca alunos da turma selecionada
-        alunos = supabase.table("alunos").select("*").eq("turma", turma_sel).order("nome").execute().data
-        mapa_fotos = listar_arquivos_bucket()
-        
-        with col_info:
-            st.markdown(f"<div style='padding: 10px; background-color: #e1f5fe; border-radius: 5px; text-align: center;'><b>{len(alunos)}</b> Alunos em <b>{turma_sel}</b></div>", unsafe_allow_html=True)
+        # --- SOLUÇÃO PARA O TECLADO MOBILE ---
+        # Em vez de selectbox, vamos usar st.pills ou st.radio horizontal
+        # st.pills não abre teclado e é perfeito para touch.
+        st.markdown("<b>📂 Selecione a Turma:</b>", unsafe_allow_html=True)
+        turma_sel = st.pills(
+            label="Escolha a turma",
+            options=lista_turmas,
+            label_visibility="collapsed",
+            selection_mode="single",
+            default=lista_turmas[0]
+        )
 
-        st.divider()
-        
-        if not alunos:
-            st.info("Turma vazia.")
-        else:
-            # Layout em grid de 4 colunas
-            cols = st.columns(4)
+        if turma_sel:
+            alunos = supabase.table("alunos").select("*").eq("turma", turma_sel).order("nome").execute().data
+            mapa_fotos = listar_arquivos_bucket()
+            
+            st.markdown(f"📍 **{len(alunos)}** alunos na turma **{turma_sel}**")
+            st.divider()
+
+            # Grid responsivo (2 colunas no mobile, 4 no PC)
+            # O Streamlit ajusta automaticamente o 'columns'
+            cols = st.columns([1,1,1,1])
             for idx, aluno in enumerate(alunos):
                 with cols[idx % 4]:
                     with st.container(border=True):
@@ -145,89 +163,72 @@ if menu_escolhido == "Fotograma":
                         if arq_real:
                             st.image(get_foto_url(arq_real), use_container_width=True)
                         else:
-                            # Placeholder para alunos sem foto
-                            st.markdown("<div style='height:150px; display:flex; align-items:center; justify-content:center; background:#f0f0f0; border-radius:5px;'>👤</div>", unsafe_allow_html=True)
-                        st.markdown(f"<p style='text-align:center; font-weight:bold; font-size:13px; margin-top:5px;'>{aluno['nome']}</p>", unsafe_allow_html=True)
+                            st.markdown("<div style='height:100px; display:flex; align-items:center; justify-content:center; background:#f5f5f5; border-radius:5px;'>👤</div>", unsafe_allow_html=True)
+                        
+                        st.markdown(f"<div class='nome-card'>{aluno['nome']}</div>", unsafe_allow_html=True)
 
-# --- TELA: FREQUÊNCIA ---
 elif menu_escolhido == "Frequência":
     st.title("📊 Gestão de Frequência")
     df = carregar_dados_frequencia()
-    
-    aba1, aba2, aba3 = st.tabs(["📅 Visão Diária", "🚨 Busca Ativa", "👤 Histórico"])
+    aba1, aba2, aba3 = st.tabs(["📅 Diário", "🚨 Alertas", "👤 Aluno"])
 
     with aba1:
-        data_sel = st.date_input("Data de Análise:", value=date.today())
+        data_sel = st.date_input("Data:", value=date.today())
         df_hoje = df[df['data_chamada'] == data_sel] if not df.empty else pd.DataFrame()
-        
         if not df_hoje.empty:
-            p = len(df_hoje[df_hoje['status'] == 'P'])
-            f = len(df_hoje[df_hoje['status'] == 'F'])
-            c1, c2, c3 = st.columns(3)
+            p, f = len(df_hoje[df_hoje['status'] == 'P']), len(df_hoje[df_hoje['status'] == 'F'])
+            c1, c2 = st.columns(2)
             c1.metric("Presentes", p)
-            c2.metric("Faltosos", f, delta_color="inverse")
-            c3.metric("% Adesão", f"{int(p/(p+f)*100)}%" if (p+f)>0 else "0%")
+            c2.metric("Faltosos", f)
             st.dataframe(df_hoje[['turma', 'aluno_nome', 'status']], use_container_width=True, hide_index=True)
         else:
-            st.info("Sem lançamentos para esta data.")
+            st.info("Sem dados.")
 
     with aba2:
-        escolha_trim = st.radio("Período:", list(TRIMESTRES.keys()), horizontal=True)
+        escolha_trim = st.pills("Trimestre:", list(TRIMESTRES.keys()), default="1º Trimestre")
         ini, fim = TRIMESTRES[escolha_trim]
         if not df.empty:
             df_trim = df[(df['data_chamada'] >= ini) & (df['data_chamada'] <= fim)]
             faltas = df_trim[df_trim['status'] == 'F'].groupby(['turma', 'aluno_nome']).size().reset_index(name='Total')
-            alerta = st.slider("Mínimo de faltas:", 1, 20, 5)
-            st.dataframe(faltas[faltas['Total'] >= alerta].sort_values(by='Total', ascending=False), use_container_width=True)
+            st.dataframe(faltas[faltas['Total'] >= 3].sort_values(by='Total', ascending=False), use_container_width=True)
 
     with aba3:
         if not df.empty:
-            aluno_sel = st.selectbox("Pesquisar Aluno:", sorted(df['aluno_nome'].unique()))
+            aluno_sel = st.selectbox("Aluno:", sorted(df['aluno_nome'].unique()))
             df_aluno = df[df['aluno_nome'] == aluno_sel].sort_values(by='data_chamada', ascending=False)
-            if not df_aluno.empty:
-                st.metric("Frequência Global", f"{((len(df_aluno[df_aluno['status']=='P'])/len(df_aluno))*100):.1f}%")
-                st.table(df_aluno[['data_chamada', 'status']].head(10))
+            st.table(df_aluno[['data_chamada', 'status']].head(5))
 
-# --- TELA: REPOSICIONAR ---
 elif menu_escolhido == "Reposicionar":
-    st.title("🔄 Troca de Turma")
+    st.title("🔄 Mover Aluno")
     res_t = supabase.table("alunos").select("turma").execute()
     lista_turmas = sorted(list(set([x['turma'] for x in res_t.data if x.get('turma')])))
-    t_origem = st.selectbox("Turma Atual:", lista_turmas)
+    t_origem = st.selectbox("De onde:", lista_turmas)
     alunos = supabase.table("alunos").select("*").eq("turma", t_origem).order("nome").execute().data
-    
     for a in alunos:
-        c1, c2, c3 = st.columns([1, 3, 2])
-        c2.write(a['nome'])
-        nova = c3.selectbox("Mudar para:", lista_turmas, index=lista_turmas.index(a['turma']), key=f"rep_{a['id']}")
+        col_n, col_m = st.columns([3, 2])
+        col_n.write(a['nome'])
+        nova = col_m.selectbox("Para:", lista_turmas, index=lista_turmas.index(a['turma']), key=f"r_{a['id']}")
         if nova != a['turma']:
             supabase.table("alunos").update({"turma": nova}).eq("id", a['id']).execute()
-            st.success(f"{a['nome']} movido!")
+            st.toast(f"{a['nome']} movido!")
             time.sleep(0.5)
             st.rerun()
 
-# --- TELA: CADASTRO ---
 elif menu_escolhido == "Cadastro":
     st.title("👤 Novo Aluno")
-    with st.form("cad_form"):
-        n = st.text_input("Nome Completo")
-        t = st.text_input("Turma (ex: 1º A)")
+    with st.form("c"):
+        n = st.text_input("Nome")
+        t = st.text_input("Turma")
         if st.form_submit_button("Salvar"):
-            if n and t:
-                supabase.table("alunos").insert({"nome": n.upper().strip(), "turma": t.upper().strip()}).execute()
-                st.success("Cadastrado com sucesso!")
-                st.rerun()
+            supabase.table("alunos").insert({"nome": n.upper(), "turma": t.upper()}).execute()
+            st.success("Salvo!")
 
-# --- TELA: IMPORTAÇÃO ---
 elif menu_escolhido == "Importação":
-    st.title("📤 Importação em Massa")
-    arq = st.file_uploader("Excel ou CSV", type=['xlsx', 'csv'])
-    if arq and st.button("Processar"):
+    st.title("📤 Importar")
+    arq = st.file_uploader("Arquivo", type=['xlsx', 'csv'])
+    if arq and st.button("Subir"):
         df_imp = pd.read_excel(arq) if arq.name.endswith('xlsx') else pd.read_csv(arq)
-        df_imp.columns = [c.lower().strip() for c in df_imp.columns]
         for _, row in df_imp.iterrows():
-            try:
-                supabase.table("alunos").insert({"nome": str(row['nome']).upper().strip(), "turma": str(row['turma']).upper().strip()}).execute()
+            try: supabase.table("alunos").insert({"nome": str(row['nome']).upper(), "turma": str(row['turma']).upper()}).execute()
             except: pass
-        st.success("Importação concluída!")
-        st.rerun()
+        st.success("Pronto!")
