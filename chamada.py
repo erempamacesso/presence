@@ -1,288 +1,228 @@
 import streamlit as st
+import pandas as pd
 from supabase import create_client
 import os
 from dotenv import load_dotenv
-from datetime import datetime
-import pytz
-import time
 import unicodedata
+import time
+from datetime import datetime, date
+from streamlit_option_menu import option_menu
 from urllib.parse import quote
+import altair as alt
 
 # ==================================================
-# 1. CONFIGURAÇÃO VISUAL (APP MODE)
+# 1. CONFIGURAÇÃO E CONEXÃO
 # ==================================================
-st.set_page_config(page_title="Chamada", page_icon="📱", layout="centered")
+st.set_page_config(
+    page_title="SIGPAM - EREMPAM", 
+    layout="wide", 
+    initial_sidebar_state="expanded"
+)
 
-# CSS PERSONALIZADO PARA ESTILO "MOBILE REACT"
+# Estilização CSS para cards e alertas
 st.markdown("""
     <style>
-        /* Remove padding do topo para ganhar espaço */
-        .block-container {
-            padding-top: 1rem !important;
-            padding-bottom: 5rem !important;
-            padding-left: 0.5rem !important;
-            padding-right: 0.5rem !important;
+        .espaco-reservado {
+            padding: 12px; border-radius: 8px; background-color: #fff5f5;
+            border-left: 6px solid #ff5252; margin-bottom: 10px;
         }
-        
-        /* Estilo do Card do Aluno (Linha) */
-        .aluno-row {
-            display: flex;
-            align-items: center;
-            background-color: white;
-            padding: 8px 10px;
-            border-bottom: 1px solid #f0f0f0;
-            margin-bottom: 2px;
-            border-radius: 8px;
+        .espaco-livre {
+            padding: 12px; border-radius: 8px; background-color: #f0fdf4;
+            border-left: 6px solid #4ade80; margin-bottom: 10px;
         }
-        
-        /* Foto redonda pequena */
-        .profile-pic {
-            width: 35px;
-            height: 35px;
-            border-radius: 50%;
-            object-fit: cover;
-            border: 2px solid #e0e0e0;
-            margin-right: 12px;
-        }
-        
-        /* Nome do aluno */
-        .aluno-name {
-            font-family: 'Segoe UI', sans-serif;
-            font-size: 14px;
-            font-weight: 600;
-            color: #333;
-            flex-grow: 1; /* Empurra o botão para a direita */
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis; /* Três pontinhos se nome for longo */
-            margin-right: 10px;
-        }
-        
-        /* Ajuste fino nos botões do Streamlit para parecerem Tags */
-        .stButton > button {
-            border-radius: 20px !important;
-            padding: 4px 12px !important;
-            font-size: 12px !important;
-            font-weight: bold !important;
-            border: none !important;
-            height: auto !important;
-            min-height: 0px !important;
-            line-height: 1.5 !important;
-        }
-        
-        /* Esconde elementos desnecessários */
-        header {visibility: hidden;}
-        footer {visibility: hidden;}
-        
-        /* Botão Flutuante de Salvar (Sticky Footer) */
-        .floating-footer {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            background-color: white;
-            padding: 10px 20px;
-            box-shadow: 0px -4px 10px rgba(0,0,0,0.1);
-            z-index: 999;
-            text-align: center;
+        .nome-card { 
+            text-align: center; font-weight: bold; font-size: 11px; 
+            margin-top: 5px; color: #333; line-height: 1.2;
         }
     </style>
 """, unsafe_allow_html=True)
 
-# ==================================================
-# 2. CONEXÃO E FUNÇÕES
-# ==================================================
-load_dotenv()
-SUPABASE_URL = st.secrets.get("SUPABASE_URL") or os.getenv("SUPABASE_URL")
-SUPABASE_KEY = st.secrets.get("SUPABASE_KEY") or os.getenv("SUPABASE_KEY")
+@st.cache_resource
+def init_connection():
+    load_dotenv()
+    url = st.secrets.get("SUPABASE_URL") or os.getenv("SUPABASE_URL")
+    key = st.secrets.get("SUPABASE_KEY") or os.getenv("SUPABASE_KEY")
+    return create_client(url, key)
 
-if not SUPABASE_URL: st.stop()
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase = init_connection()
 
-# --- Funções de Imagem (Copiadas do app.py para funcionar aqui) ---
+# Listas de Referência
+ESPACOS_ESCOLA = ["Data show", "Auditório", "Sala de informática", "Biblioteca", "Refeitório", "Lab. de ciências", "Aparelho de som"]
+LISTA_AULAS = ["1ª Aula", "2ª Aula", "3ª Aula", "4ª Aula", "5ª Aula", "6ª Aula", "7ª Aula", "8ª Aula", "9ª Aula"]
+
+# ==================================================
+# 2. FUNÇÕES AUXILIARES (FOTOGRAMA RECUPERADO)
+# ==================================================
 def limpar_texto(texto):
     if not texto: return ""
-    texto = str(texto)
-    if "." in texto: texto = texto.rsplit(".", 1)[0]
+    texto = str(texto).split(".")[0] # Remove extensões se houver
     nfkd = unicodedata.normalize('NFKD', texto)
     sem_acento = "".join([c for c in nfkd if not unicodedata.combining(c)])
     return sem_acento.lower().replace(" ", "").replace("_", "").replace("-", "").strip()
 
-@st.cache_data(ttl=3600) # Cache para não ficar lento carregando fotos
+@st.cache_data(ttl=300)
 def listar_arquivos_bucket():
     try:
-        arquivos = supabase.storage.from_('fotos-alunos').list(path=None, options={'limit': 5000})
-        mapa = {}
-        if arquivos:
-            for arq in arquivos:
-                nome_real = arq.get('name') if isinstance(arq, dict) else getattr(arq, 'name', '')
-                if not nome_real or nome_real == ".emptyFolderPlaceholder": continue
-                chave = limpar_texto(nome_real)
-                mapa[chave] = nome_real
-        return mapa
-    except: return {}
+        # Busca recursiva para garantir que pegamos todos os arquivos
+        arquivos = supabase.storage.from_('fotos-alunos').list(path=None, options={'limit': 2000})
+        return {limpar_texto(arq['name']): arq['name'] for arq in arquivos if arq['name'] != ".emptyFolderPlaceholder"}
+    except Exception as e:
+        st.error(f"Erro ao carregar fotos: {e}")
+        return {}
 
 def get_foto_url(nome_real_arquivo):
     try:
         path_seguro = quote(nome_real_arquivo)
-        url_base = f"{SUPABASE_URL}/storage/v1/object/public/fotos-alunos/{path_seguro}"
+        url_base = f"{st.secrets['SUPABASE_URL']}/storage/v1/object/public/fotos-alunos/{path_seguro}"
         return f"{url_base}?t={int(time.time())}"
-    except: return "https://cdn-icons-png.flaticon.com/512/847/847969.png" # Avatar padrão
+    except: return None
 
 # ==================================================
-# 3. LÓGICA DE SENHAS
+# 3. SIDEBAR (ORDEM SOLICITADA)
 # ==================================================
-SENHAS_TURMAS = {
-    "1A": "1010", "1B": "1020", "1C": "1030", "1D": "1040", "1E": "1050",
-    "2A": "2010", "2B": "2020", "2C": "2030", "2D": "2040",
-    "3A": "3010", "3B": "3020", "3C": "3030", "3D": "3040"
-}
+with st.sidebar:
+    st.markdown("<h2 style='text-align: center;'>SIGPAM</h2>", unsafe_allow_html=True)
+    menu_escolhido = option_menu(
+        menu_title=None,
+        options=["Frequência", "Reservas", "Fotograma", "Cadastro", "Importação"],
+        icons=["clipboard-check-fill", "calendar-check-fill", "camera-fill", "person-plus-fill", "cloud-upload-fill"],
+        default_index=0,
+        styles={"nav-link-selected": {"background-color": "#ff4b4b"}}
+    )
 
 # ==================================================
-# 4. INÍCIO DA INTERFACE
+# 4. TELAS
 # ==================================================
-params = st.query_params
-turma_url = params.get("turma", None)
 
-if not turma_url:
-    st.error("Link inválido.")
-    st.stop()
-
-turma_limpa = turma_url.upper().replace(" ", "").strip()
-turma_chave_senha = turma_limpa.replace("º", "")
-
-# --- Tela de Login Simples ---
-if 'acesso_liberado' not in st.session_state:
-    st.session_state['acesso_liberado'] = False
-
-if not st.session_state['acesso_liberado']:
-    st.markdown(f"<h3 style='text-align:center'>🔐 Turma {turma_chave_senha}</h3>", unsafe_allow_html=True)
-    senha = st.text_input("PIN de Acesso", type="password", label_visibility="collapsed", placeholder="Digite o PIN da turma")
+# --- TELA: FREQUÊNCIA ---
+if menu_escolhido == "Frequência":
+    st.title("📊 Monitor de Frequência")
+    hoje = date.today().isoformat()
     
-    if len(senha) == 4:
-        if senha == SENHAS_TURMAS.get(turma_chave_senha):
-            st.session_state['acesso_liberado'] = True
-            st.rerun()
-        else:
-            st.toast("PIN Incorreto!", icon="🚫")
-    st.stop()
+    with st.spinner("Atualizando estatísticas..."):
+        res_alunos = supabase.table("alunos").select("id", count="exact").execute()
+        total_alunos = res_alunos.count
+        
+        res_frequencia = supabase.table("frequencia").select("*").eq("data_chamada", hoje).execute()
+        df_freq = pd.DataFrame(res_frequencia.data)
+        
+    if not df_freq.empty:
+        presentes = len(df_freq[df_freq['status'] == 'P'])
+        ausentes = total_alunos - presentes
+        porcentagem = int((ausentes / total_alunos) * 100) if total_alunos > 0 else 0
+        
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Matriculados", total_alunos)
+        c2.metric("Presentes (Hoje)", presentes, delta="Biometria")
+        c3.metric("Ausentes", ausentes, delta_color="inverse")
+        c4.metric("% Ausência", f"{porcentagem}%")
+        
+        st.markdown("---")
+        df_grafico = df_freq.groupby("turma").size().reset_index(name="Quantidade")
+        chart = alt.Chart(df_grafico).mark_bar(color='#ff4b4b', cornerRadiusTopLeft=10, cornerRadiusTopRight=10).encode(
+            x=alt.X('turma:N', title="Turmas"),
+            y=alt.Y('Quantidade:Q', title="Alunos Presentes"),
+            tooltip=['turma', 'Quantidade']
+        ).properties(height=350).interactive()
+        st.altair_chart(chart, use_container_width=True)
+    else:
+        st.info(f"Aguardando os primeiros registros de biometria de hoje ({date.today().strftime('%d/%m/%Y')}).")
 
-# ==================================================
-# 5. TELA DE CHAMADA (ESTILO MOBILE)
-# ==================================================
-
-# --- Busca Dados (Cacheado) ---
-@st.cache_data(ttl=60)
-def buscar_alunos(turma_chave):
-    numero = turma_chave[0]
-    letra = turma_chave[1:]
-    formatos = [f"{numero}º {letra}", f"{numero}º{letra}", f"{numero} {letra}", turma_chave]
+# --- TELA: RESERVAS ---
+elif menu_escolhido == "Reservas":
+    st.title("📅 Reserva de Espaços e Recursos")
+    aba_ver, aba_nova = st.tabs(["🔍 Consultar Agenda", "📝 Nova Reserva"])
     
-    for fmt in formatos:
-        res = supabase.table("alunos").select("id, nome, turma").eq("turma", fmt).order("nome").execute()
-        if res.data: return res.data, fmt
-    return [], ""
-
-alunos_data, turma_db = buscar_alunos(turma_chave_senha)
-mapa_fotos = listar_arquivos_bucket()
-
-if not alunos_data:
-    st.warning("Nenhum aluno encontrado.")
-    st.stop()
-
-# --- Cabeçalho Compacto ---
-col_head1, col_head2 = st.columns([4,1])
-with col_head1:
-    st.markdown(f"**{turma_db}** • {datetime.now().strftime('%d/%m')}", unsafe_allow_html=True)
-with col_head2:
-    if st.button("Sair"):
-        st.session_state['acesso_liberado'] = False
-        st.rerun()
-
-st.progress(100) # Linha decorativa
-
-# --- Inicializa Estado da Chamada ---
-if 'chamada_state' not in st.session_state:
-    st.session_state['chamada_state'] = {aluno['id']: True for aluno in alunos_data} # True = Presente
-
-# --- LISTA DE ALUNOS (LAYOUT REACT-LIKE) ---
-# Aqui usamos colunas nativas do Streamlit com CSS injetado para ficar compacto
-with st.container():
-    for aluno in alunos_data:
-        # Define cor e texto baseado no estado
-        is_presente = st.session_state['chamada_state'][aluno['id']]
+    with aba_ver:
+        c1, c2 = st.columns(2)
+        dt_con = c1.date_input("Data:", value=date.today(), key="view_dt")
+        esp_f = c2.selectbox("Filtrar Espaço:", ["Todos"] + ESPACOS_ESCOLA)
         
-        # URL da Foto
-        chave_foto = limpar_texto(aluno['nome'])
-        url_foto = get_foto_url(mapa_fotos.get(chave_foto)) if mapa_fotos.get(chave_foto) else "https://cdn-icons-png.flaticon.com/512/1077/1077114.png"
+        res_db = supabase.table("reservas").select("*").eq("data_reserva", str(dt_con)).execute()
+        df_res = pd.DataFrame(res_db.data)
         
-        # CRIAÇÃO DA LINHA VISUAL
-        # Usamos colunas: [Foto] [Nome] [Botão]
-        c1, c2, c3 = st.columns([1.2, 5, 2.5], gap="small", vertical_alignment="center")
-        
-        with c1:
-            st.markdown(f'<img src="{url_foto}" class="profile-pic">', unsafe_allow_html=True)
-        
-        with c2:
-            # Nome com cor diferente se faltou
-            cor_nome = "#000" if is_presente else "#999"
-            st.markdown(f"<span style='color:{cor_nome}; font-weight:600; font-size:14px;'>{aluno['nome']}</span>", unsafe_allow_html=True)
-        
-        with c3:
-            # Lógica do Botão Toggle
-            # Se apertar, inverte o estado e dá rerun
-            label_btn = "PRESENTE" if is_presente else "AUSENTE"
-            type_btn = "primary" if not is_presente else "secondary" # Primary geralmente é vermelho no tema padrao
+        exibir_lista = ESPACOS_ESCOLA if esp_f == "Todos" else [esp_f]
+        for e in exibir_lista:
+            res_e = df_res[df_res['espaco'] == e] if not df_res.empty else pd.DataFrame()
+            if not res_e.empty:
+                for prof, dados in res_e.groupby("professor"):
+                    aulas = ", ".join(sorted(dados["periodo"].tolist()))
+                    st.markdown(f"<div class='espaco-reservado'><b>🔴 {e}</b><br>Prof: {prof} | Aulas: {aulas}</div>", unsafe_allow_html=True)
+            else:
+                st.markdown(f"<div class='espaco-livre'><b>🟢 {e}</b> - Livre para todas as aulas</div>", unsafe_allow_html=True)
+
+    with aba_nova:
+        # O uso de st.form garante que, ao clicar no botão, os campos voltem ao estado inicial
+        with st.form("form_reserva_limpo", clear_on_submit=True):
+            st.write("### Criar nova reserva")
+            prof_res = st.text_input("Nome do Professor:")
+            esp_res = st.selectbox("Recurso:", ESPACOS_ESCOLA)
+            data_res = st.date_input("Data:", value=date.today())
+            aulas_res = st.pills("Selecione a(s) aula(s):", options=LISTA_AULAS, selection_mode="multi")
             
-            # Truque visual: Botão verde vs vermelho
-            # Streamlit não deixa mudar cor hex do botão fácil, então usamos Emojis e Texto
-            texto_botao = "✅ PRESENTE" if is_presente else "🔻 AUSENTE"
+            submeteu = st.form_submit_button("Confirmar Reserva")
             
-            if st.button(texto_botao, key=f"btn_{aluno['id']}", use_container_width=True):
-                st.session_state['chamada_state'][aluno['id']] = not st.session_state['chamada_state'][aluno['id']]
-                st.rerun()
-        
-        # Divisor fino
-        st.markdown("<div style='border-bottom: 1px solid #eee; margin-bottom: 4px;'></div>", unsafe_allow_html=True)
+            if submeteu:
+                if not prof_res or not aulas_res:
+                    st.error("Erro: Preencha seu nome e escolha as aulas.")
+                else:
+                    sucessos = []
+                    for aula in aulas_res:
+                        # Validação de conflito
+                        check = supabase.table("reservas").select("*").eq("espaco", esp_res).eq("data_reserva", str(data_res)).eq("periodo", aula).execute()
+                        if not check.data:
+                            supabase.table("reservas").insert({
+                                "espaco": esp_res, "professor": prof_res.upper().strip(),
+                                "data_reserva": str(data_res), "periodo": aula
+                            }).execute()
+                            sucessos.append(aula)
+                    
+                    if sucessos:
+                        st.success(f"Reservas feitas: {', '.join(sucessos)}")
+                        time.sleep(1)
+                        st.rerun() # Limpa a tela completamente
 
-# --- ESPAÇO EXTRA PARA O FOOTER NÃO COBRIR O ÚLTIMO ALUNO ---
-st.write("")
-st.write("")
-st.write("")
-
-# --- BARRA FLUTUANTE DE SALVAR (FIXA NO RODAPÉ) ---
-# Usamos um container vazio para injetar HTML ou um form fixo
-with st.container():
-    st.markdown('<div class="floating-footer">', unsafe_allow_html=True)
+# --- TELA: FOTOGRAMA (CORRIGIDO) ---
+elif menu_escolhido == "Fotograma":
+    st.title("📸 Mapa de Sala")
+    res_t = supabase.table("alunos").select("turma").execute()
+    lista_turmas = sorted(list(set([x['turma'] for x in res_t.data if x.get('turma')])))
     
-    # Botão de Salvar Real
-    if st.button("🚀 ENVIAR CHAMADA", type="primary", use_container_width=True):
-        fuso = pytz.timezone('America/Recife')
-        data_hoje = datetime.now(fuso).strftime('%Y-%m-%d')
+    if lista_turmas:
+        turma_sel = st.pills("Turma:", options=lista_turmas, default=lista_turmas[0])
+        alunos = supabase.table("alunos").select("*").eq("turma", turma_sel).order("nome").execute().data
+        mapa_fotos = listar_arquivos_bucket()
         
-        lista_envio = []
-        qtd_p = 0
-        qtd_f = 0
-        
-        for aluno in alunos_data:
-            status_bool = st.session_state['chamada_state'][aluno['id']]
-            status_str = "P" if status_bool else "F"
-            if status_bool: qtd_p += 1
-            else: qtd_f += 1
-            
-            lista_envio.append({
-                "turma": turma_db,
-                "aluno_nome": aluno['nome'],
-                "status": status_str,
-                "data_chamada": data_hoje
-            })
-            
-        try:
-            supabase.table("frequencia").delete().match({"turma": turma_db, "data_chamada": data_hoje}).execute()
-            supabase.table("frequencia").insert(lista_envio).execute()
-            st.toast(f"Sucesso! {qtd_p} Presentes / {qtd_f} Faltas", icon="✅")
-            time.sleep(2)
-        except Exception as e:
-            st.error(f"Erro: {e}")
-            
-    st.markdown('</div>', unsafe_allow_html=True)
+        st.divider()
+        cols = st.columns(4)
+        for idx, a in enumerate(alunos):
+            with cols[idx % 4]:
+                with st.container(border=True):
+                    # Lógica de match corrigida: limpa o nome do banco e compara com o do bucket
+                    chave_busca = limpar_texto(a['nome'])
+                    arq_final = mapa_fotos.get(chave_busca)
+                    
+                    if arq_final:
+                        st.image(get_foto_url(arq_final), use_container_width=True)
+                    else:
+                        st.markdown("<div style='height:120px; display:flex; align-items:center; justify-content:center; background:#f0f2f6; border-radius:10px;'>👤</div>", unsafe_allow_html=True)
+                    
+                    st.markdown(f"<div class='nome-card'>{a['nome']}</div>", unsafe_allow_html=True)
+
+# --- TELA: CADASTRO ---
+elif menu_escolhido == "Cadastro":
+    st.title("👤 Cadastro de Alunos")
+    with st.form("cad_aluno", clear_on_submit=True):
+        nome_novo = st.text_input("Nome Completo")
+        turma_nova = st.text_input("Turma (Ex: 1º A)")
+        if st.form_submit_button("Cadastrar"):
+            if nome_novo and turma_nova:
+                supabase.table("alunos").insert({"nome": nome_novo.upper(), "turma": turma_nova.upper()}).execute()
+                st.success("Aluno cadastrado!")
+            else:
+                st.error("Preencha todos os campos.")
+
+# --- TELA: IMPORTAÇÃO ---
+elif menu_escolhido == "Importação":
+    st.title("📤 Importação de Dados")
+    # Código de upload e limpeza anual aqui
