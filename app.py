@@ -10,7 +10,7 @@ from streamlit_option_menu import option_menu
 from urllib.parse import quote
 
 # ==================================================
-# 1. CONFIGURAÇÃO E CONEXÃO INTELIGENTE
+# 1. CONFIGURAÇÃO E CONEXÃO OTIMIZADA
 # ==================================================
 st.set_page_config(
     page_title="SIGPAM - EREMPAM", 
@@ -18,24 +18,19 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-load_dotenv()
+@st.cache_resource
+def init_connection():
+    load_dotenv()
+    url = st.secrets.get("SUPABASE_URL") or os.getenv("SUPABASE_URL")
+    key = st.secrets.get("SUPABASE_KEY") or os.getenv("SUPABASE_KEY")
+    if not url or not key:
+        st.error("ERRO CRÍTICO: Credenciais do Supabase não encontradas.")
+        st.stop()
+    return create_client(url, key)
 
-SUPABASE_URL = st.secrets.get("SUPABASE_URL") or os.getenv("SUPABASE_URL")
-SUPABASE_KEY = st.secrets.get("SUPABASE_KEY") or os.getenv("SUPABASE_KEY")
+supabase = init_connection()
 
-if not SUPABASE_URL or not SUPABASE_KEY:
-    st.error("ERRO: Credenciais não encontradas. Verifique seu arquivo .env")
-    st.stop()
-
-try:
-    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-except Exception as e:
-    st.error(f"Erro de Conexão: {e}")
-    st.stop()
-
-# ==================================================
-# 2. CONFIGURAÇÃO DOS TRIMESTRES (2026)
-# ==================================================
+# Configuração dos Trimestres (Mantido conforme sua regra de negócio 2026)
 TRIMESTRES = {
     "1º Trimestre": (date(2026, 2, 2), date(2026, 5, 20)),
     "2º Trimestre": (date(2026, 5, 21), date(2026, 9, 11)),
@@ -43,44 +38,44 @@ TRIMESTRES = {
 }
 
 # ==================================================
-# 3. FUNÇÕES AUXILIARES
+# 2. FUNÇÕES AUXILIARES COM CACHE
 # ==================================================
 def limpar_texto(texto):
     if not texto: return ""
-    texto = str(texto)
-    if "." in texto: texto = texto.rsplit(".", 1)[0]
+    texto = str(texto).split(".")[0]
     nfkd = unicodedata.normalize('NFKD', texto)
     sem_acento = "".join([c for c in nfkd if not unicodedata.combining(c)])
     return sem_acento.lower().replace(" ", "").replace("_", "").replace("-", "").strip()
 
+@st.cache_data(ttl=600)
 def listar_arquivos_bucket():
     try:
-        arquivos = supabase.storage.from_('fotos-alunos').list(path=None, options={'limit': 5000})
-        mapa = {}
-        if arquivos:
-            for arq in arquivos:
-                nome_real = arq.get('name') if isinstance(arq, dict) else getattr(arq, 'name', '')
-                if not nome_real or nome_real == ".emptyFolderPlaceholder": continue
-                chave = limpar_texto(nome_real)
-                mapa[chave] = nome_real
-        return mapa
-    except Exception as e: 
+        arquivos = supabase.storage.from_('fotos-alunos').list(path=None, options={'limit': 2000})
+        return {limpar_texto(arq['name']): arq['name'] for arq in arquivos if arq['name'] != ".emptyFolderPlaceholder"}
+    except:
         return {}
 
 def get_foto_url(nome_real_arquivo):
     try:
         path_seguro = quote(nome_real_arquivo)
-        url_base = f"{SUPABASE_URL}/storage/v1/object/public/fotos-alunos/{path_seguro}"
+        url_base = f"{st.secrets['SUPABASE_URL']}/storage/v1/object/public/fotos-alunos/{path_seguro}"
         return f"{url_base}?t={int(time.time())}"
     except: return None
 
-# ==================================================
-# 4. SIDEBAR
-# ==================================================
+@st.cache_data(ttl=60)
+def carregar_dados_frequencia():
+    try:
+        res = supabase.table("frequencia").select("*").execute()
+        df = pd.DataFrame(res.data)
+        if not df.empty:
+            df['data_chamada'] = pd.to_datetime(df['data_chamada']).dt.date
+        return df
+    except:
+        return pd.DataFrame()
 
-if 'menu_atual' not in st.session_state:
-    st.session_state['menu_atual'] = "Fotograma"
-
+# ==================================================
+# 3. SIDEBAR E NAVEGAÇÃO
+# ==================================================
 with st.sidebar:
     col_e, col_centro, col_d = st.columns([1, 1, 1])
     with col_centro:
@@ -89,11 +84,11 @@ with st.sidebar:
         else:
             st.markdown("<h1>🏫</h1>", unsafe_allow_html=True)
     
-    st.markdown("<h3 style='text-align: center;'>SIGPAM</h3>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; margin-top: 0;'>SIGPAM</h2>", unsafe_allow_html=True)
     
     menu_escolhido = option_menu(
         menu_title=None,
-        options=["Fotograma", "Frequência", "Reposicionar Estudante", "Cadastro", "Importação"],
+        options=["Fotograma", "Frequência", "Reposicionar", "Cadastro", "Importação"],
         icons=["camera-fill", "clipboard-check-fill", "arrow-left-right", "person-plus-fill", "cloud-upload-fill"],
         default_index=0,
         styles={
@@ -102,297 +97,115 @@ with st.sidebar:
         }
     )
 
-if st.session_state['menu_atual'] != menu_escolhido:
-    st.session_state['menu_atual'] = menu_escolhido
-    st.rerun()
-
 # ==================================================
-# 5. CONTEÚDO
+# 4. CONTEÚDO DAS TELAS
 # ==================================================
 
-# --- FOTOGRAMA ---
+# --- TELA: FOTOGRAMA ---
 if menu_escolhido == "Fotograma":
     st.title("📸 Mapa de Sala")
-    try:
-        res = supabase.table("alunos").select("turma").execute()
-        lista_turmas = sorted(list(set([x['turma'] for x in res.data if x.get('turma')])))
-    except: lista_turmas = []
+    res_t = supabase.table("alunos").select("turma").execute()
+    lista_turmas = sorted(list(set([x['turma'] for x in res_t.data if x.get('turma')])))
 
     if not lista_turmas:
         st.warning("Nenhuma turma cadastrada.")
     else:
-        turma_selecionada = st.selectbox("📂 Selecione a Turma:", lista_turmas)
-        data_alunos = supabase.table("alunos").select("*").eq("turma", turma_selecionada).execute().data
-        
-        if data_alunos: data_alunos.sort(key=lambda x: x['nome']) 
+        turma_sel = st.selectbox("📂 Selecione a Turma:", lista_turmas)
+        alunos = supabase.table("alunos").select("*").eq("turma", turma_sel).order("nome").execute().data
         mapa_fotos = listar_arquivos_bucket()
-        st.markdown("---")
         
-        if not data_alunos:
+        st.divider()
+        if not alunos:
             st.info("Turma vazia.")
         else:
-            qtde_por_linha = 4
-            for i in range(0, len(data_alunos), qtde_por_linha):
-                batch = data_alunos[i : i + qtde_por_linha]
-                cols = st.columns(qtde_por_linha)
-                for idx, aluno in enumerate(batch):
-                    with cols[idx]:
-                        with st.container(border=True):
-                            chave = limpar_texto(aluno['nome'])
-                            arq_real = mapa_fotos.get(chave)
-                            if arq_real:
-                                st.image(get_foto_url(arq_real), use_container_width=True)
-                            else:
-                                st.markdown("<div style='height:80px; display:flex; align-items:center; justify-content:center; background:#f0f0f0; border-radius:5px;'>👤</div>", unsafe_allow_html=True)
-                            st.markdown(f"<p style='text-align:center; font-weight:bold; font-size:12px; margin-top:5px;'>{aluno['nome']}</p>", unsafe_allow_html=True)
+            cols = st.columns(4)
+            for idx, aluno in enumerate(alunos):
+                with cols[idx % 4]:
+                    with st.container(border=True):
+                        chave = limpar_texto(aluno['nome'])
+                        arq_real = mapa_fotos.get(chave)
+                        if arq_real:
+                            st.image(get_foto_url(arq_real), use_container_width=True)
+                        else:
+                            st.markdown("<div style='height:100px; display:flex; align-items:center; justify-content:center; background:#f0f0f0; border-radius:5px;'>👤</div>", unsafe_allow_html=True)
+                        st.markdown(f"<p style='text-align:center; font-weight:bold; font-size:12px;'>{aluno['nome']}</p>", unsafe_allow_html=True)
 
-# --- FREQUÊNCIA (PAINEL GERAL VISÍVEL) ---
+# --- TELA: FREQUÊNCIA ---
 elif menu_escolhido == "Frequência":
     st.title("📊 Gestão de Frequência")
+    df = carregar_dados_frequencia()
+    
+    aba1, aba2, aba3 = st.tabs(["📅 Visão Diária", "🚨 Busca Ativa", "👤 Histórico"])
 
-    # Busca TODOS os dados de frequência
-    try:
-        response = supabase.table("frequencia").select("*").execute()
-        dados = response.data
-    except Exception as e:
-        st.error(f"Erro ao buscar dados: {e}")
-        dados = []
-
-    # Se não houver dados globais, inicializa dataframe vazio
-    if not dados:
-        df = pd.DataFrame(columns=['turma', 'aluno_nome', 'status', 'data_chamada'])
-    else:
-        df = pd.DataFrame(dados)
-        df['data_chamada'] = pd.to_datetime(df['data_chamada']).dt.date
-
-    # CRIAÇÃO DAS ABAS
-    aba1, aba2, aba3 = st.tabs(["📅 Visão Diária", "🚨 Busca Ativa (Trimestres)", "👤 Histórico do Aluno"])
-
-    # --- ABA 1: VISÃO DIÁRIA ---
     with aba1:
-        st.markdown("### Resumo do Dia")
+        data_sel = st.date_input("Data de Análise:", value=date.today())
+        df_hoje = df[df['data_chamada'] == data_sel] if not df.empty else pd.DataFrame()
         
-        # Seletor de Data
-        data_selecionada = st.date_input("Data de Análise:", value=datetime.now())
-        
-        # Filtro Data
-        if not df.empty:
-            df_hoje_geral = df[df['data_chamada'] == data_selecionada]
+        if not df_hoje.empty:
+            p = len(df_hoje[df_hoje['status'] == 'P'])
+            f = len(df_hoje[df_hoje['status'] == 'F'])
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Presentes", p)
+            c2.metric("Faltosos", f, delta_color="inverse")
+            c3.metric("% Adesão", f"{int(p/(p+f)*100)}%" if (p+f)>0 else "0%")
+            st.dataframe(df_hoje[['turma', 'aluno_nome', 'status']], use_container_width=True, hide_index=True)
         else:
-            df_hoje_geral = pd.DataFrame()
-        
-        # --- CÁLCULO DAS MÉTRICAS (SEMPRE EXIBE, MESMO QUE SEJA ZERO) ---
-        total_presentes_hoje = 0
-        total_faltas_hoje = 0
-        perc_hoje = 0
+            st.info("Sem lançamentos para esta data.")
 
-        if not df_hoje_geral.empty:
-            total_presentes_hoje = len(df_hoje_geral[df_hoje_geral['status'] == 'P'])
-            total_faltas_hoje = len(df_hoje_geral[df_hoje_geral['status'] == 'F'])
-            total_alunos = total_presentes_hoje + total_faltas_hoje
-            perc_hoje = int((total_presentes_hoje / total_alunos) * 100) if total_alunos > 0 else 0
-
-        # --- PAINEL VISUAL DE TOPO ---
-        with st.container(border=True):
-            st.markdown(f"#### 🏫 Totais em {data_selecionada.strftime('%d/%m/%Y')}")
-            col_metrics1, col_metrics2, col_metrics3 = st.columns(3)
-            
-            col_metrics1.metric("Alunos na Escola (Presentes)", total_presentes_hoje)
-            col_metrics2.metric("Alunos Faltosos", total_faltas_hoje, delta_color="inverse")
-            col_metrics3.metric("% Adesão Geral", f"{perc_hoje}%")
-        
-        st.divider()
-
-        # --- GRÁFICO DE PRESENÇA POR TURMA ---
-        if total_presentes_hoje > 0:
-            st.markdown("##### 📊 Quantidade de Presentes por Turma")
-            df_presencas = df_hoje_geral[df_hoje_geral['status'] == 'P']
-            resumo_turmas = df_presencas['turma'].value_counts().reset_index()
-            resumo_turmas.columns = ['Turma', 'Qtd Presentes']
-            resumo_turmas = resumo_turmas.sort_values(by='Turma')
-            
-            c_chart1, c_chart2 = st.columns([3, 1])
-            with c_chart1:
-                st.bar_chart(resumo_turmas.set_index('Turma'), color="#00C853")
-            with c_chart2:
-                st.dataframe(resumo_turmas, use_container_width=True, hide_index=True)
-        else:
-            if df_hoje_geral.empty:
-                st.info("Aguardando lançamentos de chamada para esta data...")
-
-        st.divider()
-
-        # --- LISTAGEM DETALHADA ---
-        st.markdown("### 📋 Detalhes da Chamada")
-        if not df_hoje_geral.empty:
-            turmas_disponiveis = sorted(df_hoje_geral['turma'].unique())
-            turma_sel = st.selectbox("Filtrar Turma Específica:", ["Todas"] + turmas_disponiveis)
-
-            df_detalhe = df_hoje_geral.copy()
-            if turma_sel != "Todas":
-                df_detalhe = df_detalhe[df_detalhe['turma'] == turma_sel]
-
-            df_detalhe['Status Visual'] = df_detalhe['status'].apply(lambda x: "✅ Presente" if x == "P" else "❌ Falta")
-            st.dataframe(
-                df_detalhe[['turma', 'aluno_nome', 'Status Visual']].sort_values(by=['turma', 'aluno_nome']),
-                use_container_width=True,
-                hide_index=True
-            )
-        else:
-            st.write("Selecione uma data com chamadas realizadas para ver os detalhes.")
-
-    # --- ABA 2: BUSCA ATIVA (COM TRIMESTRES) ---
     with aba2:
-        st.markdown("### 🕵️‍♂️ Monitoramento de Faltas")
-        st.info("Analise quem está faltando muito em cada período letivo.")
-        
-        # SELETOR DE PERÍODO
-        opcoes_periodo = list(TRIMESTRES.keys()) + ["Personalizado"]
-        escolha_periodo = st.radio("Selecione o Período:", options=opcoes_periodo, horizontal=True)
-        
-        # Lógica das Datas
-        if escolha_periodo == "Personalizado":
-            c1, c2 = st.columns(2)
-            inicio = c1.date_input("Início", value=date(2026, 1, 1))
-            fim = c2.date_input("Fim", value=datetime.now().date())
-        else:
-            inicio, fim = TRIMESTRES[escolha_periodo]
-            st.success(f"🗓️ Período Selecionado: **{inicio.strftime('%d/%m/%Y')}** até **{fim.strftime('%d/%m/%Y')}**")
-            
-            if escolha_periodo == "2º Trimestre":
-                st.caption("ℹ️ *Atenção: O recesso escolar ocorre entre 10/07 e 24/07.*")
-
-        st.divider()
-
+        escolha_trim = st.radio("Período:", list(TRIMESTRES.keys()), horizontal=True)
+        ini, fim = TRIMESTRES[escolha_trim]
         if not df.empty:
-            # Filtra pelo período
-            mask = (df['data_chamada'] >= inicio) & (df['data_chamada'] <= fim)
-            df_periodo = df.loc[mask]
+            df_trim = df[(df['data_chamada'] >= ini) & (df['data_chamada'] <= fim)]
+            faltas = df_trim[df_trim['status'] == 'F'].groupby(['turma', 'aluno_nome']).size().reset_index(name='Total')
+            alerta = st.slider("Mínimo de faltas:", 1, 20, 5)
+            st.dataframe(faltas[faltas['Total'] >= alerta].sort_values(by='Total', ascending=False), use_container_width=True)
 
-            if not df_periodo.empty:
-                # Conta apenas as FALTAS ("F")
-                df_faltas = df_periodo[df_periodo['status'] == 'F']
-                
-                if not df_faltas.empty:
-                    # Agrupa e Conta
-                    ranking = df_faltas.groupby(['turma', 'aluno_nome']).size().reset_index(name='Total de Faltas')
-                    ranking = ranking.sort_values(by='Total de Faltas', ascending=False)
-                    
-                    # FILTRO DE ALERTA
-                    alerta = st.slider(f"⚠️ Mostrar alunos com mais de X faltas neste {escolha_periodo}:", 0, 20, 5)
-                    ranking_critico = ranking[ranking['Total de Faltas'] >= alerta]
-                    
-                    if not ranking_critico.empty:
-                        st.error(f"🚩 **{len(ranking_critico)} Alunos** em situação crítica:")
-                        st.dataframe(ranking_critico, use_container_width=True, hide_index=True)
-                    else:
-                        st.success("🎉 Nenhum aluno atingiu esse limite de faltas neste período.")
-                else:
-                    st.success("🎉 Nenhuma falta registrada neste período! Frequência perfeita.")
-            else:
-                st.warning("📭 Sem dados de chamada lançados dentro destas datas.")
-        else:
-             st.warning("Sem dados no sistema.")
-
-    # --- ABA 3: HISTÓRICO DO ALUNO ---
     with aba3:
-        st.markdown("### 📄 Ficha Individual")
-        
         if not df.empty:
-            lista_alunos = sorted(df['aluno_nome'].unique())
-            aluno_search = st.selectbox("Pesquisar Aluno:", lista_alunos)
-            
-            if aluno_search:
-                df_aluno = df[df['aluno_nome'] == aluno_search].sort_values(by='data_chamada', ascending=False)
-                
-                total_aulas = len(df_aluno)
-                total_faltas = len(df_aluno[df_aluno['status'] == 'F'])
-                freq_perc = 100 - ((total_faltas / total_aulas) * 100) if total_aulas > 0 else 0
-                
-                m1, m2, m3 = st.columns(3)
-                m1.metric("Total de Aulas", total_aulas)
-                m2.metric("Total de Faltas", total_faltas, delta_color="inverse")
-                m3.metric("Frequência Global", f"{freq_perc:.1f}%")
-                
-                # Barra de Progresso
-                cor_barra = ":green" if freq_perc >= 75 else ":red"
-                st.write(f"Situação: **{freq_perc:.1f}%** de Presença {cor_barra}[{'▮'*int(freq_perc/5)}{'▯'*(20-int(freq_perc/5))}]")
+            aluno_sel = st.selectbox("Pesquisar Aluno:", sorted(df['aluno_nome'].unique()))
+            df_aluno = df[df['aluno_nome'] == aluno_sel].sort_values(by='data_chamada', ascending=False)
+            st.metric("Frequência Global", f"{((len(df_aluno[df_aluno['status']=='P'])/len(df_aluno))*100):.1f}%" if not df_aluno.empty else "0%")
+            st.table(df_aluno[['data_chamada', 'status']].head(10))
 
-                st.divider()
-                st.write("Histórico Detalhado:")
-                
-                df_aluno['Status'] = df_aluno['status'].apply(lambda x: "🔴 Falta" if x == "F" else "🟢 Presente")
-                df_aluno['Data'] = df_aluno['data_chamada'].apply(lambda x: x.strftime('%d/%m/%Y'))
-                
-                st.dataframe(
-                    df_aluno[['Data', 'turma', 'Status']],
-                    use_container_width=True,
-                    hide_index=True
-                )
-        else:
-            st.info("Sem alunos registrados na frequência.")
-
-# --- REPOSICIONAR ---
-elif menu_escolhido == "Reposicionar Estudante":
-    st.title("🔄 Reposicionar")
-    try:
-        res = supabase.table("alunos").select("turma").execute()
-        lista_turmas = sorted(list(set([x['turma'] for x in res.data if x.get('turma')])))
-    except: lista_turmas = []
+# --- TELA: REPOSICIONAR ---
+elif menu_escolhido == "Reposicionar":
+    st.title("🔄 Troca de Turma")
+    res_t = supabase.table("alunos").select("turma").execute()
+    lista_turmas = sorted(list(set([x['turma'] for x in res_t.data if x.get('turma')])))
+    t_origem = st.selectbox("Turma Atual:", lista_turmas)
+    alunos = supabase.table("alunos").select("*").eq("turma", t_origem).order("nome").execute().data
     
-    turma_origem = st.selectbox("Turma Atual:", lista_turmas)
-    data_alunos = supabase.table("alunos").select("*").eq("turma", turma_origem).execute().data
-    if data_alunos: data_alunos.sort(key=lambda x: x['nome'])
-    mapa_fotos = listar_arquivos_bucket()
-    
-    st.divider()
-    for aluno in data_alunos:
-        c1, c2, c3 = st.columns([1, 4, 3])
-        with c1:
-            chave = limpar_texto(aluno['nome'])
-            if mapa_fotos.get(chave): st.image(get_foto_url(mapa_fotos.get(chave)), width=40)
-            else: st.markdown("👤")
-        with c2: st.write(aluno['nome'])
-        with c3:
-            try: idx = lista_turmas.index(aluno['turma'])
-            except: idx = 0
-            nova = st.selectbox("Mudar", lista_turmas, index=idx, key=f"r_{aluno['id']}", label_visibility="collapsed")
-            if nova != aluno['turma']:
-                supabase.table("alunos").update({"turma": nova}).eq("id", aluno['id']).execute()
-                st.toast(f"Movido para {nova}")
-                time.sleep(0.5)
-                st.rerun()
+    for a in alunos:
+        c1, c2, c3 = st.columns([1, 3, 2])
+        c2.write(a['nome'])
+        nova = c3.selectbox("Mudar para:", lista_turmas, index=lista_turmas.index(a['turma']), key=a['id'])
+        if nova != a['turma']:
+            supabase.table("alunos").update({"turma": nova}).eq("id", a['id']).execute()
+            st.success(f"{a['nome']} movido!")
+            time.sleep(0.5)
+            st.rerun()
 
-# --- CADASTRO ---
+# --- TELA: CADASTRO ---
 elif menu_escolhido == "Cadastro":
     st.title("👤 Novo Aluno")
-    with st.form("form_cad"):
-        nome = st.text_input("Nome")
-        turma = st.text_input("Turma")
+    with st.form("cad_form"):
+        n = st.text_input("Nome Completo")
+        t = st.text_input("Turma (ex: 1º A)")
         if st.form_submit_button("Salvar"):
-            supabase.table("alunos").insert({"nome": nome.upper().strip(), "turma": turma.upper().strip()}).execute()
-            st.success("Salvo!")
+            if n and t:
+                supabase.table("alunos").insert({"nome": n.upper().strip(), "turma": t.upper().strip()}).execute()
+                st.success("Cadastrado com sucesso!")
 
-# --- IMPORTAÇÃO ---
+# --- TELA: IMPORTAÇÃO ---
 elif menu_escolhido == "Importação":
-    st.title("📤 Importar Excel/CSV")
-    arquivo = st.file_uploader("Arquivo", type=["csv", "xlsx"])
-    if arquivo and st.button("Processar"):
-        if arquivo.name.endswith('.csv'): df = pd.read_csv(arquivo)
-        else: df = pd.read_excel(arquivo)
-        df.columns = [str(c).lower().strip() for c in df.columns]
-        count = 0
-        bar = st.progress(0)
-        for i, row in df.iterrows():
-            bar.progress((i+1)/len(df))
+    st.title("📤 Importação em Massa")
+    arq = st.file_uploader("Excel ou CSV", type=['xlsx', 'csv'])
+    if arq and st.button("Processar"):
+        df_imp = pd.read_excel(arq) if arq.name.endswith('xlsx') else pd.read_csv(arq)
+        df_imp.columns = [c.lower().strip() for c in df_imp.columns]
+        for _, row in df_imp.iterrows():
             try:
-                nome = str(row['nome']).upper().strip()
-                t = row.get('turma', 'SEM TURMA')
-                check = supabase.table("alunos").select("id").eq("nome", nome).execute()
-                if not check.data:
-                    supabase.table("alunos").insert({"nome": nome, "turma": str(t).strip()}).execute()
-                    count += 1
+                supabase.table("alunos").insert({"nome": str(row['nome']).upper().strip(), "turma": str(row['turma']).upper().strip()}).execute()
             except: pass
-        st.success(f"{count} alunos importados.")
-        time.sleep(2)
-        st.rerun()
+        st.success("Importação concluída!")
