@@ -1,89 +1,92 @@
 import streamlit as st
-from supabase import create_client
+from supabase import create_client, Client
 import os
 from dotenv import load_dotenv
 
-# 1. IMPORTAÇÃO DOS MÓDULOS (Certifique-se que app.py está FORA da pasta modulos)
-from modulos.frequencia_aba import exibir_frequencia
+# Importação dos módulos (Certifique-se que os nomes dos arquivos na pasta /modulos estão corretos)
+from modulos.cenario_dia import exibir_cenario
 from modulos.reservas_aba import exibir_reservas
 from modulos.fotograma_aba import exibir_fotograma
 from modulos.cadastro_aba import exibir_cadastro
 from modulos.importacao_aba import exibir_importacao
 
-# 2. CONFIGURAÇÃO DA PÁGINA
-st.set_page_config(page_title="SIGPAM - EREMPAM", layout="wide", initial_sidebar_state="collapsed")
+# Configurações de Segurança e Conexão
+load_dotenv()
+url: str = st.secrets["SUPABASE_URL"]
+key: str = st.secrets["SUPABASE_KEY"]
+supabase: Client = create_client(url, key)
 
-# 3. CONEXÃO COM O BANCO
-@st.cache_resource
-def init_connection():
-    load_dotenv()
-    url = st.secrets.get("SUPABASE_URL") or os.getenv("SUPABASE_URL")
-    key = st.secrets.get("SUPABASE_KEY") or os.getenv("SUPABASE_KEY")
-    return create_client(url, key)
+# Configuração da Página para Celular e Desktop
+st.set_page_config(page_title="SIGPAM - Gestão Escolar", page_icon="📊", layout="wide")
 
-supabase = init_connection()
+# Estilização CSS para botões grandes e organizados
+st.markdown("""
+    <style>
+    div.stButton > button {
+        width: 100%;
+        height: 60px;
+        border-radius: 10px;
+        font-weight: bold;
+        margin-bottom: 10px;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
-# --- DADOS MESTRES ---
-LISTA_PROFESSORES = ["ALEXANDRO", "AUGUSTO", "BRUNO LARDIÃO", "CAMILA", "CATARINA", "CELSO GOMES", "CLEBSON", "EDINEI NOVAIS", "EDVÂNIA", "GABRIEL", "GELSON", "HUGO", "IGOR", "JACKSON", "JAMES", "JÉSSICA VITORINO", "LILIAN JORDÃO", "LYLIAN CABRAL", "PATRICIA", "PEDRO", "RAFAEL", "ROBERTA", "SÉRGIO", "SEVERINO", "TYAGO", "VIVIANE"]
-AULAS_OPCOES = ["1ª Aula", "2ª Aula", "3ª Aula", "4ª Aula", "5ª Aula", "6ª Aula", "7ª Aula", "8ª Aula", "9ª Aula"]
-ESPACOS_TOTAIS = ["Auditório", "Laboratório de Ciências", "Laboratório de Informática", "Biblioteca", "Refeitório", "Quadra", "Nenhum (Só Equipamento)"]
-
-# --- CONTROLE DE NAVEGAÇÃO ---
+# Lógica de Navegação
 if 'pagina' not in st.session_state:
     st.session_state.pagina = 'home'
 
-def mudar_pagina(nome_pagina):
-    st.session_state.pagina = nome_pagina
+def mudar_pagina(nome):
+    st.session_state.pagina = nome
     st.rerun()
 
-# ==================================================
-# 🏠 TELA INICIAL: PAINEL DE BOTÕES
-# ==================================================
-if st.session_state.pagina == 'home':
-    st.markdown("<h1 style='text-align: center; color: #ff4b4b;'>SIGPAM - EREMPAM</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center;'>Gestão Integrada Escolar | 2026</p>", unsafe_allow_html=True)
-    st.divider()
+# --- INTERFACE PRINCIPAL ---
 
-    # Layout de Botões (Sem o parâmetro 'height' que causou o erro)
+# Botão de Voltar (Sempre visível exceto na Home)
+if st.session_state.pagina != 'home':
+    if st.button("⬅️ Voltar para o Menu Principal"):
+        mudar_pagina('home')
+
+# Renderização das Páginas
+if st.session_state.pagina == 'home':
+    st.title("🏫 SIGPAM - Sistema de Gestão")
+    st.subheader("Painel de Controle do Diretor")
+    
+    # Grid de Botões Principais
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("📊 FREQUÊNCIA DIÁRIA", use_container_width=True):
-            mudar_pagina('frequencia')
+        if st.button("📊 CENÁRIO DO DIA", help="Censo em tempo real e termômetro de faltas"):
+            mudar_pagina('cenario_dia')
             
-        if st.button("📸 FOTOGRAMA (MAPA)", use_container_width=True):
+        if st.button("📸 FOTOGRAMA", help="Visualizar mapa de sala com fotos"):
             mudar_pagina('fotograma')
 
-    with col2:
-        if st.button("📅 RESERVAS", use_container_width=True):
+        if st.button("📅 RESERVAS", help="Agendamentos de espaços e equipamentos"):
             mudar_pagina('reservas')
-            
-        if st.button("👤 GESTÃO/CADASTRO", use_container_width=True):
-            mudar_pagina('cadastro')
-    
-    st.divider()
-    if st.button("📤 IMPORTAÇÃO (ANUAL)", use_container_width=True):
-        mudar_pagina('importacao')
 
-# ==================================================
-# 🔄 NAVEGAÇÃO
-# ==================================================
-elif st.session_state.pagina == 'frequencia':
-    if st.button("⬅️ Voltar"): mudar_pagina('home')
-    exibir_frequencia(supabase)
+    with col2:
+        if st.button("👤 GESTÃO DE ALUNOS", help="Cadastro e upload de fotos individuais"):
+            mudar_pagina('cadastro')
+            
+        if st.button("📤 IMPORTAR DADOS", help="Subir lista de alunos via CSV/Excel"):
+            mudar_pagina('importacao')
+
+elif st.session_state.pagina == 'cenario_dia':
+    exibir_cenario(supabase)
 
 elif st.session_state.pagina == 'reservas':
-    if st.button("⬅️ Voltar"): mudar_pagina('home')
-    exibir_reservas(supabase, LISTA_PROFESSORES, AULAS_OPCOES, ESPACOS_TOTAIS, 5, 3, 2)
+    # Passando os parâmetros necessários para o módulo de reservas
+    LISTA_PROFESSORES = ["Prof. Silva", "Profa. Maria", "Prof. Ricardo"] # Pode vir do banco depois
+    AULAS_OPCOES = ["1ª Aula", "2ª Aula", "3ª Aula", "4ª Aula", "5ª Aula", "6ª Aula"]
+    ESPACOS = ["Auditório", "Laboratório", "Biblioteca", "Quadra", "Sala Multimídia"]
+    exibir_reservas(supabase, LISTA_PROFESSORES, AULAS_OPCOES, ESPACOS, 3, 2, 5)
 
 elif st.session_state.pagina == 'fotograma':
-    if st.button("⬅️ Voltar"): mudar_pagina('home')
     exibir_fotograma(supabase)
 
 elif st.session_state.pagina == 'cadastro':
-    if st.button("⬅️ Voltar"): mudar_pagina('home')
     exibir_cadastro(supabase)
 
 elif st.session_state.pagina == 'importacao':
-    if st.button("⬅️ Voltar"): mudar_pagina('home')
     exibir_importacao(supabase)
