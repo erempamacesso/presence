@@ -25,7 +25,8 @@ def exibir_cenario(supabase):
         res_freq = supabase.table("frequencia").select("*").eq("data_chamada", hoje_iso).execute()
         df_presentes_hoje = pd.DataFrame(res_freq.data)
         
-        n_presentes = len(df_presentes_hoje.drop_duplicates(subset=['aluno_id'])) if not df_presentes_hoje.empty else 0
+        # Trocamos 'aluno_id' por 'aluno_nome' que sabemos que existe no seu banco
+n_presentes = len(df_presentes_hoje.drop_duplicates(subset=['aluno_nome'])) if not df_presentes_hoje.empty else 0
         n_faltas = total_alunos - n_presentes
         perc = (n_presentes / total_alunos * 100) if total_alunos > 0 else 0
 
