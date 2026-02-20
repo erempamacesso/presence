@@ -9,6 +9,7 @@ from datetime import datetime, date
 from streamlit_option_menu import option_menu
 from urllib.parse import quote
 import altair as alt
+import importlib.util # Adicionado para conseguir puxar o arquivo reservas.py
 
 # ==================================================
 # 1. CONFIGURAÇÃO E CONEXÃO
@@ -64,6 +65,13 @@ def get_foto_url(nome_real_arquivo):
         return f"{url_base}?t={int(time.time())}"
     except: return None
 
+# Função para carregar outros arquivos Python
+def carregar_pagina(nome_arquivo):
+    caminho = os.path.join(os.path.dirname(__file__), nome_arquivo)
+    spec = importlib.util.spec_from_file_location("module.name", caminho)
+    modulo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modulo)
+
 # ==================================================
 # 3. SIDEBAR (ORDEM SOLICITADA)
 # ==================================================
@@ -73,7 +81,7 @@ with st.sidebar:
         menu_title=None,
         options=["Frequência", "Reservas", "Fotograma", "Cadastro", "Importação"],
         icons=["clipboard-check-fill", "calendar-check-fill", "camera-fill", "person-plus-fill", "cloud-upload-fill"],
-        default_index=0, # Garante que Frequência abra primeiro
+        default_index=0, 
         styles={"nav-link-selected": {"background-color": "#ff4b4b"}}
     )
 
@@ -81,28 +89,23 @@ with st.sidebar:
 # 4. TELAS
 # ==================================================
 
-# --- TELA 1: FREQUÊNCIA (RELATÓRIO DO DIA) ---
+# --- TELA 1: FREQUÊNCIA ---
 if menu_escolhido == "Frequência":
     st.title("📊 Relatório de Frequência Diária")
     hoje = date.today().isoformat()
     
     with st.spinner("Buscando dados de hoje..."):
-        # 1. Busca total de alunos matriculados
         res_total = supabase.table("alunos").select("id", count="exact").execute()
         total_matriculados = res_total.count
         
-        # 2. Busca presenças registradas hoje pelo chamada.py na tabela 'frequencia'
-        # Nota: Se sua tabela de logs de presença tiver outro nome, altere aqui.
         res_freq = supabase.table("frequencia").select("*").eq("data_chamada", hoje).execute()
         df_presenca = pd.DataFrame(res_freq.data)
 
     if not df_presenca.empty:
-        # Cálculos
         presentes = len(df_presenca.drop_duplicates(subset=['aluno_id'])) if 'aluno_id' in df_presenca.columns else len(df_presenca)
         faltas = total_matriculados - presentes
         perc_falta = int((faltas / total_matriculados) * 100) if total_matriculados > 0 else 0
 
-        # Painel de Números
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Matriculados", total_matriculados)
         c2.metric("Presentes Hoje", presentes, delta="Entradas")
@@ -111,7 +114,6 @@ if menu_escolhido == "Frequência":
 
         st.markdown("---")
         
-        # Abas de visualização
         tab1, tab2 = st.tabs(["📈 Presença por Turma", "📝 Lista de Entradas"])
         
         with tab1:
@@ -130,39 +132,15 @@ if menu_escolhido == "Frequência":
         st.warning(f"Nenhum registro de presença encontrado para hoje ({date.today().strftime('%d/%m/%Y')}).")
         st.info("Os dados aparecerão aqui assim que os alunos registrarem a entrada no 'chamada.py'.")
 
-# --- TELA 2: RESERVAS (COM LIMPEZA AUTOMÁTICA) ---
+# --- TELA 2: RESERVAS (AGORA PUXANDO O ARQUIVO EXTERNO) ---
 elif menu_escolhido == "Reservas":
-    st.title("📅 Reserva de Espaços")
-    # ... (Mantido código anterior com st.pills e clear_on_submit=True)
-    aba_ver, aba_nova = st.tabs(["🔍 Consultar Agenda", "📝 Nova Reserva"])
-    
-    with aba_ver:
-        d_con = st.date_input("Ver dia:", value=date.today())
-        res_r = supabase.table("reservas").select("*").eq("data_reserva", str(d_con)).execute()
-        df_r = pd.DataFrame(res_r.data)
-        for esp in ESPACOS_ESCOLA:
-            r_l = df_r[df_r['espaco'] == esp] if not df_r.empty else pd.DataFrame()
-            if not r_l.empty:
-                for prof, d_p in r_l.groupby("professor"):
-                    st.markdown(f"<div class='espaco-reservado'><b>🔴 {esp}</b><br>Prof: {prof} | Aulas: {', '.join(d_p['periodo'].tolist())}</div>", unsafe_allow_html=True)
-            else:
-                st.markdown(f"<div class='espaco-livre'><b>🟢 {esp}</b> - Disponível</div>", unsafe_allow_html=True)
+    # Em vez de ter todo o código aqui, ele só "chama" o arquivo que criamos
+    try:
+        carregar_pagina("reservas.py")
+    except Exception as e:
+        st.error(f"Erro ao carregar a página de reservas. Verifique se o arquivo 'reservas.py' foi criado corretamente. Detalhe do erro: {e}")
 
-    with aba_nova:
-        with st.form("form_reserva", clear_on_submit=True):
-            p_n = st.text_input("Nome do Professor:")
-            e_s = st.selectbox("Recurso:", ESPACOS_ESCOLA)
-            d_s = st.date_input("Data:", value=date.today())
-            a_s = st.pills("Selecione as Aulas:", options=LISTA_AULAS, selection_mode="multi")
-            if st.form_submit_button("Confirmar Reserva"):
-                if p_n and a_s:
-                    for a in a_s:
-                        supabase.table("reservas").insert({"espaco": e_s, "professor": p_n.upper(), "data_reserva": str(d_s), "periodo": a}).execute()
-                    st.success("Reserva realizada com sucesso!")
-                    time.sleep(1)
-                    st.rerun()
-
-# --- TELA 3: FOTOGRAMA (CORRIGIDO) ---
+# --- TELA 3: FOTOGRAMA ---
 elif menu_escolhido == "Fotograma":
     st.title("📸 Mapa de Sala")
     res_t = supabase.table("alunos").select("turma").execute()
