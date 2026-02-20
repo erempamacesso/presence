@@ -1,109 +1,89 @@
 import streamlit as st
+import pandas as pd
 from supabase import create_client
 import os
 from dotenv import load_dotenv
-from datetime import datetime
+import unicodedata
+import time
+from datetime import datetime, date
+from streamlit_option_menu import option_menu
+from urllib.parse import quote
 
-# Conexão com o Supabase (puxando dos Secrets do Streamlit para sua segurança)
-load_dotenv()
-SUPABASE_URL = st.secrets.get("SUPABASE_URL") or os.getenv("SUPABASE_URL")
-SUPABASE_KEY = st.secrets.get("SUPABASE_KEY") or os.getenv("SUPABASE_KEY")
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+# 1. CONFIGURAÇÃO E CONEXÃO
+st.set_page_config(page_title="SIGPAM - EREMPAM", layout="wide")
 
-st.title("📅 Sistema de Reservas")
-st.markdown("Reserve espaços e equipamentos da escola.")
+@st.cache_resource
+def init_connection():
+    load_dotenv()
+    url = st.secrets.get("SUPABASE_URL") or os.getenv("SUPABASE_URL")
+    key = st.secrets.get("SUPABASE_KEY") or os.getenv("SUPABASE_KEY")
+    return create_client(url, key)
 
-# --- DADOS FIXOS DA ESCOLA (Altere com os nomes reais) ---
-LISTA_PROFESSORES = [
-    "Ana Maria (Matemática)", "Carlos Eduardo (História)", 
-    "Fernanda Lima (Português)", "João Silva (Física)", "Maria Souza (Biologia)"
-]
+supabase = init_connection()
 
-AULAS = ["1ª Aula", "2ª Aula", "3ª Aula", "4ª Aula", "5ª Aula", "6ª Aula", "7ª Aula", "8ª Aula", "9ª Aula"]
-ESPACOS_TOTAIS = ["Auditório", "Laboratório de Ciências", "Sala de informática", "Biblioteca", "Refeitório", "Nenhum (Só Equipamento)"]
+# 2. SIDEBAR (MENU QUE TINHA SUMIDO)
+with st.sidebar:
+    st.markdown("<h2 style='text-align: center;'>SIGPAM</h2>", unsafe_allow_html=True)
+    menu_escolhido = option_menu(
+        menu_title=None,
+        options=["Frequência", "Reservas", "Fotograma", "Cadastro", "Importação"],
+        icons=["clipboard-check", "calendar-check", "camera", "person-plus", "cloud-upload"],
+        default_index=1, # Define Reservas como padrão por enquanto
+        styles={"nav-link-selected": {"background-color": "#ff4b4b"}}
+    )
 
-# Estoque da escola
-TOTAL_DATASHOWS = 5
-TOTAL_CAIXAS = 3
-TOTAL_MICROFONES = 3
+# 3. LÓGICA DAS TELAS
+if menu_escolhido == "Frequência":
+    st.title("📊 Relatório de Frequência")
+    st.info("Aqui fica o seu código original de frequência.")
 
-# --- ETAPA 1: ESCOLHER DATA E HORA ---
-col1, col2 = st.columns(2)
-with col1:
-    data_selecionada = st.date_input("Data da Reserva:", min_value=datetime.today().date())
-with col2:
-    aula_selecionada = st.selectbox("Qual Aula?", AULAS)
-
-# Busca no banco as reservas que já existem para esse dia e período
-try:
-    resposta = supabase.table("reservas").select("*").eq("data_reserva", str(data_selecionada)).eq("periodo", aula_selecionada).execute()
-    reservas_existentes = resposta.data
-except Exception as e:
-    st.error(f"Erro ao buscar dados: {e}")
-    reservas_existentes = []
-
-# --- LÓGICA DE PREVENÇÃO DE CONFLITOS (ESPAÇOS) ---
-espacos_ocupados = [reserva.get('espaco') for reserva in reservas_existentes if reserva.get('espaco') and reserva.get('espaco') != "Nenhum (Só Equipamento)"]
-espacos_disponiveis = [e for e in ESPACOS_TOTAIS if e not in espacos_ocupados]
-
-# --- LÓGICA DE INVENTÁRIO (EQUIPAMENTOS) ---
-datashows_usados = sum(1 for r in reservas_existentes if r.get('equipamentos') and "Datashow" in r.get('equipamentos', ''))
-caixas_usadas = sum(1 for r in reservas_existentes if r.get('equipamentos') and "Caixa de Som" in r.get('equipamentos', ''))
-mics_usados = sum(1 for r in reservas_existentes if r.get('equipamentos') and "Microfone" in r.get('equipamentos', ''))
-
-disp_data = TOTAL_DATASHOWS - datashows_usados
-disp_caixa = TOTAL_CAIXAS - caixas_usadas
-disp_mic = TOTAL_MICROFONES - mics_usados
-
-opcoes_equip = []
-if disp_data > 0: opcoes_equip.append(f"Datashow ({disp_data} disponíveis)")
-if disp_caixa > 0: opcoes_equip.append(f"Caixa de Som ({disp_caixa} disponíveis)")
-if disp_mic > 0: opcoes_equip.append(f"Microfone ({disp_mic} disponíveis)")
-
-st.divider()
-
-# --- ETAPA 2: FORMULÁRIO ---
-with st.form("form_reserva"):
-    professor = st.selectbox("👩‍🏫 Professor(a):", ["-- Selecione --"] + sorted(LISTA_PROFESSORES))
+elif menu_escolhido == "Reservas":
+    st.title("📅 Sistema de Reservas")
     
-    if not espacos_disponiveis:
-        st.error("⚠️ Todos os espaços já estão ocupados neste horário!")
-        espaco = st.selectbox("📍 Espaço:", ["Nenhum (Só Equipamento)"])
-    else:
-        espaco = st.selectbox("📍 Espaço:", espacos_disponiveis)
-    
-    if not opcoes_equip:
-        st.warning("⚠️ Todos os equipamentos já estão emprestados neste horário.")
-        equipamentos = st.multiselect("💻 Equipamentos:", ["Nenhum disponível"])
-    else:
-        equipamentos = st.multiselect("💻 Equipamentos (Opcional):", opcoes_equip)
-    
-    observacoes = st.text_area("📝 Observações (Opcional):", placeholder="Ex: Deixar o datashow na sala dos professores...")
+    # Listas de apoio
+    AULAS = ["1ª Aula", "2ª Aula", "3ª Aula", "4ª Aula", "5ª Aula", "6ª Aula", "7ª Aula", "8ª Aula", "9ª Aula"]
+    ESPACOS = ["Auditório", "Laboratório de Ciências", "Sala de informática", "Biblioteca", "Refeitório"]
 
-    enviar = st.form_submit_button("✅ Confirmar Reserva", use_container_width=True)
+    col1, col2 = st.columns(2)
+    with col1:
+        data_sel = st.date_input("Data da Reserva:", min_value=datetime.today().date())
+    with col2:
+        aula_sel = st.selectbox("Qual Aula?", AULAS)
 
-    if enviar:
-        if professor == "-- Selecione --":
-            st.warning("Por favor, selecione seu nome na lista.")
-        else:
-            # Limpa o texto para salvar no banco bonitinho (Tira o "4 disponíveis")
-            equip_limpos = [e.split(" (")[0] for e in equipamentos if "disponíve" in e]
-            equip_str = ", ".join(equip_limpos) if equip_limpos else "Nenhum"
+    # Consulta ao banco (Usando 'periodo' como no seu banco)
+    try:
+        res = supabase.table("reservas").select("*").eq("data_reserva", str(data_sel)).eq("periodo", aula_sel).execute()
+        reservas_existentes = res.data
+    except Exception as e:
+        st.error(f"Erro de conexão: {e}")
+        reservas_existentes = []
 
-            dados = {
-                "data_reserva": str(data_selecionada),
-                "periodo": aula_selecionada, 
-                "professor": professor,
-                "espaco": espaco,
-                "equipamentos": equip_str,
-                "observacoes": observacoes
-            }
+    # Formulário de Reserva
+    with st.form("form_reserva"):
+        prof = st.text_input("Nome do Professor:")
+        esp = st.selectbox("Espaço:", ESPACOS)
+        obs = st.text_area("Observações:")
+        
+        if st.form_submit_button("✅ Confirmar Reserva"):
+            if prof:
+                dados = {
+                    "data_reserva": str(data_sel),
+                    "periodo": aula_sel,
+                    "professor": prof.upper(),
+                    "espaco": esp,
+                    "observacoes": obs
+                }
+                try:
+                    supabase.table("reservas").insert(dados).execute()
+                    st.success("🎉 Reserva realizada!")
+                    st.balloons()
+                except Exception as e:
+                    st.error(f"Erro ao salvar: {e}")
+            else:
+                st.warning("Digite o nome do professor.")
 
-            try:
-                supabase.table("reservas").insert(dados).execute()
-                st.success("🎉 Reserva efetuada com sucesso!")
-                st.balloons()
-            except Exception as e:
-                st.error("Erro ao salvar a reserva!")
-                st.info(f"Detalhe técnico: {e}")
-                st.warning("🚨 Você lembrou de criar as colunas 'equipamentos' e 'observacoes' lá no Supabase?")
+elif menu_escolhido == "Fotograma":
+    st.title("📸 Fotograma")
+    st.info("Aqui fica a visualização dos alunos.")
+
+# Repita para as outras abas...
