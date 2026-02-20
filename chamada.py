@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from datetime import datetime
 import pytz
 import unicodedata
+import time
 from urllib.parse import quote
 
 # 1. Configuração e Conexão
@@ -23,15 +24,17 @@ st.markdown("""
             background-color: #fcfcfc; text-align: center; margin-bottom: 15px;
         }
         .stCheckbox { font-size: 18px; font-weight: bold; }
-        img { border-radius: 10px; border: 2px solid #ff4b4b; }
+        img { border-radius: 10px; border: 2px solid #ff4b4b; object-fit: cover; }
+        .nome-chamada { font-weight: bold; font-size: 1.1rem; color: #333; margin-bottom: 5px; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. MAPA DE MÁSCARA (AQUI ESTÁ A SEGURANÇA) ---
-# O aluno só vê o código do QR Code. Ele não sabe qual código pertence a qual turma.
+# --- 2. MAPA DE MÁSCARA (CORRIGIDO PARA O SEU BANCO) ---
+# Aqui os códigos apontam para o nome exato da coluna 'turma' no seu Supabase
 MAPA_TURMAS = {
-    "9f1a": "1A", "2b3c": "1B", "x7y8": "2A", "k4m2": "3A",
-    "m5n6": "1C", "p7q8": "2C", "r9s0": "3C" # Adicione todos os seus códigos aqui
+    "9f1a": "1º A", "2b3c": "1º B", "m5n6": "1º C", "d4r1": "1º D", "e5s2": "1º E",
+    "x7y8": "2º A", "j1k2": "2º B", "p7q8": "2º C", "z8x9": "2º D",
+    "k4m2": "3º A", "w3v4": "3º B", "r9s0": "3º C", "y2w1": "3º D"
 }
 
 # 3. Pega o Token pela URL (ex: ?t=9f1a)
@@ -40,7 +43,9 @@ token_url = params.get("t", None)
 
 def limpar_texto(texto):
     if not texto: return ""
+    # Remove extensão se houver e normaliza acentos
     nfkd = unicodedata.normalize('NFKD', str(texto).split(".")[0])
+    # Remove espaços e caracteres especiais para bater com o padrão de fotos
     return "".join([c for c in nfkd if not unicodedata.combining(c)]).lower().replace(" ", "").strip()
 
 if token_url in MAPA_TURMAS:
@@ -49,39 +54,41 @@ if token_url in MAPA_TURMAS:
     
     # 4. Busca alunos da turma
     try:
+        # A busca agora usa o nome exato: "1º A", "1º B", etc.
         response = supabase.table("alunos").select("nome").eq("turma", turma_real).order("nome").execute()
         alunos = response.data
     except Exception as e:
-        st.error("Erro ao carregar alunos."); st.stop()
+        st.error("Erro ao conectar com o banco de dados."); st.stop()
 
     if not alunos:
-        st.warning("Nenhuma lista encontrada para esta turma.")
+        st.warning(f"Nenhuma lista encontrada para a turma '{turma_real}'. Verifique o nome no banco de dados.")
     else:
         with st.form("form_chamada", clear_on_submit=False):
             fuso = pytz.timezone('America/Recife')
             data_hoje = datetime.now(fuso).strftime('%Y-%m-%d')
-            st.write(f"📅 **Data:** {datetime.now(fuso).strftime('%d/%m/%Y')}")
+            st.info(f"📅 **Data:** {datetime.now(fuso).strftime('%d/%m/%Y')}")
             
             presencas = {}
+            cache_buster = int(time.time()) # Garante que a foto atualize
             
-            # 5. LAYOUT DE FOTOS GRANDES (1 por linha ou 2 colunas largas)
-            # Use columns(2) para que no celular a foto fique bem grande
+            # 5. LAYOUT DE FOTOS GRANDES (2 colunas para mobile)
             cols = st.columns(2)
             
             for i, aluno in enumerate(alunos):
                 with cols[i % 2]:
                     st.markdown('<div class="aluno-card">', unsafe_allow_html=True)
                     
-                    # Lógica da Foto
+                    # Lógica da Foto: nome do aluno sem espaços e minúsculo
                     nome_limpo = limpar_texto(aluno['nome'])
-                    url_foto = f"{SUPABASE_URL}/storage/v1/object/public/fotos-alunos/{quote(nome_limpo)}.jpg"
+                    url_foto = f"{SUPABASE_URL}/storage/v1/object/public/fotos-alunos/{quote(nome_limpo)}.jpg?t={cache_buster}"
                     
-                    # Mostra a foto grande
+                    # Mostra a foto (se não existir, mostra o padrão)
                     st.image(url_foto, use_container_width=True)
                     
-                    # Checkbox de presença (Começa marcado = Presente)
+                    st.markdown(f"<div class='nome-chamada'>{aluno['nome'].split()[0]}</div>", unsafe_allow_html=True)
+                    
+                    # Checkbox (Marcado por padrão = Presente)
                     presencas[aluno['nome']] = st.checkbox("Presente", value=True, key=f"check_{i}")
-                    st.write(f"**{aluno['nome'].split()[0]}**") # Mostra apenas o primeiro nome para ser rápido
                     
                     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -99,13 +106,13 @@ if token_url in MAPA_TURMAS:
                     })
                 
                 try:
-                    # Limpa e Insere (Evita duplicados)
+                    # Deleta chamada antiga do dia e insere a nova
                     supabase.table("frequencia").delete().match({"turma": turma_real, "data_chamada": data_hoje}).execute()
                     supabase.table("frequencia").insert(dados_enviar).execute()
                     st.success("✅ Chamada enviada com sucesso!")
                     st.balloons()
                 except Exception as e:
-                    st.error(f"Erro ao salvar: {e}")
+                    st.error(f"Erro ao salvar no banco: {e}")
 else:
-    st.error("🚫 Link Inválido ou Expirado.")
-    st.info("Aponte a câmera para o QR Code oficial da sua sala.")
+    st.error("🚫 Acesso não autorizado.")
+    st.info("Por favor, utilize o QR Code oficial da sua turma para acessar a chamada.")
