@@ -4,72 +4,59 @@ from urllib.parse import quote
 import time
 
 def limpar_texto(texto):
-    """Limpeza ultra-agressiva para garantir o match perfeito entre banco e storage"""
     if not texto: return ""
-    # Remove extensão se houver
-    if "." in str(texto):
-        texto = str(texto).rsplit('.', 1)[0]
-    
-    # Normaliza (remove acentos)
+    if "." in str(texto): texto = str(texto).rsplit('.', 1)[0]
     nfkd = unicodedata.normalize('NFKD', str(texto))
     texto_limpo = "".join([c for c in nfkd if not unicodedata.combining(c)]).lower()
-    
-    # Remove TUDO que não for letra ou número (espaços, hífens, underlines)
     return "".join(filter(str.isalnum, texto_limpo))
 
 def listar_arquivos_bucket(supabase):
     try:
-        # Aumentamos o limite para garantir que pegue todos os arquivos
+        # Aumentamos o limite para garantir que pegue todos os arquivos da escola
         arquivos = supabase.storage.from_('fotos-alunos').list(path=None, options={'limit': 5000})
-        mapa = {}
-        for arq in arquivos:
-            nome_original = arq['name']
-            # Aceita PNG e JPG por segurança
-            if nome_original.lower().endswith(('.png', '.jpg', '.jpeg')):
-                chave = limpar_texto(nome_original)
-                mapa[chave] = nome_original
-        return mapa
+        return {limpar_texto(arq['name']): arq['name'] for arq in arquivos}
     except: return {}
 
 def exibir_fotograma(supabase):
-    st.title("📸 Mapa de Sala (Fotograma)")
+    st.title("📸 Fotograma (Mapa de Sala)")
     
     try:
-        # Busca as turmas
         res_turmas = supabase.table("alunos").select("turma").execute()
         lista_turmas = sorted(list(set([r['turma'] for r in res_turmas.data if r.get('turma')])))
         
         if lista_turmas:
             turma_sel = st.pills("Selecione a Turma:", options=lista_turmas)
             if turma_sel:
-                # Busca alunos da turma em ordem alfabética
+                # 1. Busca alunos em ordem alfabética
                 alunos = supabase.table("alunos").select("*").eq("turma", turma_sel).order("nome").execute().data
                 mapa_fotos = listar_arquivos_bucket(supabase)
                 
-                # GRID DE 6 COLUNAS
+                # 2. DEFINIÇÃO DA GRADE (6 colunas)
                 num_cols = 6
-                cols = st.columns(num_cols)
                 
-                for idx, aluno in enumerate(alunos):
-                    with cols[idx % num_cols]:
-                        # Container compacto para as fotos
-                        with st.container(border=True):
-                            chave_aluno = limpar_texto(aluno['nome'])
-                            foto_arq = mapa_fotos.get(chave_aluno)
-                            
-                            if foto_arq:
-                                # URL pública com timestamp para evitar cache de fotos velhas
-                                url_base = f"{st.secrets['SUPABASE_URL']}/storage/v1/object/public/fotos-alunos/{quote(foto_arq)}"
-                                url = f"{url_base}?t={int(time.time())}"
-                                st.image(url, use_container_width=True)
-                            else:
-                                # Placeholder cinza caso não encontre o match exato
-                                st.markdown("<div style='height:80px; background:#f0f2f6; display:flex; align-items:center; justify-content:center; border-radius:5px; font-size:25px;'>👤</div>", unsafe_allow_html=True)
-                            
-                            # Nome menor para caber na grade de 6
-                            nome_exibir = aluno['nome'].split()[0] # Mostra só o primeiro nome se quiser economizar espaço
-                            st.markdown(f"<p style='text-align:center; font-size:9px; font-weight:bold; color:#555; margin-top:2px; line-height:1;'>{aluno['nome']}</p>", unsafe_allow_html=True)
+                # 3. LÓGICA DE LINHAS (Garante ordem alfabética no celular)
+                # Dividimos a lista de alunos em grupos de 6
+                for i in range(0, len(alunos), num_cols):
+                    linha_alunos = alunos[i : i + num_cols]
+                    cols = st.columns(num_cols)
+                    
+                    for j, aluno in enumerate(linha_alunos):
+                        with cols[j]:
+                            with st.container(border=True):
+                                chave = limpar_texto(aluno['nome'])
+                                foto_arq = mapa_fotos.get(chave)
+                                
+                                if foto_arq:
+                                    url_base = f"{st.secrets['SUPABASE_URL']}/storage/v1/object/public/fotos-alunos/{quote(foto_arq)}"
+                                    st.image(f"{url_base}?t={int(time.time())}", use_container_width=True)
+                                else:
+                                    # Placeholder visualmente mais limpo
+                                    st.markdown("<div style='height:80px; background:#f9f9f9; display:flex; align-items:center; justify-content:center; border-radius:8px; border: 1px dashed #ccc; font-size:24px;'>👤</div>", unsafe_allow_html=True)
+                                
+                                # Nome formatado para não quebrar o layout
+                                nome_curto = aluno['nome'].split()[0] # Pega o primeiro nome
+                                st.markdown(f"<p style='text-align:center; font-size:10px; font-weight:bold; margin-top:4px; line-height:1.1;'>{aluno['nome']}</p>", unsafe_allow_html=True)
         else:
             st.warning("Nenhuma turma encontrada.")
     except Exception as e:
-        st.error(f"Erro ao carregar o Fotograma: {e}")
+        st.error(f"Erro no Fotograma: {e}")
