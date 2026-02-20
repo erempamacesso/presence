@@ -6,3 +6,4 @@ opencv-python-headless
 pytz
 streamlit-option-menu
 openpyxl
+streamlit-calendar 
