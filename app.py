@@ -8,7 +8,7 @@ from PIL import Image
 # Ele vai tentar carregar seu favicon.ico, se não achar, usa o emoji.
 try:
     st.set_page_config(
-        page_title="SIGPAM - Gestão Escolar", 
+        page_title="SIAGE - Sistema Auxiliar de Gestão Escolar", 
         page_icon="favicon.ico", 
         layout="wide"
     )
@@ -76,8 +76,8 @@ if st.session_state.pagina == 'home':
         except:
             st.write("🏫")
     with col_t:
-        st.title("SIGPAM")
-        st.subheader("Painel de Controle do Diretor")
+        st.title("SIAGE")
+        st.subheader("SISTEMA AUXILIAR DE GESTÃO ESCOLAR")
     
     st.write("---")
     
@@ -118,3 +118,4 @@ elif st.session_state.pagina == 'cadastro':
 
 elif st.session_state.pagina == 'importacao':
     exibir_importacao(supabase)
+
