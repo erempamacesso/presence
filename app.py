@@ -2,18 +2,24 @@ import streamlit as st
 from supabase import create_client, Client
 import os
 from dotenv import load_dotenv
-from PIL import Image
 
-# 1. CONFIGURAÇÃO DA PÁGINA (Deve ser a primeira coisa!)
-# Ele vai tentar carregar seu favicon.ico, se não achar, usa o emoji.
+# 1. CONFIGURAÇÃO DA PÁGINA (Aba do Navegador)
+# Tenta carregar a logo oficial para a aba, senão usa o padrão
 try:
-    st.set_page_config(
-        page_title="SIAGE - Sistema Auxiliar de Gestão Escolar", 
-        page_icon="favicon.ico", 
-        layout="wide"
-    )
+    if os.path.exists("logo_erempam.png"):
+        st.set_page_config(
+            page_title="SIAGE - Sistema Auxiliar de Gestão Escolar", 
+            page_icon="logo_erempam.png", 
+            layout="wide"
+        )
+    else:
+        st.set_page_config(
+            page_title="SIAGE - Sistema Auxiliar de Gestão Escolar", 
+            page_icon="🏫", 
+            layout="wide"
+        )
 except:
-    st.set_page_config(page_title="SIGPAM", page_icon="🏫", layout="wide")
+    st.set_page_config(page_title="SIAGE", page_icon="🏫", layout="wide")
 
 # 2. CONEXÃO SUPABASE
 load_dotenv()
@@ -28,23 +34,29 @@ from modulos.fotograma_aba import exibir_fotograma
 from modulos.cadastro_aba import exibir_cadastro
 from modulos.importacao_aba import exibir_importacao
 
-# 4. ESTILIZAÇÃO CSS (IDENTIDADE VISUAL)
+# 4. ESTILIZAÇÃO CSS (BOTOES E LAYOUT)
 st.markdown("""
     <style>
-    /* Botões do Menu Principal */
     div.stButton > button {
         width: 100%;
-        height: 70px;
+        height: 65px;
         border-radius: 12px;
         font-weight: bold;
-        font-size: 18px;
-        margin-bottom: 15px;
-        transition: 0.3s;
+        font-size: 16px;
+        margin-bottom: 10px;
     }
-    /* Estilo do botão de Voltar */
-    [data-testid="stBaseButton-secondary"] {
-        height: 40px !important;
-        background-color: #f0f2f6;
+    .block-container {
+        padding-top: 1.5rem;
+    }
+    /* Estilo para o título principal */
+    .titulo-siage {
+        font-size: 42px !important;
+        font-weight: 800;
+        margin-bottom: 0px;
+    }
+    .subtitulo-siage {
+        font-size: 18px !important;
+        color: #555;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -59,29 +71,31 @@ def mudar_pagina(nome):
 
 # --- INTERFACE ---
 
-# Botão de Voltar (Sempre visível exceto na Home)
+# Botão de Voltar (Sempre disponível nas páginas internas)
 if st.session_state.pagina != 'home':
-    if st.button("⬅️ VOLTAR AO MENU"):
+    if st.button("⬅️ VOLTAR AO MENU PRINCIPAL"):
         mudar_pagina('home')
     st.divider()
 
 # RENDERIZAÇÃO
 if st.session_state.pagina == 'home':
-    # Cabeçalho com Logo
-    col_l, col_t = st.columns([1, 4])
+    # --- CABEÇALHO COM LOGO E NOME COMPLETO ---
+    col_l, col_t = st.columns([1, 3])
+    
     with col_l:
-        try:
-            # Tenta carregar a logo (favicon ou logo_escola.png)
-            st.image("favicon.ico", width=100) 
-        except:
-            st.write("🏫")
+        if os.path.exists("logo_erempam.png"):
+            st.image("logo_erempam.png", width=180)
+        else:
+            st.title("🏫")
+            
     with col_t:
-        st.title("SIAGE")
-        st.subheader("SISTEMA AUXILIAR DE GESTÃO ESCOLAR")
+        st.write("") # Ajuste de altura
+        st.markdown('<p class="titulo-siage">SIAGE</p>', unsafe_allow_html=True)
+        st.markdown('<p class="subtitulo-siage">Sistema Auxiliar de Gestão Escolar</p>', unsafe_allow_html=True)
     
     st.write("---")
     
-    # Grid de Botões (Mobile Friendly)
+    # Grid de Botões Principais
     col1, col2 = st.columns(2)
     
     with col1:
@@ -101,14 +115,15 @@ if st.session_state.pagina == 'home':
         if st.button("📤 IMPORTAR DADOS"):
             mudar_pagina('importacao')
 
+# Chamada dos módulos internos
 elif st.session_state.pagina == 'cenario_dia':
     exibir_cenario(supabase)
 
 elif st.session_state.pagina == 'reservas':
-    LISTA_PROFESSORES = ["Prof. Silva", "Profa. Maria", "Prof. Ricardo"]
-    AULAS_OPCOES = ["1ª Aula", "2ª Aula", "3ª Aula", "4ª Aula", "5ª Aula", "6ª Aula"]
-    ESPACOS = ["Auditório", "Laboratório", "Biblioteca", "Quadra", "Sala Multimídia"]
-    exibir_reservas(supabase, LISTA_PROFESSORES, AULAS_OPCOES, ESPACOS, 3, 2, 5)
+    LISTA_PROF = ["Prof. Silva", "Profa. Maria", "Prof. Ricardo"]
+    AULAS = ["1ª Aula", "2ª Aula", "3ª Aula", "4ª Aula", "5ª Aula", "6ª Aula"]
+    ESPACOS = ["Auditório", "Laboratório", "Biblioteca", "Quadra", "Multimídia"]
+    exibir_reservas(supabase, LISTA_PROF, AULAS, ESPACOS, 3, 2, 5)
 
 elif st.session_state.pagina == 'fotograma':
     exibir_fotograma(supabase)
@@ -118,4 +133,3 @@ elif st.session_state.pagina == 'cadastro':
 
 elif st.session_state.pagina == 'importacao':
     exibir_importacao(supabase)
-
