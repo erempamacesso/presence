@@ -30,7 +30,7 @@ def init_connection():
 
 supabase = init_connection()
 
-# Configuração dos Trimestres (Mantido conforme sua regra de negócio 2026)
+# Configuração dos Trimestres (Regra 2026)
 TRIMESTRES = {
     "1º Trimestre": (date(2026, 2, 2), date(2026, 5, 20)),
     "2º Trimestre": (date(2026, 5, 21), date(2026, 9, 11)),
@@ -101,23 +101,41 @@ with st.sidebar:
 # 4. CONTEÚDO DAS TELAS
 # ==================================================
 
-# --- TELA: FOTOGRAMA ---
+# --- TELA: FOTOGRAMA (MAPA DE SALA) ---
 if menu_escolhido == "Fotograma":
     st.title("📸 Mapa de Sala")
+    
+    # Busca turmas únicas para o selectbox
     res_t = supabase.table("alunos").select("turma").execute()
     lista_turmas = sorted(list(set([x['turma'] for x in res_t.data if x.get('turma')])))
 
     if not lista_turmas:
         st.warning("Nenhuma turma cadastrada.")
     else:
-        turma_sel = st.selectbox("📂 Selecione a Turma:", lista_turmas)
+        # Correção da barra vertical e do campo de texto: 
+        # Usamos colunas mais largas e removemos entradas manuais.
+        col_sel, col_info = st.columns([2, 1])
+        with col_sel:
+            turma_sel = st.selectbox(
+                "📂 Selecione a Turma:", 
+                options=lista_turmas,
+                index=0,
+                placeholder="Escolha a turma..."
+            )
+        
+        # Busca alunos da turma selecionada
         alunos = supabase.table("alunos").select("*").eq("turma", turma_sel).order("nome").execute().data
         mapa_fotos = listar_arquivos_bucket()
         
+        with col_info:
+            st.markdown(f"<div style='padding: 10px; background-color: #e1f5fe; border-radius: 5px; text-align: center;'><b>{len(alunos)}</b> Alunos em <b>{turma_sel}</b></div>", unsafe_allow_html=True)
+
         st.divider()
+        
         if not alunos:
             st.info("Turma vazia.")
         else:
+            # Layout em grid de 4 colunas
             cols = st.columns(4)
             for idx, aluno in enumerate(alunos):
                 with cols[idx % 4]:
@@ -127,8 +145,9 @@ if menu_escolhido == "Fotograma":
                         if arq_real:
                             st.image(get_foto_url(arq_real), use_container_width=True)
                         else:
-                            st.markdown("<div style='height:100px; display:flex; align-items:center; justify-content:center; background:#f0f0f0; border-radius:5px;'>👤</div>", unsafe_allow_html=True)
-                        st.markdown(f"<p style='text-align:center; font-weight:bold; font-size:12px;'>{aluno['nome']}</p>", unsafe_allow_html=True)
+                            # Placeholder para alunos sem foto
+                            st.markdown("<div style='height:150px; display:flex; align-items:center; justify-content:center; background:#f0f0f0; border-radius:5px;'>👤</div>", unsafe_allow_html=True)
+                        st.markdown(f"<p style='text-align:center; font-weight:bold; font-size:13px; margin-top:5px;'>{aluno['nome']}</p>", unsafe_allow_html=True)
 
 # --- TELA: FREQUÊNCIA ---
 elif menu_escolhido == "Frequência":
@@ -165,8 +184,9 @@ elif menu_escolhido == "Frequência":
         if not df.empty:
             aluno_sel = st.selectbox("Pesquisar Aluno:", sorted(df['aluno_nome'].unique()))
             df_aluno = df[df['aluno_nome'] == aluno_sel].sort_values(by='data_chamada', ascending=False)
-            st.metric("Frequência Global", f"{((len(df_aluno[df_aluno['status']=='P'])/len(df_aluno))*100):.1f}%" if not df_aluno.empty else "0%")
-            st.table(df_aluno[['data_chamada', 'status']].head(10))
+            if not df_aluno.empty:
+                st.metric("Frequência Global", f"{((len(df_aluno[df_aluno['status']=='P'])/len(df_aluno))*100):.1f}%")
+                st.table(df_aluno[['data_chamada', 'status']].head(10))
 
 # --- TELA: REPOSICIONAR ---
 elif menu_escolhido == "Reposicionar":
@@ -179,7 +199,7 @@ elif menu_escolhido == "Reposicionar":
     for a in alunos:
         c1, c2, c3 = st.columns([1, 3, 2])
         c2.write(a['nome'])
-        nova = c3.selectbox("Mudar para:", lista_turmas, index=lista_turmas.index(a['turma']), key=a['id'])
+        nova = c3.selectbox("Mudar para:", lista_turmas, index=lista_turmas.index(a['turma']), key=f"rep_{a['id']}")
         if nova != a['turma']:
             supabase.table("alunos").update({"turma": nova}).eq("id", a['id']).execute()
             st.success(f"{a['nome']} movido!")
@@ -196,6 +216,7 @@ elif menu_escolhido == "Cadastro":
             if n and t:
                 supabase.table("alunos").insert({"nome": n.upper().strip(), "turma": t.upper().strip()}).execute()
                 st.success("Cadastrado com sucesso!")
+                st.rerun()
 
 # --- TELA: IMPORTAÇÃO ---
 elif menu_escolhido == "Importação":
@@ -209,3 +230,4 @@ elif menu_escolhido == "Importação":
                 supabase.table("alunos").insert({"nome": str(row['nome']).upper().strip(), "turma": str(row['turma']).upper().strip()}).execute()
             except: pass
         st.success("Importação concluída!")
+        st.rerun()
