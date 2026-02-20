@@ -1,82 +1,87 @@
 import streamlit as st
-import time
+from streamlit_calendar import calendar
 import pandas as pd
 from datetime import date
+import time
 
 def exibir_reservas(supabase, LISTA_PROFESSORES, AULAS_OPCOES, ESPACOS_TOTAIS, TOTAL_DATASHOWS, TOTAL_CAIXAS, TOTAL_MICROFONES):
     st.title("📅 Sistema de Reservas")
     
-    # Criando as abas conforme solicitado
-    tab_visualizar, tab_nova_reserva = st.tabs(["📋 Agendamentos Previstos", "📝 Fazer Nova Reserva"])
+    tab_calendario, tab_lista, tab_nova_reserva = st.tabs([
+        "🗓️ Calendário Mensal", 
+        "📋 Lista Diária", 
+        "📝 Nova Reserva"
+    ])
 
-    # --- ABA DA ESQUERDA: VISUALIZAR ---
-    with tab_visualizar:
-        data_consulta = st.date_input("Consultar data:", value=date.today(), format="DD/MM/YYYY", key="data_cons")
-        
+    # --- ABA 1: CALENDÁRIO INTERATIVO ---
+    with tab_calendario:
         try:
-            res = supabase.table("reservas").select("*").eq("data_reserva", str(data_consulta)).execute()
-            reservas_dia = res.data
+            # Busca todas as reservas para alimentar o calendário
+            res_all = supabase.table("reservas").select("data_reserva, professor, espaco, periodo").execute()
             
-            if reservas_dia:
-                df_res = pd.DataFrame(reservas_dia)
-                df_view = df_res[['periodo', 'professor', 'espaco', 'equipamentos', 'observacoes']].copy()
-                df_view.columns = ['Aula', 'Professor', 'Espaço', 'Equipamentos', 'Observação']
-                st.dataframe(df_view.sort_values(by='Aula'), use_container_width=True, hide_index=True)
-            else:
-                st.info(f"Nenhum agendamento para o dia {data_consulta.strftime('%d/%m/%Y')}.")
+            eventos = []
+            for r in res_all.data:
+                eventos.append({
+                    "title": f"{r['periodo']} - {r['professor']}",
+                    "start": r['data_reserva'],
+                    "end": r['data_reserva'],
+                    "description": r['espaco'],
+                    "color": "#ff4b4b" if "Auditório" in r['espaco'] else "#3d66af"
+                })
+
+            calendar_options = {
+                "headerToolbar": {"left": "prev,next", "center": "title", "right": "dayGridMonth"},
+                "initialView": "dayGridMonth",
+                "locale": "pt-br",
+            }
+            
+            calendar(events=eventos, options=calendar_options, key="cal_interativo")
+            st.caption("Toque nos dias para ver os detalhes (em visualização desktop ou tablet).")
         except Exception as e:
-            st.error(f"Erro ao carregar reservas: {e}")
+            st.error(f"Erro ao carregar calendário: {e}")
 
-    # --- ABA DA DIREITA: NOVA RESERVA ---
-    with tab_nova_reserva:
-        col_data, col_aulas = st.columns([1, 2])
+    # --- ABA 2: LISTA DIÁRIA ---
+    with tab_lista:
+        data_c = st.date_input("Ver detalhes do dia:", value=date.today(), key="data_detalhe")
+        res_dia = supabase.table("reservas").select("*").eq("data_reserva", str(data_c)).execute()
         
-        with col_data:
-            data_res = st.date_input("Data da Reserva:", value=date.today(), format="DD/MM/YYYY", key="data_res")
-        
-        with col_aulas:
-            selecionar_tudo = st.checkbox("Dia Inteiro", key="check_total")
-            default_aulas = AULAS_OPCOES if selecionar_tudo else []
-            aulas_sel = st.pills("Selecione as Aulas:", options=AULAS_OPCOES, selection_mode="multi", default=default_aulas)
-
-        if not aulas_sel:
-            st.warning("⚠️ Selecione pelo menos uma aula para continuar.")
+        if res_dia.data:
+            df = pd.DataFrame(res_dia.data)[['periodo', 'professor', 'espaco', 'equipamentos', 'observacoes']]
+            df.columns = ['Aula', 'Professor', 'Espaço', 'Equipamentos', 'Obs']
+            st.dataframe(df.sort_values(by='Aula'), use_container_width=True, hide_index=True)
         else:
-            # Lógica de Conflitos para as aulas selecionadas
-            try:
-                res_conflito = supabase.table("reservas").select("*").eq("data_reserva", str(data_res)).in_("periodo", aulas_sel).execute().data
-                
-                espacos_ocupados = [r['espaco'] for r in res_conflito if r.get('espaco') and r['espaco'] != "Nenhum (Só Equipamento)"]
-                espacos_disponiveis = [e for e in ESPACOS_TOTAIS if e not in espacos_ocupados]
-                
-                # Estoque de equipamentos
-                d_usados = sum(1 for r in res_conflito if r.get('equipamentos') and "Datashow" in r['equipamentos'])
-                c_usadas = sum(1 for r in res_conflito if r.get('equipamentos') and "Caixa de Som" in r['equipamentos'])
-                m_usados = sum(1 for r in res_conflito if r.get('equipamentos') and "Microfone" in r['equipamentos'])
-                
-                opcoes_equip = []
-                if (TOTAL_DATASHOWS - d_usados) > 0: opcoes_equip.append(f"Datashow ({TOTAL_DATASHOWS - d_usados} disp.)")
-                if (TOTAL_CAIXAS - c_usadas) > 0: opcoes_equip.append(f"Caixa de Som ({TOTAL_CAIXAS - c_usadas} disp.)")
-                if (TOTAL_MICROFONES - m_usados) > 0: opcoes_equip.append(f"Microfone ({TOTAL_MICROFONES - m_usados} disp.)")
+            st.info("Nenhuma reserva para este dia.")
 
-                with st.form("form_final"):
-                    prof = st.selectbox("👩‍🏫 Professor(a):", ["-- Selecione --"] + sorted(LISTA_PROFESSORES))
-                    esp = st.selectbox("📍 Espaço:", espacos_disponiveis if espacos_disponiveis else ["⚠️ Tudo Lotado"])
-                    equip = st.multiselect("💻 Equipamentos:", opcoes_equip)
-                    obs = st.text_area("📝 Observações:")
-                    
-                    if st.form_submit_button("Confirmar Agendamento", use_container_width=True):
-                        if prof != "-- Selecione --":
-                            e_nomes = [e.split(" (")[0] for e in equip]
-                            for aula in aulas_sel:
-                                supabase.table("reservas").insert({
-                                    "data_reserva": str(data_res), "periodo": aula, "professor": prof,
-                                    "espaco": esp, "equipamentos": ", ".join(e_nomes) if e_nomes else "Nenhum", "observacoes": obs
-                                }).execute()
-                            st.success("✅ Reserva gravada!")
-                            time.sleep(1)
-                            st.rerun()
-                        else:
-                            st.error("Selecione seu nome!")
-            except Exception as e:
-                st.error(f"Erro na verificação: {e}")
+    # --- ABA 3: NOVA RESERVA ---
+    with tab_nova_reserva:
+        col_d, col_a = st.columns([1, 2])
+        with col_d:
+            data_r = st.date_input("Data da Reserva:", value=date.today(), key="data_nova")
+        with col_a:
+            tudo = st.checkbox("Dia Inteiro")
+            aulas = st.pills("Aulas:", options=AULAS_OPCOES, selection_mode="multi", default=AULAS_OPCOES if tudo else [])
+
+        if aulas:
+            # Verificação de conflitos em tempo real
+            res_conf = supabase.table("reservas").select("*").eq("data_reserva", str(data_r)).in_("periodo", aulas).execute().data
+            ocupados = [r['espaco'] for r in res_conf if r['espaco'] != "Nenhum (Só Equipamento)"]
+            disponiveis = [e for e in ESPACOS_TOTAIS if e not in ocupados]
+
+            with st.form("f_reserva"):
+                p = st.selectbox("Professor:", ["-- Selecione --"] + sorted(LISTA_PROFESSORES))
+                e = st.selectbox("Espaço:", disponiveis if disponiveis else ["LOTADO"])
+                equip = st.multiselect("Equipamentos:", ["Datashow", "Caixa de Som", "Microfone"])
+                obs = st.text_area("Observações:")
+                
+                if st.form_submit_button("Confirmar Agendamento", use_container_width=True):
+                    if p != "-- Selecione --":
+                        for a in aulas:
+                            supabase.table("reservas").insert({
+                                "data_reserva": str(data_r), "periodo": a, "professor": p,
+                                "espaco": e, "equipamentos": ", ".join(equip), "observacoes": obs
+                            }).execute()
+                        st.success("Reserva realizada!")
+                        time.sleep(1)
+                        st.rerun()
+        else:
+            st.warning("Selecione as aulas para habilitar o formulário.")
