@@ -1,166 +1,109 @@
 import streamlit as st
-import pandas as pd
 from supabase import create_client
 import os
 from dotenv import load_dotenv
-import unicodedata
-import time
-from datetime import datetime, date
-from streamlit_option_menu import option_menu
-from urllib.parse import quote
-import altair as alt
-import importlib.util # Adicionado para conseguir puxar o arquivo reservas.py
+from datetime import datetime
 
-# ==================================================
-# 1. CONFIGURAÇÃO E CONEXÃO
-# ==================================================
-st.set_page_config(
-    page_title="SIGPAM - EREMPAM", 
-    layout="wide", 
-    initial_sidebar_state="expanded"
-)
+# Conexão com o Supabase (puxando dos Secrets do Streamlit para sua segurança)
+load_dotenv()
+SUPABASE_URL = st.secrets.get("SUPABASE_URL") or os.getenv("SUPABASE_URL")
+SUPABASE_KEY = st.secrets.get("SUPABASE_KEY") or os.getenv("SUPABASE_KEY")
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Estilização CSS
-st.markdown("""
-    <style>
-        .stSelectbox div[data-baseweb="select"] input { inputmode: none !important; }
-        .espaco-reservado { padding: 12px; border-radius: 8px; background-color: #fff5f5; border-left: 6px solid #ff5252; margin-bottom: 10px; }
-        .espaco-livre { padding: 12px; border-radius: 8px; background-color: #f0fdf4; border-left: 6px solid #4ade80; margin-bottom: 10px; }
-        .nome-card { text-align: center; font-weight: bold; font-size: 11px; margin-top: 5px; color: #333; line-height: 1.2; }
-    </style>
-""", unsafe_allow_html=True)
+st.title("📅 Sistema de Reservas")
+st.markdown("Reserve espaços e equipamentos da escola.")
 
-@st.cache_resource
-def init_connection():
-    load_dotenv()
-    url = st.secrets.get("SUPABASE_URL") or os.getenv("SUPABASE_URL")
-    key = st.secrets.get("SUPABASE_KEY") or os.getenv("SUPABASE_KEY")
-    return create_client(url, key)
+# --- DADOS FIXOS DA ESCOLA (Altere com os nomes reais) ---
+LISTA_PROFESSORES = [
+    "Ana Maria (Matemática)", "Carlos Eduardo (História)", 
+    "Fernanda Lima (Português)", "João Silva (Física)", "Maria Souza (Biologia)"
+]
 
-supabase = init_connection()
+AULAS = ["1ª Aula", "2ª Aula", "3ª Aula", "4ª Aula", "5ª Aula", "6ª Aula", "7ª Aula", "8ª Aula", "9ª Aula"]
+ESPACOS_TOTAIS = ["Auditório", "Laboratório de Ciências", "Sala de informática", "Biblioteca", "Refeitório", "Nenhum (Só Equipamento)"]
 
-# Listas de Referência
-ESPACOS_ESCOLA = ["Data show", "Auditório", "Sala de informática", "Biblioteca", "Refeitório", "Lab. de ciências", "Aparelho de som"]
-LISTA_AULAS = ["1ª Aula", "2ª Aula", "3ª Aula", "4ª Aula", "5ª Aula", "6ª Aula", "7ª Aula", "8ª Aula", "9ª Aula"]
+# Estoque da escola
+TOTAL_DATASHOWS = 5
+TOTAL_CAIXAS = 3
+TOTAL_MICROFONES = 3
 
-# ==================================================
-# 2. FUNÇÕES AUXILIARES
-# ==================================================
-def limpar_texto(texto):
-    if not texto: return ""
-    texto = str(texto).split(".")[0]
-    nfkd = unicodedata.normalize('NFKD', texto)
-    return "".join([c for c in nfkd if not unicodedata.combining(c)]).lower().replace(" ", "").strip()
+# --- ETAPA 1: ESCOLHER DATA E HORA ---
+col1, col2 = st.columns(2)
+with col1:
+    data_selecionada = st.date_input("Data da Reserva:", min_value=datetime.today().date())
+with col2:
+    aula_selecionada = st.selectbox("Qual Aula?", AULAS)
 
-@st.cache_data(ttl=300)
-def listar_arquivos_bucket():
-    try:
-        arquivos = supabase.storage.from_('fotos-alunos').list(path=None, options={'limit': 2000})
-        return {limpar_texto(arq['name']): arq['name'] for arq in arquivos if arq['name'] != ".emptyFolderPlaceholder"}
-    except: return {}
+# Busca no banco as reservas que já existem para esse dia e período
+try:
+    resposta = supabase.table("reservas").select("*").eq("data_reserva", str(data_selecionada)).eq("periodo", aula_selecionada).execute()
+    reservas_existentes = resposta.data
+except Exception as e:
+    st.error(f"Erro ao buscar dados: {e}")
+    reservas_existentes = []
 
-def get_foto_url(nome_real_arquivo):
-    try:
-        url_base = f"{st.secrets['SUPABASE_URL']}/storage/v1/object/public/fotos-alunos/{quote(nome_real_arquivo)}"
-        return f"{url_base}?t={int(time.time())}"
-    except: return None
+# --- LÓGICA DE PREVENÇÃO DE CONFLITOS (ESPAÇOS) ---
+espacos_ocupados = [reserva.get('espaco') for reserva in reservas_existentes if reserva.get('espaco') and reserva.get('espaco') != "Nenhum (Só Equipamento)"]
+espacos_disponiveis = [e for e in ESPACOS_TOTAIS if e not in espacos_ocupados]
 
-# Função para carregar outros arquivos Python
-def carregar_pagina(nome_arquivo):
-    caminho = os.path.join(os.path.dirname(__file__), nome_arquivo)
-    spec = importlib.util.spec_from_file_location("module.name", caminho)
-    modulo = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(modulo)
+# --- LÓGICA DE INVENTÁRIO (EQUIPAMENTOS) ---
+datashows_usados = sum(1 for r in reservas_existentes if r.get('equipamentos') and "Datashow" in r.get('equipamentos', ''))
+caixas_usadas = sum(1 for r in reservas_existentes if r.get('equipamentos') and "Caixa de Som" in r.get('equipamentos', ''))
+mics_usados = sum(1 for r in reservas_existentes if r.get('equipamentos') and "Microfone" in r.get('equipamentos', ''))
 
-# ==================================================
-# 3. SIDEBAR (ORDEM SOLICITADA)
-# ==================================================
-with st.sidebar:
-    st.markdown("<h2 style='text-align: center;'>SIGPAM</h2>", unsafe_allow_html=True)
-    menu_escolhido = option_menu(
-        menu_title=None,
-        options=["Frequência", "Reservas", "Fotograma", "Cadastro", "Importação"],
-        icons=["clipboard-check-fill", "calendar-check-fill", "camera-fill", "person-plus-fill", "cloud-upload-fill"],
-        default_index=0, 
-        styles={"nav-link-selected": {"background-color": "#ff4b4b"}}
-    )
+disp_data = TOTAL_DATASHOWS - datashows_usados
+disp_caixa = TOTAL_CAIXAS - caixas_usadas
+disp_mic = TOTAL_MICROFONES - mics_usados
 
-# ==================================================
-# 4. TELAS
-# ==================================================
+opcoes_equip = []
+if disp_data > 0: opcoes_equip.append(f"Datashow ({disp_data} disponíveis)")
+if disp_caixa > 0: opcoes_equip.append(f"Caixa de Som ({disp_caixa} disponíveis)")
+if disp_mic > 0: opcoes_equip.append(f"Microfone ({disp_mic} disponíveis)")
 
-# --- TELA 1: FREQUÊNCIA ---
-if menu_escolhido == "Frequência":
-    st.title("📊 Relatório de Frequência Diária")
-    hoje = date.today().isoformat()
+st.divider()
+
+# --- ETAPA 2: FORMULÁRIO ---
+with st.form("form_reserva"):
+    professor = st.selectbox("👩‍🏫 Professor(a):", ["-- Selecione --"] + sorted(LISTA_PROFESSORES))
     
-    with st.spinner("Buscando dados de hoje..."):
-        res_total = supabase.table("alunos").select("id", count="exact").execute()
-        total_matriculados = res_total.count
-        
-        res_freq = supabase.table("frequencia").select("*").eq("data_chamada", hoje).execute()
-        df_presenca = pd.DataFrame(res_freq.data)
-
-    if not df_presenca.empty:
-        presentes = len(df_presenca.drop_duplicates(subset=['aluno_id'])) if 'aluno_id' in df_presenca.columns else len(df_presenca)
-        faltas = total_matriculados - presentes
-        perc_falta = int((faltas / total_matriculados) * 100) if total_matriculados > 0 else 0
-
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Matriculados", total_matriculados)
-        c2.metric("Presentes Hoje", presentes, delta="Entradas")
-        c3.metric("Faltas", faltas, delta_color="inverse")
-        c4.metric("% de Ausência", f"{perc_falta}%")
-
-        st.markdown("---")
-        
-        tab1, tab2 = st.tabs(["📈 Presença por Turma", "📝 Lista de Entradas"])
-        
-        with tab1:
-            if 'turma' in df_presenca.columns:
-                graf_data = df_presenca.groupby("turma").size().reset_index(name="Quantidade")
-                chart = alt.Chart(graf_data).mark_bar(color='#ff4b4b').encode(
-                    x=alt.X('turma:N', title="Turma"),
-                    y=alt.Y('Quantidade:Q', title="Alunos Presentes"),
-                    tooltip=['turma', 'Quantidade']
-                ).properties(height=350).interactive()
-                st.altair_chart(chart, use_container_width=True)
-        
-        with tab2:
-            st.dataframe(df_presenca, use_container_width=True)
+    if not espacos_disponiveis:
+        st.error("⚠️ Todos os espaços já estão ocupados neste horário!")
+        espaco = st.selectbox("📍 Espaço:", ["Nenhum (Só Equipamento)"])
     else:
-        st.warning(f"Nenhum registro de presença encontrado para hoje ({date.today().strftime('%d/%m/%Y')}).")
-        st.info("Os dados aparecerão aqui assim que os alunos registrarem a entrada no 'chamada.py'.")
+        espaco = st.selectbox("📍 Espaço:", espacos_disponiveis)
+    
+    if not opcoes_equip:
+        st.warning("⚠️ Todos os equipamentos já estão emprestados neste horário.")
+        equipamentos = st.multiselect("💻 Equipamentos:", ["Nenhum disponível"])
+    else:
+        equipamentos = st.multiselect("💻 Equipamentos (Opcional):", opcoes_equip)
+    
+    observacoes = st.text_area("📝 Observações (Opcional):", placeholder="Ex: Deixar o datashow na sala dos professores...")
 
-# --- TELA 2: RESERVAS (AGORA PUXANDO O ARQUIVO EXTERNO) ---
-elif menu_escolhido == "Reservas":
-    # Em vez de ter todo o código aqui, ele só "chama" o arquivo que criamos
-    try:
-        carregar_pagina("reservas.py")
-    except Exception as e:
-        st.error(f"Erro ao carregar a página de reservas. Verifique se o arquivo 'reservas.py' foi criado corretamente. Detalhe do erro: {e}")
+    enviar = st.form_submit_button("✅ Confirmar Reserva", use_container_width=True)
 
-# --- TELA 3: FOTOGRAMA ---
-elif menu_escolhido == "Fotograma":
-    st.title("📸 Mapa de Sala")
-    res_t = supabase.table("alunos").select("turma").execute()
-    list_t = sorted(list(set([x['turma'] for x in res_t.data if x.get('turma')])))
-    if list_t:
-        t_sel = st.pills("Turma:", options=list_t, default=list_t[0])
-        alunos = supabase.table("alunos").select("*").eq("turma", t_sel).order("nome").execute().data
-        mapa_fotos = listar_arquivos_bucket()
-        cols = st.columns(4)
-        for idx, al in enumerate(alunos):
-            with cols[idx % 4]:
-                with st.container(border=True):
-                    chave = limpar_texto(al['nome'])
-                    arq = mapa_fotos.get(chave)
-                    if arq: st.image(get_foto_url(arq), use_container_width=True)
-                    else: st.markdown("<div style='height:100px; display:flex; align-items:center; justify-content:center; background:#eee; border-radius:10px;'>👤</div>", unsafe_allow_html=True)
-                    st.markdown(f"<div class='nome-card'>{al['nome']}</div>", unsafe_allow_html=True)
+    if enviar:
+        if professor == "-- Selecione --":
+            st.warning("Por favor, selecione seu nome na lista.")
+        else:
+            # Limpa o texto para salvar no banco bonitinho (Tira o "4 disponíveis")
+            equip_limpos = [e.split(" (")[0] for e in equipamentos if "disponíve" in e]
+            equip_str = ", ".join(equip_limpos) if equip_limpos else "Nenhum"
 
-# --- DEMAIS TELAS ---
-elif menu_escolhido == "Cadastro":
-    st.title("👤 Cadastro de Alunos")
-elif menu_escolhido == "Importação":
-    st.title("📤 Importação de Dados")
+            dados = {
+                "data_reserva": str(data_selecionada),
+                "periodo": aula_selecionada, 
+                "professor": professor,
+                "espaco": espaco,
+                "equipamentos": equip_str,
+                "observacoes": observacoes
+            }
+
+            try:
+                supabase.table("reservas").insert(dados).execute()
+                st.success("🎉 Reserva efetuada com sucesso!")
+                st.balloons()
+            except Exception as e:
+                st.error("Erro ao salvar a reserva!")
+                st.info(f"Detalhe técnico: {e}")
+                st.warning("🚨 Você lembrou de criar as colunas 'equipamentos' e 'observacoes' lá no Supabase?")
