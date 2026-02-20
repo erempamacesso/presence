@@ -5,7 +5,7 @@ import datetime
 def exibir_cenario(supabase):
     st.title("📊 Cenário do Dia")
     
-    # --- CALENDÁRIO PE 2026 (DATA FIXA PARA ANÁLISE) ---
+    # --- CALENDÁRIO PE 2026 ---
     TRIMESTRES = {
         "1º Trimestre": (datetime.date(2026, 2, 2), datetime.date(2026, 5, 20)),
         "2º Trimestre": (datetime.date(2026, 5, 21), datetime.date(2026, 9, 11)),
@@ -14,15 +14,14 @@ def exibir_cenario(supabase):
     RECESSO = (datetime.date(2026, 7, 10), datetime.date(2026, 7, 24))
 
     # --- 1. CENSO EM TEMPO REAL ---
-    data_hoje = st.date_input("Data de Análise:", value=datetime.date.today())
+    # Correção: Forçando o formato brasileiro DD/MM/YYYY no calendário
+    data_hoje = st.date_input("Data de Análise:", value=datetime.date.today(), format="DD/MM/YYYY")
     hoje_iso = data_hoje.isoformat()
 
     try:
-        # Busca matriculados
         res_total = supabase.table("alunos").select("id", count="exact").execute()
         total_alunos = res_total.count if res_total.count else 0
         
-        # Busca quem ESTÁ presente (com base no seu app externo)
         res_freq = supabase.table("frequencia").select("*").eq("data_chamada", hoje_iso).execute()
         df_presentes_hoje = pd.DataFrame(res_freq.data)
         
@@ -30,7 +29,6 @@ def exibir_cenario(supabase):
         n_faltas = total_alunos - n_presentes
         perc = (n_presentes / total_alunos * 100) if total_alunos > 0 else 0
 
-        # Layout de métricas
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Presentes Agora", n_presentes)
         c2.metric("Ausentes", n_faltas, delta=f"{n_faltas} faltas", delta_color="inverse")
@@ -41,28 +39,41 @@ def exibir_cenario(supabase):
             st.info("ℹ️ Período de Recesso Escolar")
 
     except Exception as e:
-        st.error(f"Erro na integração: {e}")
+        st.error(f"Erro na integração dos dados: {e}")
 
     st.divider()
 
-    # --- 2. TERMÔMETRO DE ASSIDUIDADE (ANÁLISE DE FALTAS) ---
+    # --- 2. TERMÔMETRO DE ASSIDUIDADE (FILTRO INTELIGENTE) ---
     st.subheader("🌡️ Termômetro de Evolução (Faltas)")
     
-    periodo_sel = st.segmented_control("Trimestre:", options=list(TRIMESTRES.keys()), default="1º Trimestre")
+    # Correção: Usando radio horizontal para evitar erros de versão do Streamlit
+    periodo_sel = st.radio("Selecione o Trimestre:", options=list(TRIMESTRES.keys()), horizontal=True)
     inicio_tri, fim_tri = TRIMESTRES[periodo_sel]
 
-    # Busca lista de alunos para seleção
-    res_alunos = supabase.table("alunos").select("nome, turma").order("nome").execute().data
-    lista_selecao = [f"{a['nome']} ({a['turma']})" for a in res_alunos]
+    st.write("### 🔍 Raio-X do Aluno")
     
-    aluno_escolhido = st.selectbox("Selecione o Aluno para Raio-X:", ["-- Selecione --"] + lista_selecao)
+    # Correção: Filtro Turma -> Aluno (Cascata)
+    col_turma, col_aluno = st.columns(2)
+    
+    with col_turma:
+        # Busca apenas as turmas disponíveis
+        res_turmas = supabase.table("alunos").select("turma").execute().data
+        lista_turmas = sorted(list(set([t['turma'] for t in res_turmas if t.get('turma')])))
+        turma_escolhida = st.selectbox("1. Selecione a Turma:", ["-- Selecione --"] + lista_turmas)
 
-    if aluno_escolhido != "-- Selecione --":
-        nome_aluno = aluno_escolhido.split(" (")[0]
-        
-        # Lógica Inversa: Para saber faltas, precisamos saber quantos dias letivos houve 
-        # e subtrair as presenças que o app externo registrou.
-        # Mas para o "Termômetro", vamos focar em mostrar a CONSTÂNCIA de presença:
+    with col_aluno:
+        aluno_escolhido = "-- Selecione --"
+        if turma_escolhida != "-- Selecione --":
+            # Busca os alunos SÓ daquela turma
+            res_alunos = supabase.table("alunos").select("nome").eq("turma", turma_escolhida).order("nome").execute().data
+            lista_alunos = [a['nome'] for a in res_alunos]
+            aluno_escolhido = st.selectbox("2. Selecione o Aluno:", ["-- Selecione --"] + lista_alunos)
+        else:
+            st.selectbox("2. Selecione o Aluno:", ["Escolha uma turma primeiro..."], disabled=True)
+
+    # Se um aluno foi selecionado, exibe o termômetro
+    if aluno_escolhido != "-- Selecione --" and aluno_escolhido != "Escolha uma turma primeiro...":
+        nome_aluno = aluno_escolhido
         
         presencas_tri = supabase.table("frequencia").select("data_chamada")\
             .eq("aluno_nome", nome_aluno)\
@@ -75,11 +86,9 @@ def exibir_cenario(supabase):
             df_tri['mes'] = df_tri['data_chamada'].dt.strftime('%m - %b')
             contagem = df_tri.groupby('mes').size().reset_index(name='dias_presenca')
 
-            st.write(f"Frequência Mensal no {periodo_sel}")
+            st.markdown(f"**Frequência Mensal: {nome_aluno} no {periodo_sel}**")
             
             for _, row in contagem.iterrows():
-                # Aqui invertemos: se tiver poucas presenças no mês, "esquenta"
-                # (Considerando uma média de 20 dias letivos por mês)
                 dias = row['dias_presenca']
                 if dias >= 18: cor, label = "#00ced1", "Frio (Excelente)"
                 elif dias >= 15: cor, label = "#ffa500", "Morno (Atenção)"
@@ -97,12 +106,12 @@ def exibir_cenario(supabase):
                     </div>
                 """, unsafe_allow_html=True)
         else:
-            st.error("🚨 Nenhuma presença registrada para este aluno no período.")
+            st.warning("🚨 Nenhuma presença registrada para este aluno no período.")
 
     st.divider()
 
     # --- 3. CENÁRIO POR TURMA ---
-    if not df_presentes_hoje.empty:
+    if 'df_presentes_hoje' in locals() and not df_presentes_hoje.empty:
         st.subheader("🏫 Presença por Turma (Hoje)")
         df_turmas = df_presentes_hoje.groupby('turma').size().reset_index(name='Presentes')
         st.bar_chart(df_turmas.set_index('turma'))
