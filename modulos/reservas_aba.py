@@ -135,7 +135,7 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     # =========================================================
     
    # =========================================================
-    # INÍCIO - ABA 3: NOVA RESERVA (PILLS MULTISELEÇÃO)
+    # INÍCIO - ABA 3: NOVA RESERVA (9 AULAS TRAVADAS - PILLS)
     # =========================================================
     with aba_nova:
         st.subheader("Agendar Espaço")
@@ -143,21 +143,24 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
         with st.form("form_nova_reserva_pills"):
             st.write("**Selecione a(s) Aula(s):** (Toque para selecionar várias)")
             
-            # Recurso de seleção rápida "Dia Inteiro" fora do form para atualizar as pills
-            # Nota: Como o form bloqueia atualizações em tempo real, 
-            # vamos focar na seleção manual múltipla que é o que você mais pediu.
+            # --- LISTA FIXA COM AS 9 AULAS ---
+            # Aqui garantimos que as 9 aulas vão aparecer sempre, independentemente 
+            # do que vem de outras partes do código.
+            lista_9_aulas = [
+                "1ª Aula", "2ª Aula", "3ª Aula", "4ª Aula", "5ª Aula", 
+                "6ª Aula", "7ª Aula", "8ª Aula", "9ª Aula"
+            ]
             
             # BOTÕES TIPO PÍLULA (MULTISELEÇÃO)
-            # Isso cria os 9 botões lado a lado. O professor toca em quantos quiser.
             aulas_selecionadas = st.segmented_control(
                 "Aulas:",
-                options=aulas_opcoes,
-                selection_mode="multi", # <--- AQUI ESTÁ A MÁGICA: Seleciona várias!
+                options=lista_9_aulas,  # Agora usa a lista fixa de 9 aulas
+                selection_mode="multi", 
                 label_visibility="collapsed"
             )
             
-            # Opção de atalho para facilitar
-            dia_todo = st.checkbox("Reservar o Dia Inteiro (Marca todas as aulas)")
+            # Opção de atalho para facilitar o preenchimento do dia todo
+            dia_todo = st.checkbox("Reservar o Dia Inteiro (Marca todas as 9 aulas)")
             
             st.divider()
             
@@ -172,8 +175,8 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
             o_res = st.text_input("Observações:")
             
             if st.form_submit_button("💾 Confirmar Agendamento"):
-                # Se o "Dia Inteiro" estiver marcado, ignoramos a seleção manual e pegamos tudo
-                lista_final_aulas = aulas_opcoes if dia_todo else aulas_selecionadas
+                # Se o "Dia Inteiro" estiver marcado, ele pega nossa lista de 9 aulas
+                lista_final_aulas = lista_9_aulas if dia_todo else aulas_selecionadas
                 
                 if not lista_final_aulas:
                     st.warning("⚠️ Por favor, selecione as aulas clicando nos botões acima.")
@@ -183,7 +186,7 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                     sucessos = 0
                     conflitos = []
                     
-                    # Processa cada aula no banco (Coluna 'periodo')
+                    # Processa cada aula da lista final no banco
                     for aula in lista_final_aulas:
                         conf = supabase.table("reservas").select("id").eq("data_reserva", str(d_res)).eq("periodo", aula).eq("espaco", e_res).eq("status", "Ativa").execute()
                         
