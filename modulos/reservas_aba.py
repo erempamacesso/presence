@@ -271,36 +271,98 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     # =========================================================
 
 
-    # =========================================================
-    # INÍCIO - ABA 4: GERENCIAR / CANCELAR
+   # =========================================================
+    # INÍCIO - ABA 4: GERENCIAR / CANCELAR (EDIÇÃO INTELIGENTE)
     # =========================================================
     with aba_cancelar:
-        st.subheader("Cancelar uma Reserva")
-        d_can = st.date_input("Data para cancelar:", value=datetime.date.today(), key="d_can")
+        st.subheader("Gerenciar Reservas")
+        
+        # Filtro de data no padrão do Brasil
+        d_can = st.date_input("Data da reserva que deseja alterar:", value=datetime.date.today(), format="DD/MM/YYYY", key="d_can")
+        
         try:
-            # Carrega matrículas para conferência
-            res_m = supabase.table("professores_matriculas").select("*").execute()
-            m_db = {str(r['matricula']): r['professor'] for r in res_m.data} if res_m.data else {}
-
+            # Busca todas as reservas ativas deste dia
             res_at = supabase.table("reservas").select("*").eq("data_reserva", str(d_can)).eq("status", "Ativa").execute()
+            
             if res_at.data:
-                op_c = {f"{r['aula']} - {r['espaco']} ({r['professor']})": r['id'] for r in res_at.data}
-                sel_c = st.selectbox("Escolha a reserva:", ["-- Selecione --"] + list(op_c.keys()))
-                if sel_c != "-- Selecione --":
-                    id_c = op_c[sel_c]
-                    prof_r = next(r['professor'] for r in res_at.data if r['id'] == id_c)
-                    senha = st.text_input("Sua Matrícula (Assinatura):", type="password")
-                    if st.button("🗑️ Confirmar Cancelamento"):
-                        if senha in m_db:
-                            u_nome = m_db[senha]
-                            if u_nome in GESTORES or u_nome == prof_r:
-                                supabase.table("reservas").update({"status": "Cancelada", "cancelado_por": u_nome}).eq("id", id_c).execute()
-                                st.success("Cancelado!")
-                                st.rerun()
-                            else: st.error("Sem permissão.")
-                        else: st.error("Matrícula não encontrada.")
-            else: st.info("Sem reservas ativas.")
-        except Exception as e: st.error(f"Erro: {e}")
+                # Mapeia as reservas para mostrar textos bonitos na tela para o professor
+                opcoes_res = {}
+                for r in res_at.data:
+                    eq_txt = f" | 🛠️ {r['equipamentos']}" if r.get('equipamentos') and str(r.get('equipamentos')).strip() else ""
+                    texto = f"{r.get('periodo', 'S/H')} - {r.get('espaco', '---')} ({r.get('professor', '---')}){eq_txt}"
+                    opcoes_res[texto] = r
+
+                st.write("**1. Selecione a(s) reserva(s) que deseja alterar:**")
+                # COMPONENTE NOVO: O Multiselect permite escolher 1, 3 ou todas as aulas de uma vez!
+                reservas_selecionadas = st.multiselect(
+                    "Reservas encontradas:", 
+                    options=list(opcoes_res.keys()),
+                    placeholder="Clique aqui e escolha uma ou mais reservas..."
+                )
+                
+                if reservas_selecionadas:
+                    st.write("**2. O que deseja fazer?**")
+                    
+                    # --- LÓGICA INTELIGENTE DE EDIÇÃO ---
+                    # Se escolheu só UMA reserva, deixa editar linha a linha
+                    if len(reservas_selecionadas) == 1:
+                        acao = st.radio("Escolha a ação:", ["❌ Cancelar a Reserva (Liberar Espaço e Equipamentos)", "✏️ Editar/Remover apenas Equipamentos"], label_visibility="collapsed")
+                        
+                        res_unica = opcoes_res[reservas_selecionadas[0]]
+                        equip_atual = res_unica.get('equipamentos', '')
+                        if equip_atual is None: equip_atual = ""
+                        
+                        if "Editar" in acao:
+                            # Mostra o equipamento atual e deixa o professor apagar o que não vai usar
+                            novo_equip = st.text_input("Equipamentos desta reserva (apague o que não for mais usar):", value=str(equip_atual))
+                    
+                    # Se escolheu VÁRIAS reservas, faz ação em lote
+                    else:
+                        acao = st.radio("Ação em Lote:", ["❌ Cancelar Todas as Selecionadas", "🧹 Limpar Equipamentos de Todas (Devolver equipamentos)"], label_visibility="collapsed")
+                    
+                    st.divider()
+                    st.write("**3. Assinatura Eletrônica**")
+                    senha = st.text_input("Sua Matrícula (Senha):", type="password", key="senha_canc")
+                    
+                    if st.button("💾 Confirmar Ação", type="primary"):
+                        if not senha:
+                            st.warning("⚠️ Digite sua matrícula para confirmar.")
+                        else:
+                            # Valida quem está tentando alterar
+                            verif = supabase.table("professores_matriculas").select("professor").eq("matricula", senha).execute()
+                            
+                            if verif.data:
+                                user_nome = verif.data[0]['professor']
+                                sem_permissao = []
+                                
+                                # Verifica segurança: O usuário logado é dono de TODAS as reservas que selecionou?
+                                for sel in reservas_selecionadas:
+                                    res_dados = opcoes_res[sel]
+                                    if user_nome not in GESTORES and user_nome != res_dados['professor']:
+                                        sem_permissao.append(res_dados['periodo'])
+                                
+                                if sem_permissao:
+                                    st.error(f"⛔ Sem permissão. Você não pode alterar reservas de outro professor: {', '.join(sem_permissao)}")
+                                else:
+                                    # Executa a ação escolhida para cada reserva
+                                    for sel in reservas_selecionadas:
+                                        id_r = opcoes_res[sel]['id']
+                                        
+                                        if "Cancelar" in acao:
+                                            supabase.table("reservas").update({"status": "Cancelada", "cancelado_por": user_nome}).eq("id", id_r).execute()
+                                        elif "Editar" in acao:
+                                            supabase.table("reservas").update({"equipamentos": novo_equip}).eq("id", id_r).execute()
+                                        elif "Limpar" in acao:
+                                            supabase.table("reservas").update({"equipamentos": ""}).eq("id", id_r).execute()
+                                            
+                                    st.success(f"✅ Operação realizada com sucesso por {user_nome}!")
+                                    st.rerun() # Limpa a tela
+                            else:
+                                st.error("❌ Matrícula incorreta ou não cadastrada.")
+            else:
+                st.info("Nenhuma reserva ativa encontrada para esta data.")
+        except Exception as e:
+            st.error(f"Erro ao carregar reservas: {e}")
     # =========================================================
     # FIM - ABA 4
     # =========================================================
