@@ -70,66 +70,63 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     # =========================================================
 
    # =========================================================
-    # ABA 2: LISTA DIÁRIA - TESTE DE ESPAÇOS (RESERVÁVEIS VS RESERVADOS)
+    # INÍCIO - ABA 2: LISTA DIÁRIA (COM COLUNA DE QUEM CANCELOU)
     # =========================================================
     with aba_lista:
         st.subheader("Visão Diária por Espaço")
         
-        # Calendário que abre automaticamente no dia de hoje
-        data_filtro = st.date_input("Ver detalhes do dia:", value=datetime.date.today(), key="data_teste_espacos")
+        # Data no formato BR
+        d_lista = st.date_input("Ver detalhes do dia:", value=datetime.date.today(), format="DD/MM/YYYY", key="d_lista")
         
         try:
-            # Busca as reservas do banco para o dia selecionado
-            res = supabase.table("reservas").select("*").eq("data_reserva", str(data_filtro)).execute()
-            df_dia = pd.DataFrame(res.data) if res.data else pd.DataFrame()
-
-            # Iteramos por TODOS os espaços cadastrados na sua lista 'espacos'
-            # Isso garante que mesmo os vazios apareçam na tela
-            for espaco_escola in espacos:
+            # Busca TODAS as reservas do dia (Ativas e Canceladas)
+            res_lista = supabase.table("reservas").select("*").eq("data_reserva", str(d_lista)).execute()
+            
+            if res_lista.data:
+                # Agrupa as reservas pelo nome do espaço
+                reservas_por_espaco = {}
+                for r in res_lista.data:
+                    esp = r.get("espaco", "Sem Espaço")
+                    if esp not in reservas_por_espaco:
+                        reservas_por_espaco[esp] = []
+                    reservas_por_espaco[esp].append(r)
                 
-                # Filtramos as reservas que pertencem a este espaço específico
-                if not df_dia.empty and 'espaco' in df_dia.columns:
-                    df_espaco = df_dia[df_dia['espaco'] == espaco_escola].copy()
-                else:
-                    df_espaco = pd.DataFrame()
-
-                # Criamos o expansor para cada espaço da escola
-                status_icone = "🔴" if not df_espaco.empty else "⚪"
-                label_expander = f"{status_icone} {espaco_escola} ({len(df_espaco)} reservas)"
-                
-                with st.expander(label_expander, expanded=not df_espaco.empty):
-                    if not df_espaco.empty:
-                        # Seleção de colunas baseada no seu banco
-                        col_exibir = []
-                        existentes = df_espaco.columns.tolist()
+                # Cria aquela barra "sanfona" (expander) para cada espaço
+                for espaco, lista_res in reservas_por_espaco.items():
+                    with st.expander(f"📍 {espaco} ({len(lista_res)} reservas)", expanded=True):
                         
-                        if 'periodo' in existentes: col_exibir.append('periodo')
-                        if 'professor' in existentes: col_exibir.append('professor')
-                        if 'equipamentos' in existentes: col_exibir.append('equipamentos')
-                        if 'status' in existentes: col_exibir.append('status')
-
-                        # Formatação para exibição
-                        df_final = df_espaco[col_exibir].copy()
-                        if 'status' in df_final.columns:
-                            df_final['status'] = df_final['status'].apply(lambda x: "🟢 Ativa" if x == "Ativa" else "❌")
-
-                        st.dataframe(
-                            df_final.rename(columns={
-                                'periodo': 'Aula/Horário',
-                                'professor': 'Professor',
-                                'equipamentos': 'Equipamentos (Data Show/Som)',
-                                'status': 'Situação'
-                            }),
-                            use_container_width=True,
-                            hide_index=True
-                        )
-                    else:
-                        # Se o espaço está na sua lista mas não tem reserva no banco
-                        st.info(f"O espaço '{espaco_escola}' está disponível para reserva neste dia.")
-
+                        # Prepara a lista que vai virar a tabela
+                        dados_tabela = []
+                        for r in lista_res:
+                            status_bd = r.get("status", "Ativa")
+                            
+                            # Lógica para mostrar os ícones e quem cancelou
+                            if status_bd == "Ativa":
+                                situacao_icone = "🟢 Ativa"
+                                quem_cancelou = "-" # Fica um tracinho se a aula está normal
+                            else:
+                                situacao_icone = "❌ Cancelada"
+                                # Puxa o nome de quem cancelou (se não tiver, mostra 'Sistema')
+                                quem_cancelou = r.get("cancelado_por", "Sistema")
+                                
+                            dados_tabela.append({
+                                "Aula/Horário": r.get("periodo", ""),
+                                "Professor": r.get("professor", ""),
+                                "Equipamentos (Data Show/Som)": r.get("equipamentos", "") or "-",
+                                "Situação": situacao_icone,
+                                "Cancelado Por": quem_cancelou
+                            })
+                        
+                        # Tenta ordenar da 1ª para a 9ª aula para ficar bonito
+                        dados_tabela = sorted(dados_tabela, key=lambda x: x["Aula/Horário"])
+                        
+                        # Plota a tabela na tela ocupando a largura toda e escondendo o índice (0,1,2,3...)
+                        st.dataframe(dados_tabela, use_container_width=True, hide_index=True)
+                        
+            else:
+                st.info("📅 Nenhuma reserva encontrada para este dia.")
         except Exception as e:
-            st.error(f"Erro ao processar visão diária: {e}")
-
+            st.error(f"Erro ao carregar lista diária: {e}")
     # =========================================================
     # FIM - ABA 2
     # =========================================================
