@@ -269,20 +269,18 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
 
 
    # =========================================================
-    # INÍCIO - ABA 4: GERENCIAR / CANCELAR (EDIÇÃO INTELIGENTE)
+    # INÍCIO - ABA 4: GERENCIAR / CANCELAR (COM LIMPEZA AUTOMÁTICA)
     # =========================================================
     with aba_cancelar:
         st.subheader("Gerenciar Reservas")
         
-        # Filtro de data no padrão do Brasil
-        d_can = st.date_input("Data da reserva que deseja alterar:", value=datetime.date.today(), format="DD/MM/YYYY", key="d_can")
+        # O campo de data ganhou uma key específica
+        d_can = st.date_input("Data da reserva que deseja alterar:", value=datetime.date.today(), format="DD/MM/YYYY", key="aba4_data")
         
         try:
-            # Busca todas as reservas ativas deste dia
             res_at = supabase.table("reservas").select("*").eq("data_reserva", str(d_can)).eq("status", "Ativa").execute()
             
             if res_at.data:
-                # Mapeia as reservas para mostrar textos bonitos na tela para o professor
                 opcoes_res = {}
                 for r in res_at.data:
                     eq_txt = f" | 🛠️ {r['equipamentos']}" if r.get('equipamentos') and str(r.get('equipamentos')).strip() else ""
@@ -290,58 +288,57 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                     opcoes_res[texto] = r
 
                 st.write("**1. Selecione a(s) reserva(s) que deseja alterar:**")
-                # COMPONENTE NOVO: O Multiselect permite escolher 1, 3 ou todas as aulas de uma vez!
+                
+                # O multiselect ganhou uma key
                 reservas_selecionadas = st.multiselect(
                     "Reservas encontradas:", 
                     options=list(opcoes_res.keys()),
-                    placeholder="Clique aqui e escolha uma ou mais reservas..."
+                    placeholder="Clique aqui e escolha uma ou mais reservas...",
+                    key="aba4_multiselect"
                 )
                 
                 if reservas_selecionadas:
                     st.write("**2. O que deseja fazer?**")
                     
-                    # --- LÓGICA INTELIGENTE DE EDIÇÃO ---
-                    # Se escolheu só UMA reserva, deixa editar linha a linha
                     if len(reservas_selecionadas) == 1:
-                        acao = st.radio("Escolha a ação:", ["❌ Cancelar a Reserva (Liberar Espaço e Equipamentos)", "✏️ Editar/Remover apenas Equipamentos"], label_visibility="collapsed")
+                        # Radio ganhou key
+                        acao = st.radio("Escolha a ação:", ["❌ Cancelar a Reserva (Liberar Espaço e Equipamentos)", "✏️ Editar/Remover apenas Equipamentos"], label_visibility="collapsed", key="aba4_acao")
                         
                         res_unica = opcoes_res[reservas_selecionadas[0]]
                         equip_atual = res_unica.get('equipamentos', '')
                         if equip_atual is None: equip_atual = ""
                         
+                        novo_equip = equip_atual
                         if "Editar" in acao:
-                            # Mostra o equipamento atual e deixa o professor apagar o que não vai usar
-                            novo_equip = st.text_input("Equipamentos desta reserva (apague o que não for mais usar):", value=str(equip_atual))
-                    
-                    # Se escolheu VÁRIAS reservas, faz ação em lote
+                            # CORREÇÃO DO BUG: Adicionei a key "aba4_equip" para ele não puxar a data sem querer
+                            novo_equip = st.text_input("Equipamentos desta reserva (apague o que não for mais usar):", value=str(equip_atual), key="aba4_equip")
                     else:
-                        acao = st.radio("Ação em Lote:", ["❌ Cancelar Todas as Selecionadas", "🧹 Limpar Equipamentos de Todas (Devolver equipamentos)"], label_visibility="collapsed")
+                        acao = st.radio("Ação em Lote:", ["❌ Cancelar Todas as Selecionadas", "🧹 Limpar Equipamentos de Todas (Devolver equipamentos)"], label_visibility="collapsed", key="aba4_acao")
                     
                     st.divider()
                     st.write("**3. Assinatura Eletrônica**")
-                    senha = st.text_input("Sua Matrícula (Senha):", type="password", key="senha_canc")
+                    
+                    # Campo de senha ganhou key
+                    senha = st.text_input("Sua Matrícula (Senha):", type="password", key="aba4_senha")
                     
                     if st.button("💾 Confirmar Ação", type="primary"):
                         if not senha:
                             st.warning("⚠️ Digite sua matrícula para confirmar.")
                         else:
-                            # Valida quem está tentando alterar
                             verif = supabase.table("professores_matriculas").select("professor").eq("matricula", senha).execute()
                             
                             if verif.data:
                                 user_nome = verif.data[0]['professor']
                                 sem_permissao = []
                                 
-                                # Verifica segurança: O usuário logado é dono de TODAS as reservas que selecionou?
                                 for sel in reservas_selecionadas:
                                     res_dados = opcoes_res[sel]
                                     if user_nome not in GESTORES and user_nome != res_dados['professor']:
-                                        sem_permissao.append(res_dados['periodo'])
+                                        sem_permissao.append(res_dados.get('periodo', 'Aula Indefinida'))
                                 
                                 if sem_permissao:
                                     st.error(f"⛔ Sem permissão. Você não pode alterar reservas de outro professor: {', '.join(sem_permissao)}")
                                 else:
-                                    # Executa a ação escolhida para cada reserva
                                     for sel in reservas_selecionadas:
                                         id_r = opcoes_res[sel]['id']
                                         
@@ -353,7 +350,16 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                                             supabase.table("reservas").update({"equipamentos": ""}).eq("id", id_r).execute()
                                             
                                     st.success(f"✅ Operação realizada com sucesso por {user_nome}!")
-                                    st.rerun() # Limpa a tela
+                                    
+                                    # --- O SEGREDO ESTÁ AQUI: LIMPEZA DA MEMÓRIA ---
+                                    # Deleta todas as seleções da tela atual antes de reiniciar
+                                    chaves_aba4 = ["aba4_multiselect", "aba4_acao", "aba4_equip", "aba4_senha"]
+                                    for chave in chaves_aba4:
+                                        if chave in st.session_state:
+                                            del st.session_state[chave]
+                                    
+                                    # Reinicia a tela
+                                    st.rerun()
                             else:
                                 st.error("❌ Matrícula incorreta ou não cadastrada.")
             else:
