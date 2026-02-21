@@ -42,8 +42,7 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     # -----------------------------------------
     with aba_cal:
         st.subheader("Visão Geral do Mês")
-        st.info("💡 Legenda: [Professor] - [Espaço] - [Equipamentos]")
-        
+              
         try:
             # Busca apenas reservas ativas
             res_cal = supabase.table("reservas").select("*").eq("status", "Ativa").execute()
