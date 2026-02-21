@@ -134,21 +134,20 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     # FIM - ABA 2
     # =========================================================
     
-   # =========================================================
-    # INÍCIO - ABA 3: NOVA RESERVA (ESTOQUE INTELIGENTE)
+  # =========================================================
+    # INÍCIO - ABA 3: NOVA RESERVA (COM LIMPEZA AUTOMÁTICA)
     # =========================================================
     with aba_nova:
         st.subheader("Agendar Espaço")
         
-        # 1. Filtra a opção "Multimídia" da lista de espaços para não aparecer errado
         espacos_filtrados = [e for e in espacos if e.lower() not in ['multimídia', 'multimidia']]
         
         st.write("**1. Escolha a Data e Horário:**")
         
         col_data, col_vazia = st.columns(2)
         with col_data:
-            # 2. Data no formato correto do Brasil
-            d_res = st.date_input("Data:", value=datetime.date.today(), format="DD/MM/YYYY")
+            # Adicionamos 'key' para podermos limpar o campo depois
+            d_res = st.date_input("Data:", value=datetime.date.today(), format="DD/MM/YYYY", key="aba3_data")
             
         lista_9_aulas = [
             "1ª Aula", "2ª Aula", "3ª Aula", "4ª Aula", "5ª Aula", 
@@ -159,22 +158,22 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
             "Aulas:",
             options=lista_9_aulas,
             selection_mode="multi", 
-            label_visibility="collapsed"
+            label_visibility="collapsed",
+            key="aba3_aulas"
         )
         
-        dia_todo = st.checkbox("Reservar o Dia Inteiro")
+        dia_todo = st.checkbox("Reservar o Dia Inteiro", key="aba3_diatodo")
         lista_final_aulas = lista_9_aulas if dia_todo else aulas_selecionadas
 
         st.divider()
 
         # =====================================================
-        # 3. LÓGICA DE CÁLCULO DE EQUIPAMENTOS DISPONÍVEIS
+        # LÓGICA DE CÁLCULO DE EQUIPAMENTOS DISPONÍVEIS
         # =====================================================
         estoque_total = {"Datashow": 5, "Aparelho de som": 3, "Microfones": 2}
         estoque_disp = {"Datashow": 5, "Aparelho de som": 3, "Microfones": 2}
 
         try:
-            # Busca as reservas ativas neste dia específico
             res_dia = supabase.table("reservas").select("periodo, equipamentos").eq("data_reserva", str(d_res)).eq("status", "Ativa").execute()
             
             if res_dia.data and lista_final_aulas:
@@ -182,19 +181,17 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                 for equip in estoque_total.keys():
                     max_uso_concorrente = 0
                     
-                    # Verifica o uso aula por aula 
                     for aula in lista_final_aulas:
                         uso_nesta_aula = 0
                         reservas_aula = [r for r in res_dia.data if r.get('periodo') == aula]
                         
                         for r in reservas_aula:
                             eq_str = str(r.get('equipamentos', ''))
-                            # Identifica no texto se o professor reservou "1x Datashow", "2x Microfones"
                             match = re.search(r'(\d+)x\s*' + equip[:4], eq_str, re.IGNORECASE)
                             if match:
                                 uso_nesta_aula += int(match.group(1))
                             elif equip.lower() in eq_str.lower():
-                                uso_nesta_aula += 1 # Caso falhe a contagem exata, conta como 1
+                                uso_nesta_aula += 1
                                 
                         if uso_nesta_aula > max_uso_concorrente:
                             max_uso_concorrente = uso_nesta_aula
@@ -210,18 +207,16 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
         st.write("**2. Espaço e Equipamentos:**")
         c1, c2 = st.columns(2)
         with c1:
-            p_res = st.selectbox("Professor:", opcoes_professores)
-            e_res = st.selectbox("Espaço:", ["-- Selecione --"] + espacos_filtrados)
-            o_res = st.text_input("Observações:")
+            p_res = st.selectbox("Professor:", opcoes_professores, key="aba3_prof")
+            e_res = st.selectbox("Espaço:", ["-- Selecione --"] + espacos_filtrados, key="aba3_espaco")
+            o_res = st.text_input("Observações:", key="aba3_obs")
             
         with c2:
             st.write("Equipamentos Disponíveis:")
-            # Caixas numéricas com limite de máximo amarrado ao que sobrou no banco
-            qtd_datashow = st.number_input(f"Datashow (Máx: {estoque_disp['Datashow']})", min_value=0, max_value=estoque_disp['Datashow'], value=0)
-            qtd_som = st.number_input(f"Aparelho de som (Máx: {estoque_disp['Aparelho de som']})", min_value=0, max_value=estoque_disp['Aparelho de som'], value=0)
-            qtd_mic = st.number_input(f"Microfones (Máx: {estoque_disp['Microfones']})", min_value=0, max_value=estoque_disp['Microfones'], value=0)
+            qtd_datashow = st.number_input(f"Datashow (Máx: {estoque_disp['Datashow']})", min_value=0, max_value=estoque_disp['Datashow'], value=0, key="aba3_qtd_data")
+            qtd_som = st.number_input(f"Aparelho de som (Máx: {estoque_disp['Aparelho de som']})", min_value=0, max_value=estoque_disp['Aparelho de som'], value=0, key="aba3_qtd_som")
+            qtd_mic = st.number_input(f"Microfones (Máx: {estoque_disp['Microfones']})", min_value=0, max_value=estoque_disp['Microfones'], value=0, key="aba3_qtd_mic")
 
-        # Botão solto (Sem st.form)
         if st.button("💾 Confirmar Agendamento", type="primary"):
             if not lista_final_aulas:
                 st.warning("⚠️ Selecione pelo menos uma aula.")
@@ -231,14 +226,12 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                 sucessos = 0
                 conflitos = []
                 
-                # Formata o texto final para ir pro banco de dados bonito
                 lista_eq = []
                 if qtd_datashow > 0: lista_eq.append(f"{qtd_datashow}x Datashow")
                 if qtd_som > 0: lista_eq.append(f"{qtd_som}x Aparelho de som")
                 if qtd_mic > 0: lista_eq.append(f"{qtd_mic}x Microfones")
                 eq_str_final = ", ".join(lista_eq)
                 
-                # Executa a reserva aula por aula
                 for aula in lista_final_aulas:
                     conf = supabase.table("reservas").select("id").eq("data_reserva", str(d_res)).eq("periodo", aula).eq("espaco", e_res).eq("status", "Ativa").execute()
                     
@@ -261,7 +254,17 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                 if conflitos:
                     st.error(f"🚨 Espaço ocupado na(s): {', '.join(conflitos)}")
                 
+                # SE DEU SUCESSO, LIMPA A MEMÓRIA DOS CAMPOS E REINICIA A TELA
                 if sucessos > 0:
+                    chaves_para_limpar = [
+                        "aba3_data", "aba3_aulas", "aba3_diatodo", 
+                        "aba3_prof", "aba3_espaco", "aba3_obs", 
+                        "aba3_qtd_data", "aba3_qtd_som", "aba3_qtd_mic"
+                    ]
+                    for chave in chaves_para_limpar:
+                        if chave in st.session_state:
+                            del st.session_state[chave]
+                            
                     st.rerun()
     # =========================================================
     # FIM - ABA 3
