@@ -29,26 +29,48 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     ])
 
     # =========================================================
-    # INÍCIO - ABA 1: CALENDÁRIO MENSAL
+    # INÍCIO - ABA 1: CALENDÁRIO MENSAL (COM TEXTO MULTILINHA)
     # =========================================================
     with aba_cal:
+        # --- COMANDO MÁGICO PARA ESTOURAR O TEXTO ---
+        st.markdown("""
+            <style>
+                /* Força o texto do evento a quebrar linha e mostrar tudo */
+                .fc-event-title {
+                    white-space: normal !important;
+                    word-wrap: break-word !important;
+                }
+                /* Ajusta a altura mínima do bloco para não encavalar */
+                .fc-daygrid-event {
+                    white-space: normal !important;
+                    align-items: flex-start !important;
+                }
+            </style>
+        """, unsafe_allow_code=True)
+        # --------------------------------------------
+
         st.subheader("Visão Geral do Mês")
         try:
+            # Busca apenas reservas ativas para o calendário
             res_cal = supabase.table("reservas").select("*").eq("status", "Ativa").execute()
+            
             if res_cal.data:
                 eventos = []
                 for r in res_cal.data:
-                    prof = r.get('professor', '')
-                    espaco = r.get('espaco', '')
+                    # Buscando dados conforme as colunas do seu banco
+                    prof = r.get('professor', 'Sem Prof')
+                    esp = r.get('espaco', 'Sem Espaço')
+                    per = r.get('periodo') or r.get('aula', '') # Tenta 'periodo', se não achar tenta 'aula'
                     equip = r.get('equipamentos')
                     
-                    if equip and str(equip).strip() not in ["", "None"]:
-                        titulo_limpo = f"{prof} - {espaco} - {equip}"
+                    # Monta o título completo para o teste de "estouro"
+                    if equip and str(equip).strip() not in ["", "None", "NULL"]:
+                        titulo_completo = f"{per} - {prof} - {esp} - 🛠️ {equip}"
                     else:
-                        titulo_limpo = f"{prof} - {espaco}"
+                        titulo_completo = f"{per} - {prof} - {esp}"
                     
                     eventos.append({
-                        "title": titulo_limpo,
+                        "title": titulo_completo,
                         "start": r['data_reserva'],
                         "end": r['data_reserva'],
                         "backgroundColor": "#1f77b4"
@@ -58,11 +80,12 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                     "locale": "pt-br",
                     "headerToolbar": {"left": "today prev,next", "center": "title", "right": "dayGridMonth,timeGridWeek"},
                     "initialView": "dayGridMonth",
-                    "buttonText": {"today": "Hoje", "month": "Mês", "week": "Semana"}
+                    "buttonText": {"today": "Hoje", "month": "Mês", "week": "Semana"},
+                    "eventDisplay": "block", # Garante que o evento seja tratado como um bloco
                 }
                 calendar(events=eventos, options=calendar_options)
             else:
-                st.info("Nenhuma reserva encontrada.")
+                st.info("Nenhuma reserva ativa para exibir no calendário.")
         except Exception as e:
             st.error(f"Erro ao carregar calendário: {e}")
     # =========================================================
