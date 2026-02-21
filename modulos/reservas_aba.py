@@ -135,82 +135,134 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     # =========================================================
     
    # =========================================================
-    # INÍCIO - ABA 3: NOVA RESERVA (9 AULAS TRAVADAS - PILLS)
+    # INÍCIO - ABA 3: NOVA RESERVA (ESTOQUE INTELIGENTE)
     # =========================================================
     with aba_nova:
         st.subheader("Agendar Espaço")
         
-        with st.form("form_nova_reserva_pills"):
-            st.write("**Selecione a(s) Aula(s):** (Toque para selecionar várias)")
+        # 1. Filtra a opção "Multimídia" da lista de espaços para não aparecer errado
+        espacos_filtrados = [e for e in espacos if e.lower() not in ['multimídia', 'multimidia']]
+        
+        st.write("**1. Escolha a Data e Horário:**")
+        
+        col_data, col_vazia = st.columns(2)
+        with col_data:
+            # 2. Data no formato correto do Brasil
+            d_res = st.date_input("Data:", value=datetime.date.today(), format="DD/MM/YYYY")
             
-            # --- LISTA FIXA COM AS 9 AULAS ---
-            # Aqui garantimos que as 9 aulas vão aparecer sempre, independentemente 
-            # do que vem de outras partes do código.
-            lista_9_aulas = [
-                "1ª Aula", "2ª Aula", "3ª Aula", "4ª Aula", "5ª Aula", 
-                "6ª Aula", "7ª Aula", "8ª Aula", "9ª Aula"
-            ]
+        lista_9_aulas = [
+            "1ª Aula", "2ª Aula", "3ª Aula", "4ª Aula", "5ª Aula", 
+            "6ª Aula", "7ª Aula", "8ª Aula", "9ª Aula"
+        ]
+        
+        aulas_selecionadas = st.segmented_control(
+            "Aulas:",
+            options=lista_9_aulas,
+            selection_mode="multi", 
+            label_visibility="collapsed"
+        )
+        
+        dia_todo = st.checkbox("Reservar o Dia Inteiro")
+        lista_final_aulas = lista_9_aulas if dia_todo else aulas_selecionadas
+
+        st.divider()
+
+        # =====================================================
+        # 3. LÓGICA DE CÁLCULO DE EQUIPAMENTOS DISPONÍVEIS
+        # =====================================================
+        estoque_total = {"Datashow": 5, "Aparelho de som": 3, "Microfones": 2}
+        estoque_disp = {"Datashow": 5, "Aparelho de som": 3, "Microfones": 2}
+
+        try:
+            # Busca as reservas ativas neste dia específico
+            res_dia = supabase.table("reservas").select("periodo, equipamentos").eq("data_reserva", str(d_res)).eq("status", "Ativa").execute()
             
-            # BOTÕES TIPO PÍLULA (MULTISELEÇÃO)
-            aulas_selecionadas = st.segmented_control(
-                "Aulas:",
-                options=lista_9_aulas,  # Agora usa a lista fixa de 9 aulas
-                selection_mode="multi", 
-                label_visibility="collapsed"
-            )
-            
-            # Opção de atalho para facilitar o preenchimento do dia todo
-            dia_todo = st.checkbox("Reservar o Dia Inteiro (Marca todas as 9 aulas)")
-            
-            st.divider()
-            
-            c1, c2 = st.columns(2)
-            with c1:
-                d_res = st.date_input("Data:", value=datetime.date.today())
-                p_res = st.selectbox("Professor:", opcoes_professores)
-            with c2:
-                e_res = st.selectbox("Espaço:", ["-- Selecione --"] + espacos)
-                eq_res = st.text_input("Equipamentos:", placeholder="Ex: Data show")
-            
+            if res_dia.data and lista_final_aulas:
+                import re
+                for equip in estoque_total.keys():
+                    max_uso_concorrente = 0
+                    
+                    # Verifica o uso aula por aula 
+                    for aula in lista_final_aulas:
+                        uso_nesta_aula = 0
+                        reservas_aula = [r for r in res_dia.data if r.get('periodo') == aula]
+                        
+                        for r in reservas_aula:
+                            eq_str = str(r.get('equipamentos', ''))
+                            # Identifica no texto se o professor reservou "1x Datashow", "2x Microfones"
+                            match = re.search(r'(\d+)x\s*' + equip[:4], eq_str, re.IGNORECASE)
+                            if match:
+                                uso_nesta_aula += int(match.group(1))
+                            elif equip.lower() in eq_str.lower():
+                                uso_nesta_aula += 1 # Caso falhe a contagem exata, conta como 1
+                                
+                        if uso_nesta_aula > max_uso_concorrente:
+                            max_uso_concorrente = uso_nesta_aula
+                            
+                    disp = estoque_total[equip] - max_uso_concorrente
+                    estoque_disp[equip] = max(0, disp)
+        except Exception as e:
+            st.error(f"Erro ao calcular disponibilidade: {e}")
+
+        # =====================================================
+        # CONTINUAÇÃO DO PREENCHIMENTO
+        # =====================================================
+        st.write("**2. Espaço e Equipamentos:**")
+        c1, c2 = st.columns(2)
+        with c1:
+            p_res = st.selectbox("Professor:", opcoes_professores)
+            e_res = st.selectbox("Espaço:", ["-- Selecione --"] + espacos_filtrados)
             o_res = st.text_input("Observações:")
             
-            if st.form_submit_button("💾 Confirmar Agendamento"):
-                # Se o "Dia Inteiro" estiver marcado, ele pega nossa lista de 9 aulas
-                lista_final_aulas = lista_9_aulas if dia_todo else aulas_selecionadas
+        with c2:
+            st.write("Equipamentos Disponíveis:")
+            # Caixas numéricas com limite de máximo amarrado ao que sobrou no banco
+            qtd_datashow = st.number_input(f"Datashow (Máx: {estoque_disp['Datashow']})", min_value=0, max_value=estoque_disp['Datashow'], value=0)
+            qtd_som = st.number_input(f"Aparelho de som (Máx: {estoque_disp['Aparelho de som']})", min_value=0, max_value=estoque_disp['Aparelho de som'], value=0)
+            qtd_mic = st.number_input(f"Microfones (Máx: {estoque_disp['Microfones']})", min_value=0, max_value=estoque_disp['Microfones'], value=0)
+
+        # Botão solto (Sem st.form)
+        if st.button("💾 Confirmar Agendamento", type="primary"):
+            if not lista_final_aulas:
+                st.warning("⚠️ Selecione pelo menos uma aula.")
+            elif p_res == "-- Selecione --" or e_res == "-- Selecione --":
+                st.warning("⚠️ Selecione o Professor e o Espaço.")
+            else:
+                sucessos = 0
+                conflitos = []
                 
-                if not lista_final_aulas:
-                    st.warning("⚠️ Por favor, selecione as aulas clicando nos botões acima.")
-                elif p_res == "-- Selecione --" or e_res == "-- Selecione --":
-                    st.warning("⚠️ Selecione o Professor e o Espaço.")
-                else:
-                    sucessos = 0
-                    conflitos = []
+                # Formata o texto final para ir pro banco de dados bonito
+                lista_eq = []
+                if qtd_datashow > 0: lista_eq.append(f"{qtd_datashow}x Datashow")
+                if qtd_som > 0: lista_eq.append(f"{qtd_som}x Aparelho de som")
+                if qtd_mic > 0: lista_eq.append(f"{qtd_mic}x Microfones")
+                eq_str_final = ", ".join(lista_eq)
+                
+                # Executa a reserva aula por aula
+                for aula in lista_final_aulas:
+                    conf = supabase.table("reservas").select("id").eq("data_reserva", str(d_res)).eq("periodo", aula).eq("espaco", e_res).eq("status", "Ativa").execute()
                     
-                    # Processa cada aula da lista final no banco
-                    for aula in lista_final_aulas:
-                        conf = supabase.table("reservas").select("id").eq("data_reserva", str(d_res)).eq("periodo", aula).eq("espaco", e_res).eq("status", "Ativa").execute()
-                        
-                        if conf.data:
-                            conflitos.append(aula)
-                        else:
-                            supabase.table("reservas").insert({
-                                "data_reserva": str(d_res),
-                                "periodo": aula,
-                                "professor": p_res,
-                                "espaco": e_res,
-                                "equipamentos": eq_res,
-                                "obs": o_res,
-                                "status": "Ativa"
-                            }).execute()
-                            sucessos += 1
-                    
-                    if sucessos > 0:
-                        st.success(f"✅ {sucessos} aula(s) reservada(s) com sucesso!")
-                    if conflitos:
-                        st.error(f"🚨 Já ocupado na(s): {', '.join(conflitos)}")
-                    
-                    if sucessos > 0:
-                        st.rerun()
+                    if conf.data:
+                        conflitos.append(aula)
+                    else:
+                        supabase.table("reservas").insert({
+                            "data_reserva": str(d_res),
+                            "periodo": aula,
+                            "professor": p_res,
+                            "espaco": e_res,
+                            "equipamentos": eq_str_final,
+                            "obs": o_res,
+                            "status": "Ativa"
+                        }).execute()
+                        sucessos += 1
+                
+                if sucessos > 0:
+                    st.success(f"✅ {sucessos} aula(s) reservada(s) com sucesso!")
+                if conflitos:
+                    st.error(f"🚨 Espaço ocupado na(s): {', '.join(conflitos)}")
+                
+                if sucessos > 0:
+                    st.rerun()
     # =========================================================
     # FIM - ABA 3
     # =========================================================
