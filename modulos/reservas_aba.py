@@ -135,25 +135,29 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     # =========================================================
     
    # =========================================================
-    # INÍCIO - ABA 3: NOVA RESERVA (FLEXÍVEL - MÚLTIPLAS AULAS)
+    # INÍCIO - ABA 3: NOVA RESERVA (PILLS MULTISELEÇÃO)
     # =========================================================
     with aba_nova:
         st.subheader("Agendar Espaço")
         
-        with st.form("form_nova_reserva_flex"):
-            st.write("**Defina o Horário:**")
+        with st.form("form_nova_reserva_pills"):
+            st.write("**Selecione a(s) Aula(s):** (Toque para selecionar várias)")
             
-            # Opção B: Botão para selecionar o dia inteiro
-            dia_inteiro = st.checkbox("Selecionar todas as 9 aulas (Dia Inteiro)")
+            # Recurso de seleção rápida "Dia Inteiro" fora do form para atualizar as pills
+            # Nota: Como o form bloqueia atualizações em tempo real, 
+            # vamos focar na seleção manual múltipla que é o que você mais pediu.
             
-            # Opção A: Selecionar várias aulas (sequenciais ou separadas)
-            # Se 'dia_inteiro' for marcado, o multiselect pode ser ignorado ou preenchido automaticamente
-            aulas_selecionadas = st.multiselect(
-                "Selecione a(s) aula(s):",
+            # BOTÕES TIPO PÍLULA (MULTISELEÇÃO)
+            # Isso cria os 9 botões lado a lado. O professor toca em quantos quiser.
+            aulas_selecionadas = st.segmented_control(
+                "Aulas:",
                 options=aulas_opcoes,
-                default=aulas_opcoes if dia_inteiro else [],
-                help="Você pode escolher várias aulas para o mesmo espaço e data."
+                selection_mode="multi", # <--- AQUI ESTÁ A MÁGICA: Seleciona várias!
+                label_visibility="collapsed"
             )
+            
+            # Opção de atalho para facilitar
+            dia_todo = st.checkbox("Reservar o Dia Inteiro (Marca todas as aulas)")
             
             st.divider()
             
@@ -167,25 +171,25 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
             
             o_res = st.text_input("Observações:")
             
-            if st.form_submit_button("💾 Confirmar Agendamento(s)"):
-                # Validações básicas
-                if not aulas_selecionadas:
-                    st.warning("⚠️ Selecione pelo menos uma aula ou marque 'Dia Inteiro'.")
+            if st.form_submit_button("💾 Confirmar Agendamento"):
+                # Se o "Dia Inteiro" estiver marcado, ignoramos a seleção manual e pegamos tudo
+                lista_final_aulas = aulas_opcoes if dia_todo else aulas_selecionadas
+                
+                if not lista_final_aulas:
+                    st.warning("⚠️ Por favor, selecione as aulas clicando nos botões acima.")
                 elif p_res == "-- Selecione --" or e_res == "-- Selecione --":
                     st.warning("⚠️ Selecione o Professor e o Espaço.")
                 else:
                     sucessos = 0
-                    erros = []
+                    conflitos = []
                     
-                    # O loop vai processar cada aula selecionada individualmente no banco
-                    for aula in aulas_selecionadas:
-                        # Verifica conflito para CADA aula no período
+                    # Processa cada aula no banco (Coluna 'periodo')
+                    for aula in lista_final_aulas:
                         conf = supabase.table("reservas").select("id").eq("data_reserva", str(d_res)).eq("periodo", aula).eq("espaco", e_res).eq("status", "Ativa").execute()
                         
                         if conf.data:
-                            erros.append(aula)
+                            conflitos.append(aula)
                         else:
-                            # Insere a reserva daquela aula específica
                             supabase.table("reservas").insert({
                                 "data_reserva": str(d_res),
                                 "periodo": aula,
@@ -197,11 +201,10 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                             }).execute()
                             sucessos += 1
                     
-                    # Feedback final para o Diretor/Professor
                     if sucessos > 0:
                         st.success(f"✅ {sucessos} aula(s) reservada(s) com sucesso!")
-                    if erros:
-                        st.error(f"🚨 Não foi possível reservar: {', '.join(erros)} (Já ocupadas).")
+                    if conflitos:
+                        st.error(f"🚨 Já ocupado na(s): {', '.join(conflitos)}")
                     
                     if sucessos > 0:
                         st.rerun()
