@@ -29,50 +29,67 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     ])
 
     # =========================================================
-    # ABA 1: CALENDÁRIO MENSAL (COM TEXTO MULTILINHA)
+    # INÍCIO - ABA 1: CALENDÁRIO MENSAL (TEXTO COMPLETO)
     # =========================================================
     with aba_cal:
-        st.markdown("""
-            <style>
-                .fc-event-title { white-space: normal !important; word-wrap: break-word !important; }
-                .fc-daygrid-event { white-space: normal !important; align-items: flex-start !important; }
-            </style>
-        """, unsafe_allow_code=True)
+        # Estilo CSS para forçar a quebra de linha (Wrap) nas células
+        estilo_custom = "<style>.fc-event-title { white-space: normal !important; word-wrap: break-word !important; } .fc-daygrid-event { white-space: normal !important; }</style>"
+        st.markdown(estilo_custom, unsafe_allow_code=True)
 
         st.subheader("Visão Geral do Mês")
+        
         try:
-            # Busca apenas reservas ativas
+            # Busca apenas reservas ativas no banco
             res_cal = supabase.table("reservas").select("*").eq("status", "Ativa").execute()
             
             if res_cal.data:
-                eventos = []
+                eventos_lista = []
                 for r in res_cal.data:
-                    prof = r.get('professor', '---')
-                    esp = r.get('espaco', '---')
-                    # Prioriza 'periodo' que é o que está preenchido no seu banco
-                    horario = r.get('periodo') or r.get('aula') or "S/H"
-                    equip = r.get('equipamentos')
+                    # Captura os dados tratando possíveis valores nulos
+                    prof_nome = r.get('professor', '---')
+                    esp_nome = r.get('espaco', '---')
+                    # Tenta buscar a coluna 'periodo' ou 'aula' conforme o seu banco
+                    horario_info = r.get('periodo') or r.get('aula') or "S/H"
+                    equip_info = r.get('equipamentos')
+
+                    # Monta o título que vai aparecer no quadrado azul
+                    txt_titulo = f"{horario_info} - {prof_nome} - {esp_nome}"
                     
-                    titulo = f"{horario} - {prof} - {esp}"
-                    if equip and str(equip).strip() not in ["", "None", "NULL", "None"]:
-                        titulo += f" - 🛠️ {equip}"
+                    # Se houver equipamento, adiciona ao título para o teste de "estouro"
+                    if equip_info and str(equip_info).strip() not in ["", "None", "NULL"]:
+                        txt_titulo += f" | 🛠️ {equip_info}"
                     
-                    eventos.append({
-                        "title": titulo,
+                    eventos_lista.append({
+                        "title": txt_titulo,
                         "start": r['data_reserva'],
                         "end": r['data_reserva'],
-                        "backgroundColor": "#1f77b4"
+                        "backgroundColor": "#1f77b4",
+                        "borderColor": "#1f77b4"
                     })
                 
-                calendar(events=eventos, options={
+                # Configurações do Calendário
+                opcoes_visuais = {
                     "locale": "pt-br",
+                    "headerToolbar": {
+                        "left": "today prev,next",
+                        "center": "title",
+                        "right": "dayGridMonth,timeGridWeek"
+                    },
                     "initialView": "dayGridMonth",
                     "eventDisplay": "block",
-                })
+                    "buttonText": {"today": "Hoje", "month": "Mês", "week": "Semana"}
+                }
+                
+                # Renderiza o componente
+                calendar(events=eventos_lista, options=opcoes_visuais)
             else:
-                st.info("Nenhuma reserva ativa.")
+                st.info("Nenhuma reserva ativa encontrada para exibir no calendário.")
+                
         except Exception as e:
-            st.error(f"Erro no calendário: {e}")
+            st.error(f"Erro ao carregar os eventos do calendário: {e}")
+    # =========================================================
+    # FIM - ABA 1
+    # =========================================================
 
     # =========================================================
     # ABA 2: LISTA DIÁRIA (TESTE DE TODOS OS ESPAÇOS)
