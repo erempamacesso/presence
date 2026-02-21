@@ -135,59 +135,72 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     # =========================================================
     
    # =========================================================
-    # INÍCIO - ABA 3: NOVA RESERVA (COM BOTÕES PILL)
+    # INÍCIO - ABA 3: NOVA RESERVA (RECOMENDADA)
     # =========================================================
     with aba_nova:
         st.subheader("Agendar Espaço")
         
-        # Criamos o formulário
-        with st.form("form_nova_reserva"):
-            # Seleção de Aula usando Botões Pill (Segmented Control)
-            # Isso substitui o selectbox antigo por botões clicáveis lado a lado
-            st.write("**Selecione a Aula:**")
-            a_res = st.segmented_control(
-                "Aulas disponíveis:",
+        with st.form("form_nova_reserva", clear_on_submit=False):
+            # Título instrutivo para o professor
+            st.write("**Escolha o Horário (Aula):**")
+            
+            # O st.radio horizontal é ideal para as 9 aulas
+            # Ele permite uma visualização clara e seleção rápida
+            a_res = st.radio(
+                "Aulas:",
                 options=aulas_opcoes,
-                selection_mode="single", # Permite selecionar apenas uma aula
+                horizontal=True,
                 label_visibility="collapsed"
             )
             
-            st.divider() # Uma linha fina para separar
+            st.divider() # Linha visual para organizar os campos
             
-            c1, c2 = st.columns(2)
-            with c1:
-                d_res = st.date_input("Data:", value=datetime.date.today())
-                p_res = st.selectbox("Professor:", opcoes_professores)
-            with c2:
-                # Carrega os espaços definidos na sua lista
-                e_res = st.selectbox("Espaço:", ["-- Selecione --"] + espacos)
-                eq_res = st.text_input("Equipamentos:", placeholder="Ex: Data show")
+            # Organização em duas colunas para os dados restantes
+            col_esq, col_dir = st.columns(2)
             
-            o_res = st.text_input("Observações:")
+            with col_esq:
+                d_res = st.date_input("Data da Reserva:", value=datetime.date.today())
+                # Busca a lista de professores que carregamos do banco
+                p_res = st.selectbox("Selecione seu Nome:", opcoes_professores)
             
-            if st.form_submit_button("💾 Confirmar Reserva"):
-                # Validação: Agora verificamos se a_res (o pill) foi clicado
-                if not a_res or p_res == "-- Selecione --" or e_res == "-- Selecione --":
-                    st.warning("⚠️ Por favor, selecione a Aula, o Professor e o Espaço.")
+            with col_dir:
+                # Lista de espaços reserváveis da escola
+                e_res = st.selectbox("Selecione o Espaço:", ["-- Selecione --"] + espacos)
+                # Campo para o professor especificar o que precisa
+                eq_res = st.text_input("Equipamentos (opcional):", placeholder="Ex: Data show, Som")
+            
+            o_res = st.text_input("Observações Adicionais:")
+            
+            # Botão de submissão do formulário
+            if st.form_submit_button("💾 Confirmar Agendamento"):
+                # Validação de campos obrigatórios
+                if p_res == "-- Selecione --" or e_res == "-- Selecione --":
+                    st.warning("⚠️ Por favor, selecione o Professor e o Espaço para continuar.")
                 else:
-                    # Verifica conflito usando a coluna 'periodo' do seu banco
-                    conf = supabase.table("reservas").select("id").eq("data_reserva", str(d_res)).eq("periodo", a_res).eq("espaco", e_res).eq("status", "Ativa").execute()
-                    
-                    if conf.data:
-                        st.error(f"🚨 Conflito! O {e_res} já está reservado para a {a_res}.")
-                    else:
-                        # Insere os dados usando os nomes de coluna do seu Supabase
-                        supabase.table("reservas").insert({
-                            "data_reserva": str(d_res),
-                            "periodo": a_res,
-                            "professor": p_res,
-                            "espaco": e_res,
-                            "equipamentos": eq_res,
-                            "obs": o_res,
-                            "status": "Ativa"
-                        }).execute()
-                        st.success(f"✅ Sucesso! {e_res} reservado para {p_res} ({a_res}).")
-                        st.rerun()
+                    try:
+                        # Verificação de conflito: olha a data, o período e o espaço
+                        # Importante: usamos 'periodo' para dar match com o seu Supabase
+                        conflito = supabase.table("reservas").select("id").eq("data_reserva", str(d_res)).eq("periodo", a_res).eq("espaco", e_res).eq("status", "Ativa").execute()
+                        
+                        if conflito.data:
+                            st.error(f"🚨 Conflito! O '{e_res}' já está ocupado na {a_res} deste dia.")
+                        else:
+                            # Inserção dos dados nas colunas corretas do seu banco
+                            supabase.table("reservas").insert({
+                                "data_reserva": str(d_res),
+                                "periodo": a_res,       # Salva na coluna correta
+                                "professor": p_res,
+                                "espaco": e_res,
+                                "equipamentos": eq_res,
+                                "obs": o_res,
+                                "status": "Ativa"
+                            }).execute()
+                            
+                            st.success(f"✅ Sucesso! {e_res} reservado para {p_res} na {a_res}.")
+                            st.rerun() # Atualiza a tela para mostrar a reserva no calendário
+                            
+                    except Exception as e:
+                        st.error(f"Erro ao salvar reserva: {e}")
     # =========================================================
     # FIM - ABA 3
     # =========================================================
