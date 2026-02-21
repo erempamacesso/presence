@@ -269,12 +269,12 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
 
 
    # =========================================================
-    # INÍCIO - ABA 4: GERENCIAR / CANCELAR (COM LIMPEZA AUTOMÁTICA)
+    # INÍCIO - ABA 4: GERENCIAR / CANCELAR (COM AVISO DE PRIVACIDADE)
     # =========================================================
     with aba_cancelar:
         st.subheader("Gerenciar Reservas")
         
-        # O campo de data ganhou uma key específica
+        # O campo de data com key específica
         d_can = st.date_input("Data da reserva que deseja alterar:", value=datetime.date.today(), format="DD/MM/YYYY", key="aba4_data")
         
         try:
@@ -289,7 +289,7 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
 
                 st.write("**1. Selecione a(s) reserva(s) que deseja alterar:**")
                 
-                # O multiselect ganhou uma key
+                # Multiselect para escolher várias reservas
                 reservas_selecionadas = st.multiselect(
                     "Reservas encontradas:", 
                     options=list(opcoes_res.keys()),
@@ -301,7 +301,6 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                     st.write("**2. O que deseja fazer?**")
                     
                     if len(reservas_selecionadas) == 1:
-                        # Radio ganhou key
                         acao = st.radio("Escolha a ação:", ["❌ Cancelar a Reserva (Liberar Espaço e Equipamentos)", "✏️ Editar/Remover apenas Equipamentos"], label_visibility="collapsed", key="aba4_acao")
                         
                         res_unica = opcoes_res[reservas_selecionadas[0]]
@@ -310,7 +309,6 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                         
                         novo_equip = equip_atual
                         if "Editar" in acao:
-                            # CORREÇÃO DO BUG: Adicionei a key "aba4_equip" para ele não puxar a data sem querer
                             novo_equip = st.text_input("Equipamentos desta reserva (apague o que não for mais usar):", value=str(equip_atual), key="aba4_equip")
                     else:
                         acao = st.radio("Ação em Lote:", ["❌ Cancelar Todas as Selecionadas", "🧹 Limpar Equipamentos de Todas (Devolver equipamentos)"], label_visibility="collapsed", key="aba4_acao")
@@ -318,7 +316,9 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                     st.divider()
                     st.write("**3. Assinatura Eletrônica**")
                     
-                    # Campo de senha ganhou key
+                    # --- AVISO GRITANTE DE SEGURANÇA ADICIONADO AQUI ---
+                    st.warning("🔒 **AVISO DE PRIVACIDADE E SEGURANÇA:**\n\nSua **Matrícula** funciona como a sua **senha pessoal** neste sistema. Fique tranquilo(a): ela **NÃO será exposta** em nenhuma tela pública, relatório ou tabela. \n\nSua única finalidade é garantir a segurança da sua agenda, permitindo que **apenas você** (ou a gestão da escola) possa cancelar ou alterar as reservas feitas em seu nome.")
+                    
                     senha = st.text_input("Sua Matrícula (Senha):", type="password", key="aba4_senha")
                     
                     if st.button("💾 Confirmar Ação", type="primary"):
@@ -351,14 +351,12 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                                             
                                     st.success(f"✅ Operação realizada com sucesso por {user_nome}!")
                                     
-                                    # --- O SEGREDO ESTÁ AQUI: LIMPEZA DA MEMÓRIA ---
-                                    # Deleta todas as seleções da tela atual antes de reiniciar
+                                    # Limpeza da memória
                                     chaves_aba4 = ["aba4_multiselect", "aba4_acao", "aba4_equip", "aba4_senha"]
                                     for chave in chaves_aba4:
                                         if chave in st.session_state:
                                             del st.session_state[chave]
                                     
-                                    # Reinicia a tela
                                     st.rerun()
                             else:
                                 st.error("❌ Matrícula incorreta ou não cadastrada.")
