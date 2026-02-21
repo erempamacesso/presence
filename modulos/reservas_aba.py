@@ -29,101 +29,79 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     ])
 
     # =========================================================
-    # INÍCIO - ABA 1: CALENDÁRIO MENSAL (TEXTO COMPLETO)
+    # INÍCIO - ABA 1: CALENDÁRIO MENSAL
     # =========================================================
     with aba_cal:
-        # Estilo CSS para forçar a quebra de linha (Wrap) nas células
-        estilo_custom = "<style>.fc-event-title { white-space: normal !important; word-wrap: break-word !important; } .fc-daygrid-event { white-space: normal !important; }</style>"
-        st.markdown(estilo_custom, unsafe_allow_code=True)
-
         st.subheader("Visão Geral do Mês")
-        
         try:
-            # Busca apenas reservas ativas no banco
             res_cal = supabase.table("reservas").select("*").eq("status", "Ativa").execute()
-            
             if res_cal.data:
-                eventos_lista = []
+                eventos = []
                 for r in res_cal.data:
-                    # Captura os dados tratando possíveis valores nulos
-                    prof_nome = r.get('professor', '---')
-                    esp_nome = r.get('espaco', '---')
-                    # Tenta buscar a coluna 'periodo' ou 'aula' conforme o seu banco
-                    horario_info = r.get('periodo') or r.get('aula') or "S/H"
-                    equip_info = r.get('equipamentos')
-
-                    # Monta o título que vai aparecer no quadrado azul
-                    txt_titulo = f"{horario_info} - {prof_nome} - {esp_nome}"
+                    prof = r.get('professor', '')
+                    espaco = r.get('espaco', '')
+                    equip = r.get('equipamentos')
                     
-                    # Se houver equipamento, adiciona ao título para o teste de "estouro"
-                    if equip_info and str(equip_info).strip() not in ["", "None", "NULL"]:
-                        txt_titulo += f" | 🛠️ {equip_info}"
+                    if equip and str(equip).strip() not in ["", "None"]:
+                        titulo_limpo = f"{prof} - {espaco} - {equip}"
+                    else:
+                        titulo_limpo = f"{prof} - {espaco}"
                     
-                    eventos_lista.append({
-                        "title": txt_titulo,
+                    eventos.append({
+                        "title": titulo_limpo,
                         "start": r['data_reserva'],
                         "end": r['data_reserva'],
-                        "backgroundColor": "#1f77b4",
-                        "borderColor": "#1f77b4"
+                        "backgroundColor": "#1f77b4"
                     })
                 
-                # Configurações do Calendário
-                opcoes_visuais = {
+                calendar_options = {
                     "locale": "pt-br",
-                    "headerToolbar": {
-                        "left": "today prev,next",
-                        "center": "title",
-                        "right": "dayGridMonth,timeGridWeek"
-                    },
+                    "headerToolbar": {"left": "today prev,next", "center": "title", "right": "dayGridMonth,timeGridWeek"},
                     "initialView": "dayGridMonth",
-                    "eventDisplay": "block",
                     "buttonText": {"today": "Hoje", "month": "Mês", "week": "Semana"}
                 }
-                
-                # Renderiza o componente
-                calendar(events=eventos_lista, options=opcoes_visuais)
+                calendar(events=eventos, options=calendar_options)
             else:
-                st.info("Nenhuma reserva ativa encontrada para exibir no calendário.")
-                
+                st.info("Nenhuma reserva encontrada.")
         except Exception as e:
-            st.error(f"Erro ao carregar os eventos do calendário: {e}")
+            st.error(f"Erro ao carregar calendário: {e}")
     # =========================================================
     # FIM - ABA 1
     # =========================================================
 
+
     # =========================================================
-    # ABA 2: LISTA DIÁRIA (TESTE DE TODOS OS ESPAÇOS)
+    # INÍCIO - ABA 2: LISTA DIÁRIA
     # =========================================================
     with aba_lista:
         st.subheader("Visão Diária por Espaço")
-        data_filtro = st.date_input("Ver detalhes do dia:", value=datetime.date.today(), key="data_lista_ok")
-        
+        data_filtro = st.date_input("Ver detalhes do dia:", value=datetime.date.today(), key="data_lista")
         try:
             res = supabase.table("reservas").select("*").eq("data_reserva", str(data_filtro)).execute()
-            df_dia = pd.DataFrame(res.data) if res.data else pd.DataFrame()
-
-            for espaco_escola in espacos:
-                if not df_dia.empty and 'espaco' in df_dia.columns:
-                    df_espaco = df_dia[df_dia['espaco'] == espaco_escola].copy()
-                else:
-                    df_espaco = pd.DataFrame()
-
-                status_icone = "🔴" if not df_espaco.empty else "⚪"
-                with st.expander(f"{status_icone} {espaco_escola} ({len(df_espaco)} reservas)", expanded=not df_espaco.empty):
-                    if not df_espaco.empty:
-                        # Colunas dinâmicas para evitar erro "not in index"
-                        cols_banco = df_espaco.columns.tolist()
-                        col_exibir = [c for c in ['periodo', 'professor', 'equipamentos', 'status'] if c in cols_banco]
-                        
-                        df_mostra = df_espaco[col_exibir].copy()
-                        st.dataframe(df_mostra, use_container_width=True, hide_index=True)
-                    else:
-                        st.info(f"Espaço '{espaco_escola}' livre.")
+            if res.data:
+                df_dia = pd.DataFrame(res.data)
+                for espaco_atual in espacos:
+                    if 'espaco' in df_dia.columns:
+                        df_espaco = df_dia[df_dia['espaco'] == espaco_atual]
+                        if not df_espaco.empty:
+                            with st.expander(f"📍 {espaco_atual} ({len(df_espaco)} reservas)", expanded=True):
+                                colunas_desejadas = ['aula', 'professor', 'equipamentos', 'obs', 'status']
+                                colunas_existentes = [c for c in colunas_desejadas if c in df_espaco.columns]
+                                df_exibir = df_espaco[colunas_existentes].copy()
+                                if 'status' in df_exibir.columns:
+                                    df_exibir['status'] = df_exibir['status'].apply(lambda x: "🟢 Ativa" if x == "Ativa" else "🔴 Cancelada")
+                                st.dataframe(df_exibir.rename(columns={'aula':'Aula','professor':'Prof','equipamentos':'Equip','obs':'Obs'}), use_container_width=True, hide_index=True)
+            else:
+                st.info("Nenhuma reserva para esta data.")
         except Exception as e:
-            st.error(f"Erro na lista: {e}")
+            st.error(f"Erro ao carregar lista: {e}")
+    # =========================================================
+    # FIM - ABA 2
+    # =========================================================
+
 
     # =========================================================
-    # ABA 3: NOVA RESERVA (CORRIGIDA PARA 'PERIODO')
+    # INÍCIO - ABA 3: NOVA RESERVA
     # =========================================================
     with aba_nova:
         st.subheader("Agendar Espaço")
@@ -131,7 +109,7 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
             c1, c2 = st.columns(2)
             with c1:
                 d_res = st.date_input("Data:", value=datetime.date.today())
-                a_res = st.selectbox("Aula/Período:", aulas_opcoes)
+                a_res = st.selectbox("Aula:", aulas_opcoes)
                 p_res = st.selectbox("Professor:", opcoes_professores)
             with c2:
                 e_res = st.selectbox("Espaço:", ["-- Selecione --"] + espacos)
@@ -140,71 +118,70 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
             
             if st.form_submit_button("💾 Confirmar Reserva"):
                 if p_res == "-- Selecione --" or e_res == "-- Selecione --":
-                    st.warning("Preencha Professor e Espaço.")
+                    st.warning("⚠️ Preencha os campos obrigatórios.")
                 else:
-                    # Checagem usando 'periodo' que é sua coluna real
-                    conf = supabase.table("reservas").select("id").eq("data_reserva", str(d_res)).eq("periodo", a_res).eq("espaco", e_res).eq("status", "Ativa").execute()
+                    conf = supabase.table("reservas").select("id").eq("data_reserva", str(d_res)).eq("aula", a_res).eq("espaco", e_res).eq("status", "Ativa").execute()
                     if conf.data:
-                        st.error("🚨 Conflito! Este espaço já está reservado neste horário.")
+                        st.error("🚨 Conflito de horário!")
                     else:
-                        dados_insert = {
-                            "data_reserva": str(d_res),
-                            "periodo": a_res, # Usando periodo
-                            "professor": p_res,
-                            "espaco": e_res,
-                            "equipamentos": eq_res,
-                            "obs": o_res,
-                            "status": "Ativa"
-                        }
-                        supabase.table("reservas").insert(dados_insert).execute()
-                        st.success("✅ Reservado com sucesso!")
-                        st.rerun()
+                        supabase.table("reservas").insert({"data_reserva":str(d_res),"aula":a_res,"professor":p_res,"espaco":e_res,"equipamentos":eq_res,"obs":o_res,"status":"Ativa"}).execute()
+                        st.success("✅ Reservado!")
+    # =========================================================
+    # FIM - ABA 3
+    # =========================================================
+
 
     # =========================================================
-    # ABA 4: GERENCIAR / CANCELAR (CORRIGIDA)
+    # INÍCIO - ABA 4: GERENCIAR / CANCELAR
     # =========================================================
     with aba_cancelar:
         st.subheader("Cancelar uma Reserva")
-        d_can = st.date_input("Data da reserva:", value=datetime.date.today(), key="d_can")
+        d_can = st.date_input("Data para cancelar:", value=datetime.date.today(), key="d_can")
         try:
+            # Carrega matrículas para conferência
+            res_m = supabase.table("professores_matriculas").select("*").execute()
+            m_db = {str(r['matricula']): r['professor'] for r in res_m.data} if res_m.data else {}
+
             res_at = supabase.table("reservas").select("*").eq("data_reserva", str(d_can)).eq("status", "Ativa").execute()
             if res_at.data:
-                # Monta lista usando 'periodo' para o usuário identificar
-                op_c = {f"{r.get('periodo','S/H')} - {r['espaco']} ({r['professor']})": r['id'] for r in res_at.data}
-                sel_c = st.selectbox("Selecione para cancelar:", ["-- Selecione --"] + list(op_c.keys()))
-                
+                op_c = {f"{r['aula']} - {r['espaco']} ({r['professor']})": r['id'] for r in res_at.data}
+                sel_c = st.selectbox("Escolha a reserva:", ["-- Selecione --"] + list(op_c.keys()))
                 if sel_c != "-- Selecione --":
-                    res_id = op_c[sel_c]
-                    senha = st.text_input("Sua Matrícula:", type="password")
+                    id_c = op_c[sel_c]
+                    prof_r = next(r['professor'] for r in res_at.data if r['id'] == id_c)
+                    senha = st.text_input("Sua Matrícula (Assinatura):", type="password")
                     if st.button("🗑️ Confirmar Cancelamento"):
-                        # Verifica se a matrícula existe
-                        verif = supabase.table("professores_matriculas").select("professor").eq("matricula", senha).execute()
-                        if verif.data:
-                            user_nome = verif.data[0]['professor']
-                            # Busca quem reservou
-                            quem_reservou = next(r['professor'] for r in res_at.data if r['id'] == res_id)
-                            
-                            if user_nome in GESTORES or user_nome == quem_reservou:
-                                supabase.table("reservas").update({"status": "Cancelada", "cancelado_por": user_nome}).eq("id", res_id).execute()
-                                st.success(f"Cancelado por {user_nome}!")
+                        if senha in m_db:
+                            u_nome = m_db[senha]
+                            if u_nome in GESTORES or u_nome == prof_r:
+                                supabase.table("reservas").update({"status": "Cancelada", "cancelado_por": u_nome}).eq("id", id_c).execute()
+                                st.success("Cancelado!")
                                 st.rerun()
-                            else:
-                                st.error("Você não tem permissão para cancelar esta reserva.")
-                        else:
-                            st.error("Matrícula não cadastrada.")
-            else:
-                st.info("Nenhuma reserva ativa para este dia.")
-        except Exception as e:
-            st.error(f"Erro ao carregar gerenciamento: {e}")
+                            else: st.error("Sem permissão.")
+                        else: st.error("Matrícula não encontrada.")
+            else: st.info("Sem reservas ativas.")
+        except Exception as e: st.error(f"Erro: {e}")
+    # =========================================================
+    # FIM - ABA 4
+    # =========================================================
+
 
     # =========================================================
-    # ABA 5: ASSINATURA (IGUAL)
+    # INÍCIO - ABA 5: CADASTRAR ASSINATURA
     # =========================================================
     with aba_assinatura:
         st.subheader("Cadastro de Assinatura")
         p_sel = st.selectbox("Seu Nome:", opcoes_professores, key="cad_nome")
-        m_nova = st.text_input("Nova Matrícula (Senha):", type="password")
-        if st.button("💾 Salvar"):
-            if p_sel != "-- Selecione --" and m_nova:
-                supabase.table("professores_matriculas").upsert({"professor": p_sel, "matricula": m_nova}).execute()
-                st.success("✅ Salvo!")
+        m_nova = st.text_input("Sua Matrícula (Senha):", type="password")
+        if st.button("💾 Salvar Assinatura"):
+            if p_sel != "-- Selecione --" and m_nova.isdigit():
+                try:
+                    ex = supabase.table("professores_matriculas").select("id").eq("professor", p_sel).execute()
+                    if ex.data: supabase.table("professores_matriculas").update({"matricula": m_nova}).eq("professor", p_sel).execute()
+                    else: supabase.table("professores_matriculas").insert({"professor": p_sel, "matricula": m_nova}).execute()
+                    st.success("✅ Cadastrada!")
+                except Exception as e: st.error(f"Erro: {e}")
+            else: st.warning("Dados inválidos.")
+    # =========================================================
+    # FIM - ABA 5
+    # =========================================================
