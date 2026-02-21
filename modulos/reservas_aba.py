@@ -70,7 +70,7 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     # =========================================================
 
 
-    # =========================================================
+   # =========================================================
     # ABA 2: LISTA DIÁRIA - TESTE DE ESPAÇOS (RESERVÁVEIS VS RESERVADOS)
     # =========================================================
     with aba_lista:
@@ -131,7 +131,10 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
         except Exception as e:
             st.error(f"Erro ao processar visão diária: {e}")
 
-
+    # =========================================================
+    # FIM - ABA 2
+    # =========================================================
+    
     # =========================================================
     # INÍCIO - ABA 3: NOVA RESERVA
     # =========================================================
