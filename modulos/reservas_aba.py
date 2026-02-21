@@ -372,21 +372,50 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
 
 
     # =========================================================
-    # INÍCIO - ABA 5: CADASTRAR ASSINATURA
+    # INÍCIO - ABA 5: ASSINATURA (COM AVISO DE PRIVACIDADE)
     # =========================================================
     with aba_assinatura:
-        st.subheader("Cadastro de Assinatura")
-        p_sel = st.selectbox("Seu Nome:", opcoes_professores, key="cad_nome")
-        m_nova = st.text_input("Sua Matrícula (Senha):", type="password")
-        if st.button("💾 Salvar Assinatura"):
-            if p_sel != "-- Selecione --" and m_nova.isdigit():
+        st.subheader("Cadastro de Assinatura Eletrônica")
+        
+        # --- AVISO GRITANTE DE SEGURANÇA E PRIVACIDADE ---
+        st.warning("🔒 **AVISO DE PRIVACIDADE E SEGURANÇA:**\n\nSua **Matrícula** funciona como a sua **senha pessoal** neste sistema. Fique tranquilo(a): ela **NÃO será exposta** em nenhuma tela pública, relatório ou tabela. \n\nSua única finalidade é garantir a segurança da sua agenda, permitindo que **apenas você** (ou a gestão da escola) possa cancelar ou alterar as reservas feitas em seu nome.")
+        
+        st.write("Preencha os dados abaixo para registrar sua assinatura no sistema:")
+        
+        # Adicionando 'key' aos campos para podermos limpar a tela depois
+        nome_prof = st.selectbox("Seu Nome:", opcoes_professores, key="aba5_nome")
+        matricula_prof = st.text_input("Sua Matrícula (Senha):", type="password", key="aba5_matricula")
+        
+        if st.button("💾 Salvar Assinatura", type="primary"):
+            if nome_prof == "-- Selecione --":
+                st.error("⚠️ Selecione seu nome na lista.")
+            elif not matricula_prof:
+                st.error("⚠️ Digite sua matrícula.")
+            else:
                 try:
-                    ex = supabase.table("professores_matriculas").select("id").eq("professor", p_sel).execute()
-                    if ex.data: supabase.table("professores_matriculas").update({"matricula": m_nova}).eq("professor", p_sel).execute()
-                    else: supabase.table("professores_matriculas").insert({"professor": p_sel, "matricula": m_nova}).execute()
-                    st.success("✅ Cadastrada!")
-                except Exception as e: st.error(f"Erro: {e}")
-            else: st.warning("Dados inválidos.")
+                    # Verifica se o professor já tem senha cadastrada
+                    verif = supabase.table("professores_matriculas").select("*").eq("professor", nome_prof).execute()
+                    
+                    if verif.data:
+                        # Se já tem, ATUALIZA a senha
+                        supabase.table("professores_matriculas").update({"matricula": matricula_prof}).eq("professor", nome_prof).execute()
+                    else:
+                        # Se não tem, CRIA uma nova
+                        supabase.table("professores_matriculas").insert({"professor": nome_prof, "matricula": matricula_prof}).execute()
+                        
+                    st.success(f"✅ Assinatura de {nome_prof} cadastrada/atualizada com sucesso!")
+                    
+                    # --- LIMPEZA DE MEMÓRIA PARA PROTEGER OS DADOS ---
+                    chaves_aba5 = ["aba5_nome", "aba5_matricula"]
+                    for chave in chaves_aba5:
+                        if chave in st.session_state:
+                            del st.session_state[chave]
+                            
+                    # Reinicia a tela para apagar os campos visuais
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"Erro ao salvar assinatura: {e}")
     # =========================================================
     # FIM - ABA 5
     # =========================================================
