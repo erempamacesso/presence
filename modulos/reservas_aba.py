@@ -69,7 +69,6 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     # FIM - ABA 1
     # =========================================================
 
-
    # =========================================================
     # ABA 2: LISTA DIÁRIA - TESTE DE ESPAÇOS (RESERVÁVEIS VS RESERVADOS)
     # =========================================================
@@ -135,32 +134,60 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     # FIM - ABA 2
     # =========================================================
     
-    # =========================================================
-    # INÍCIO - ABA 3: NOVA RESERVA
+   # =========================================================
+    # INÍCIO - ABA 3: NOVA RESERVA (COM BOTÕES PILL)
     # =========================================================
     with aba_nova:
         st.subheader("Agendar Espaço")
+        
+        # Criamos o formulário
         with st.form("form_nova_reserva"):
+            # Seleção de Aula usando Botões Pill (Segmented Control)
+            # Isso substitui o selectbox antigo por botões clicáveis lado a lado
+            st.write("**Selecione a Aula:**")
+            a_res = st.segmented_control(
+                "Aulas disponíveis:",
+                options=aulas_opcoes,
+                selection_mode="single", # Permite selecionar apenas uma aula
+                label_visibility="collapsed"
+            )
+            
+            st.divider() # Uma linha fina para separar
+            
             c1, c2 = st.columns(2)
             with c1:
                 d_res = st.date_input("Data:", value=datetime.date.today())
-                a_res = st.selectbox("Aula:", aulas_opcoes)
                 p_res = st.selectbox("Professor:", opcoes_professores)
             with c2:
+                # Carrega os espaços definidos na sua lista
                 e_res = st.selectbox("Espaço:", ["-- Selecione --"] + espacos)
                 eq_res = st.text_input("Equipamentos:", placeholder="Ex: Data show")
-                o_res = st.text_input("Observações:")
+            
+            o_res = st.text_input("Observações:")
             
             if st.form_submit_button("💾 Confirmar Reserva"):
-                if p_res == "-- Selecione --" or e_res == "-- Selecione --":
-                    st.warning("⚠️ Preencha os campos obrigatórios.")
+                # Validação: Agora verificamos se a_res (o pill) foi clicado
+                if not a_res or p_res == "-- Selecione --" or e_res == "-- Selecione --":
+                    st.warning("⚠️ Por favor, selecione a Aula, o Professor e o Espaço.")
                 else:
-                    conf = supabase.table("reservas").select("id").eq("data_reserva", str(d_res)).eq("aula", a_res).eq("espaco", e_res).eq("status", "Ativa").execute()
+                    # Verifica conflito usando a coluna 'periodo' do seu banco
+                    conf = supabase.table("reservas").select("id").eq("data_reserva", str(d_res)).eq("periodo", a_res).eq("espaco", e_res).eq("status", "Ativa").execute()
+                    
                     if conf.data:
-                        st.error("🚨 Conflito de horário!")
+                        st.error(f"🚨 Conflito! O {e_res} já está reservado para a {a_res}.")
                     else:
-                        supabase.table("reservas").insert({"data_reserva":str(d_res),"aula":a_res,"professor":p_res,"espaco":e_res,"equipamentos":eq_res,"obs":o_res,"status":"Ativa"}).execute()
-                        st.success("✅ Reservado!")
+                        # Insere os dados usando os nomes de coluna do seu Supabase
+                        supabase.table("reservas").insert({
+                            "data_reserva": str(d_res),
+                            "periodo": a_res,
+                            "professor": p_res,
+                            "espaco": e_res,
+                            "equipamentos": eq_res,
+                            "obs": o_res,
+                            "status": "Ativa"
+                        }).execute()
+                        st.success(f"✅ Sucesso! {e_res} reservado para {p_res} ({a_res}).")
+                        st.rerun()
     # =========================================================
     # FIM - ABA 3
     # =========================================================
