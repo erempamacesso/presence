@@ -135,72 +135,76 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     # =========================================================
     
    # =========================================================
-    # INÍCIO - ABA 3: NOVA RESERVA (RECOMENDADA)
+    # INÍCIO - ABA 3: NOVA RESERVA (FLEXÍVEL - MÚLTIPLAS AULAS)
     # =========================================================
     with aba_nova:
         st.subheader("Agendar Espaço")
         
-        with st.form("form_nova_reserva", clear_on_submit=False):
-            # Título instrutivo para o professor
-            st.write("**Escolha o Horário (Aula):**")
+        with st.form("form_nova_reserva_flex"):
+            st.write("**Defina o Horário:**")
             
-            # O st.radio horizontal é ideal para as 9 aulas
-            # Ele permite uma visualização clara e seleção rápida
-            a_res = st.radio(
-                "Aulas:",
+            # Opção B: Botão para selecionar o dia inteiro
+            dia_inteiro = st.checkbox("Selecionar todas as 9 aulas (Dia Inteiro)")
+            
+            # Opção A: Selecionar várias aulas (sequenciais ou separadas)
+            # Se 'dia_inteiro' for marcado, o multiselect pode ser ignorado ou preenchido automaticamente
+            aulas_selecionadas = st.multiselect(
+                "Selecione a(s) aula(s):",
                 options=aulas_opcoes,
-                horizontal=True,
-                label_visibility="collapsed"
+                default=aulas_opcoes if dia_inteiro else [],
+                help="Você pode escolher várias aulas para o mesmo espaço e data."
             )
             
-            st.divider() # Linha visual para organizar os campos
+            st.divider()
             
-            # Organização em duas colunas para os dados restantes
-            col_esq, col_dir = st.columns(2)
+            c1, c2 = st.columns(2)
+            with c1:
+                d_res = st.date_input("Data:", value=datetime.date.today())
+                p_res = st.selectbox("Professor:", opcoes_professores)
+            with c2:
+                e_res = st.selectbox("Espaço:", ["-- Selecione --"] + espacos)
+                eq_res = st.text_input("Equipamentos:", placeholder="Ex: Data show")
             
-            with col_esq:
-                d_res = st.date_input("Data da Reserva:", value=datetime.date.today())
-                # Busca a lista de professores que carregamos do banco
-                p_res = st.selectbox("Selecione seu Nome:", opcoes_professores)
+            o_res = st.text_input("Observações:")
             
-            with col_dir:
-                # Lista de espaços reserváveis da escola
-                e_res = st.selectbox("Selecione o Espaço:", ["-- Selecione --"] + espacos)
-                # Campo para o professor especificar o que precisa
-                eq_res = st.text_input("Equipamentos (opcional):", placeholder="Ex: Data show, Som")
-            
-            o_res = st.text_input("Observações Adicionais:")
-            
-            # Botão de submissão do formulário
-            if st.form_submit_button("💾 Confirmar Agendamento"):
-                # Validação de campos obrigatórios
-                if p_res == "-- Selecione --" or e_res == "-- Selecione --":
-                    st.warning("⚠️ Por favor, selecione o Professor e o Espaço para continuar.")
+            if st.form_submit_button("💾 Confirmar Agendamento(s)"):
+                # Validações básicas
+                if not aulas_selecionadas:
+                    st.warning("⚠️ Selecione pelo menos uma aula ou marque 'Dia Inteiro'.")
+                elif p_res == "-- Selecione --" or e_res == "-- Selecione --":
+                    st.warning("⚠️ Selecione o Professor e o Espaço.")
                 else:
-                    try:
-                        # Verificação de conflito: olha a data, o período e o espaço
-                        # Importante: usamos 'periodo' para dar match com o seu Supabase
-                        conflito = supabase.table("reservas").select("id").eq("data_reserva", str(d_res)).eq("periodo", a_res).eq("espaco", e_res).eq("status", "Ativa").execute()
+                    sucessos = 0
+                    erros = []
+                    
+                    # O loop vai processar cada aula selecionada individualmente no banco
+                    for aula in aulas_selecionadas:
+                        # Verifica conflito para CADA aula no período
+                        conf = supabase.table("reservas").select("id").eq("data_reserva", str(d_res)).eq("periodo", aula).eq("espaco", e_res).eq("status", "Ativa").execute()
                         
-                        if conflito.data:
-                            st.error(f"🚨 Conflito! O '{e_res}' já está ocupado na {a_res} deste dia.")
+                        if conf.data:
+                            erros.append(aula)
                         else:
-                            # Inserção dos dados nas colunas corretas do seu banco
+                            # Insere a reserva daquela aula específica
                             supabase.table("reservas").insert({
                                 "data_reserva": str(d_res),
-                                "periodo": a_res,       # Salva na coluna correta
+                                "periodo": aula,
                                 "professor": p_res,
                                 "espaco": e_res,
                                 "equipamentos": eq_res,
                                 "obs": o_res,
                                 "status": "Ativa"
                             }).execute()
-                            
-                            st.success(f"✅ Sucesso! {e_res} reservado para {p_res} na {a_res}.")
-                            st.rerun() # Atualiza a tela para mostrar a reserva no calendário
-                            
-                    except Exception as e:
-                        st.error(f"Erro ao salvar reserva: {e}")
+                            sucessos += 1
+                    
+                    # Feedback final para o Diretor/Professor
+                    if sucessos > 0:
+                        st.success(f"✅ {sucessos} aula(s) reservada(s) com sucesso!")
+                    if erros:
+                        st.error(f"🚨 Não foi possível reservar: {', '.join(erros)} (Já ocupadas).")
+                    
+                    if sucessos > 0:
+                        st.rerun()
     # =========================================================
     # FIM - ABA 3
     # =========================================================
