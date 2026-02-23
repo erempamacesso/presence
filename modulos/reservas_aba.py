@@ -115,8 +115,8 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
         except Exception as e:
             st.error(f"Erro ao carregar lista diária: {e}")
     
-    # =========================================================
-    # INÍCIO - ABA 3: NOVA RESERVA (PILLS + ESTOQUE + SALA)
+   # =========================================================
+    # INÍCIO - ABA 3: NOVA RESERVA (CORRIGIDA)
     # =========================================================
     with aba_nova:
         st.subheader("Agendar Espaço / Equipamento")
@@ -139,6 +139,34 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
             key="aba3_aulas"
         )
         
+        # --- LÓGICA DE ESTOQUE DINÂMICO ---
+        # Calcular os equipamentos disponíveis baseando-se no que já foi reservado no dia
+        disp_data = ESTOQUE["Datashow"]
+        disp_som = ESTOQUE["Som"]
+        disp_mic = ESTOQUE["Microfone"]
+        
+        if aulas_selecionadas:
+            uso_dia = supabase.table("reservas").select("periodo, equipamentos").eq("data_reserva", str(data_res)).eq("status", "Ativa").in_("periodo", aulas_selecionadas).execute()
+            
+            if uso_dia.data:
+                uso_por_aula = {a: {"Datashow": 0, "Som": 0, "Microfone": 0} for a in aulas_selecionadas}
+                for r in uso_dia.data:
+                    p = r["periodo"]
+                    eq_str = str(r.get("equipamentos", ""))
+                    if eq_str and p in uso_por_aula:
+                        matches = re.findall(r"(\d+)x\s*(Datashow|Som|Microfone)", eq_str, re.IGNORECASE)
+                        for qtd, item in matches:
+                            item_norm = "Som" if item.lower() == "som" else item.capitalize()
+                            uso_por_aula[p][item_norm] += int(qtd)
+                
+                max_uso_data = max([uso_por_aula[a]["Datashow"] for a in aulas_selecionadas])
+                max_uso_som = max([uso_por_aula[a]["Som"] for a in aulas_selecionadas])
+                max_uso_mic = max([uso_por_aula[a]["Microfone"] for a in aulas_selecionadas])
+                
+                disp_data = max(0, ESTOQUE["Datashow"] - max_uso_data)
+                disp_som = max(0, ESTOQUE["Som"] - max_uso_som)
+                disp_mic = max(0, ESTOQUE["Microfone"] - max_uso_mic)
+        
         st.divider()
         
         st.write("**2. Dados da Reserva:**")
@@ -156,66 +184,70 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                 espaco = st.selectbox("Espaço:", ["-- Selecione --", "Auditório", "Laboratório", "Biblioteca", "Quadra"], key="aba3_espaco")
                 
         st.write("**3. Equipamentos Necessários:**")
-        col_eq1, col_eq2, col_eq3 = st.columns(3)
-        with col_eq1:
-            qtd_datashow = st.number_input("🎥 Datashow (Máx 5)", min_value=0, max_value=5, value=0, key="aba3_qtd_data")
-        with col_eq2:
-            qtd_som = st.number_input("🔊 Caixa de Som (Máx 3)", min_value=0, max_value=3, value=0, key="aba3_qtd_som")
-        with col_eq3:
-            qtd_mic = st.number_input("🎤 Microfone (Máx 2)", min_value=0, max_value=2, value=0, key="aba3_qtd_mic")
+        
+        # Montar as marcações vermelhas (Multiselect) apenas com as quantidades que sobraram
+        opcoes_eq = []
+        for i in range(1, disp_data + 1): opcoes_eq.append(f"{i}x Datashow")
+        for i in range(1, disp_som + 1): opcoes_eq.append(f"{i}x Som")
+        for i in range(1, disp_mic + 1): opcoes_eq.append(f"{i}x Microfone")
+        
+        if aulas_selecionadas:
+            st.caption(f"📦 Restam no estoque nestas aulas: **{disp_data} Datashow | {disp_som} Som | {disp_mic} Mic**")
+        else:
+            st.caption("Selecione a(s) aula(s) acima para ver a disponibilidade do estoque.")
+
+        equipamentos_selecionados = st.multiselect(
+            "Selecione os equipamentos na caixa abaixo:",
+            options=opcoes_eq,
+            placeholder="Clique aqui para ver os equipamentos disponíveis...",
+            key="aba3_equipamentos"
+        )
             
         obs = st.text_input("Observações:", key="aba3_obs")
         
         if st.button("💾 Confirmar Reserva", type="primary"):
+            # Verifica se o usuário marcou "1x Datashow" e "2x Datashow" ao mesmo tempo por engano
+            tipos_selecionados = []
+            erro_multiplo_eq = False
+            for eq in equipamentos_selecionados:
+                tipo = eq.split("x ")[1] 
+                if tipo in tipos_selecionados:
+                    erro_multiplo_eq = True
+                tipos_selecionados.append(tipo)
+                
             if not aulas_selecionadas:
                 st.warning("⚠️ Selecione pelo menos uma aula clicando nos botões azuis.")
             elif professor == "-- Selecione --":
                 st.warning("⚠️ Selecione o professor.")
             elif espaco == "-- Selecione --" and not usar_na_sala:
                 st.warning("⚠️ Selecione um espaço ou marque 'Usarei na sala de aula'.")
-            elif qtd_datashow == 0 and qtd_som == 0 and qtd_mic == 0 and usar_na_sala:
+            elif not equipamentos_selecionados and usar_na_sala:
                 st.warning("⚠️ Se vai usar na própria sala, você precisa selecionar pelo menos um equipamento!")
+            elif erro_multiplo_eq:
+                st.warning("⚠️ Selecione apenas UMA quantidade para cada equipamento (Ex: não marque '1x Datashow' e '2x Datashow' juntos).")
             else:
                 sucesso_total = True
                 aulas_com_conflito_espaco = []
-                aulas_sem_estoque = []
+                aulas_com_duplicata_prof = []
                 
-                equip_list = []
-                if qtd_datashow > 0: equip_list.append(f"{qtd_datashow}x Datashow")
-                if qtd_som > 0: equip_list.append(f"{qtd_som}x Som")
-                if qtd_mic > 0: equip_list.append(f"{qtd_mic}x Microfone")
-                equipamentos_texto = ", ".join(equip_list)
+                equipamentos_texto = ", ".join(equipamentos_selecionados)
                 
                 for aula in aulas_selecionadas:
                     pode_salvar = True
                     
-                    if espaco != "Sala de Aula":
-                        conflito_espaco = supabase.table("reservas").select("*").eq("data_reserva", str(data_res)).eq("periodo", aula).eq("espaco", espaco).eq("status", "Ativa").execute()
+                    # 1. TRAVA DE DUPLICIDADE (Resolve o bug do duplo-clique / Print 1)
+                    # Verifica se ESTE professor já reservou ESTA aula NESTE mesmo dia.
+                    duplicata = supabase.table("reservas").select("id").eq("data_reserva", str(data_res)).eq("periodo", aula).eq("professor", professor).eq("status", "Ativa").execute()
+                    if duplicata.data:
+                        aulas_com_duplicata_prof.append(aula)
+                        pode_salvar = False
+                        sucesso_total = False
+
+                    # 2. TRAVA DE ESPAÇO OCUPADO (Se não for sala de aula)
+                    if pode_salvar and espaco != "Sala de Aula":
+                        conflito_espaco = supabase.table("reservas").select("id").eq("data_reserva", str(data_res)).eq("periodo", aula).eq("espaco", espaco).eq("status", "Ativa").execute()
                         if conflito_espaco.data:
                             aulas_com_conflito_espaco.append(aula)
-                            pode_salvar = False
-                            sucesso_total = False
-                    
-                    if pode_salvar and (qtd_datashow > 0 or qtd_som > 0 or qtd_mic > 0):
-                        todas_reservas_aula = supabase.table("reservas").select("equipamentos").eq("data_reserva", str(data_res)).eq("periodo", aula).eq("status", "Ativa").execute()
-                        
-                        uso_atual = {"Datashow": 0, "Som": 0, "Microfone": 0}
-                        
-                        for r in todas_reservas_aula.data:
-                            eq_str = r.get("equipamentos", "")
-                            if eq_str:
-                                # Aqui o 're' é utilizado sem dar erro de NameError
-                                matches = re.findall(r"(\d+)x\s*(Datashow|Som|Microfone)", str(eq_str), re.IGNORECASE)
-                                for qtd, item in matches:
-                                    item_norm = item.capitalize()
-                                    if item_norm in uso_atual:
-                                        uso_atual[item_norm] += int(qtd)
-                        
-                        if (qtd_datashow + uso_atual["Datashow"]) > ESTOQUE["Datashow"] or \
-                           (qtd_som + uso_atual["Som"]) > ESTOQUE["Som"] or \
-                           (qtd_mic + uso_atual["Microfone"]) > ESTOQUE["Microfone"]:
-                            
-                            aulas_sem_estoque.append(aula)
                             pode_salvar = False
                             sucesso_total = False
                     
@@ -235,19 +267,20 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                             st.error(f"Erro ao salvar a {aula}: {e}")
                             sucesso_total = False
                 
-                if aulas_com_conflito_espaco:
-                    st.error(f"❌ O espaço '{espaco}' já está reservado nestas aulas: {', '.join(aulas_com_conflito_espaco)}.")
+                # Avisos amigáveis para o usuário
+                if aulas_com_duplicata_prof:
+                    st.error(f"🛡️ **Bloqueio de Duplicata:** {professor}, você já possui uma reserva ativa para a {', '.join(aulas_com_duplicata_prof)} neste dia.")
                 
-                if aulas_sem_estoque:
-                    st.error(f"⚠️ Equipamento insuficiente no estoque para as aulas: {', '.join(aulas_sem_estoque)}.")
+                if aulas_com_conflito_espaco:
+                    st.error(f"❌ O espaço '{espaco}' já está reservado por outra pessoa nestas aulas: {', '.join(aulas_com_conflito_espaco)}.")
                 
                 if sucesso_total:
                     st.success("✅ Reserva(s) realizada(s) com sucesso!")
                     
-                    # Limpeza Inteligente: mantém o professor, limpa o resto na força bruta!
+                    # Limpeza eficiente garantida para nova reserva (mantendo o professor)
                     chaves_para_limpar = [
                         "aba3_aulas", "aba3_usar_sala", "aba3_espaco", 
-                        "aba3_qtd_data", "aba3_qtd_som", "aba3_qtd_mic", "aba3_obs"
+                        "aba3_equipamentos", "aba3_obs"
                     ]
                     
                     for chave in chaves_para_limpar:
