@@ -131,8 +131,6 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     # FIM - ABA 2
     # =========================================================
     
-import re # Precisamos importar o 're' lá no topo do seu arquivo (junto com o pandas, streamlit, etc) se já não tiver!
-
     # =========================================================
     # INÍCIO - ABA 3: NOVA RESERVA (PILLS + ESTOQUE + SALA)
     # =========================================================
