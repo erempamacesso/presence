@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import datetime
-import re  # <--- É ESSE CARINHA AQUI QUE ESTAVA FALTANDO!
+import re  
 from streamlit_calendar import calendar
 
 # --- GESTORES COM PRIVILÉGIO TOTAL ---
@@ -243,21 +243,17 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                 
                 if sucesso_total:
                     st.success("✅ Reserva(s) realizada(s) com sucesso!")
-                    # Limpeza Inteligente: mantém o professor, limpa o resto
+                    
+                    # Limpeza Inteligente: mantém o professor, limpa o resto na força bruta!
                     chaves_para_limpar = [
                         "aba3_aulas", "aba3_usar_sala", "aba3_espaco", 
                         "aba3_qtd_data", "aba3_qtd_som", "aba3_qtd_mic", "aba3_obs"
                     ]
+                    
                     for chave in chaves_para_limpar:
                         if chave in st.session_state:
-                            if chave == "aba3_aulas":
-                                st.session_state[chave] = []
-                            elif "qtd" in chave:
-                                st.session_state[chave] = 0
-                            elif "usar_sala" in chave:
-                                st.session_state[chave] = False
-                            else:
-                                del st.session_state[chave]
+                            del st.session_state[chave]
+                            
                     st.rerun()
 
     # =========================================================
