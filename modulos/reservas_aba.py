@@ -115,8 +115,8 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
         except Exception as e:
             st.error(f"Erro ao carregar lista diária: {e}")
     
-   # =========================================================
-    # INÍCIO - ABA 3: NOVA RESERVA (CORRIGIDA)
+    # =========================================================
+    # INÍCIO - ABA 3: NOVA RESERVA (CORRIGIDA E ATUALIZADA)
     # =========================================================
     with aba_nova:
         st.subheader("Agendar Espaço / Equipamento")
@@ -287,8 +287,12 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                         if chave in st.session_state:
                             del st.session_state[chave]
                             
+                    # --- A MÁGICA PARA A MENSAGEM NÃO SUMIR RÁPIDO DEMAIS ---
+                    import time
+                    time.sleep(1.5) # O sistema pausa por um segundo e meio para o professor ler a mensagem verde
+                    
                     st.rerun()
-
+    
     # =========================================================
     # INÍCIO - ABA 4: GERENCIAR / CANCELAR
     # =========================================================
