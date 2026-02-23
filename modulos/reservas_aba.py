@@ -131,13 +131,18 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     # FIM - ABA 2
     # =========================================================
     
- # =========================================================
-    # INÍCIO - ABA 3: NOVA RESERVA (PILLS + CHECKBOX "SALA DE AULA")
+import re # Precisamos importar o 're' lá no topo do seu arquivo (junto com o pandas, streamlit, etc) se já não tiver!
+
+    # =========================================================
+    # INÍCIO - ABA 3: NOVA RESERVA (PILLS + ESTOQUE + SALA)
     # =========================================================
     with aba_nova:
         st.subheader("Agendar Espaço / Equipamento")
         
-        # 1. ESCOLHA DE DATA E HORÁRIO (AULAS EM FORMATO PILL)
+        # --- DEFINIÇÃO DO ESTOQUE TOTAL DA ESCOLA ---
+        ESTOQUE = {"Datashow": 5, "Som": 3, "Microfone": 2}
+        
+        # 1. ESCOLHA DE DATA E HORÁRIO
         st.write("**1. Escolha a Data e Horário:**")
         col_data, col_vazia = st.columns(2)
         with col_data:
@@ -146,7 +151,6 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
         lista_9_aulas = ["1ª Aula", "2ª Aula", "3ª Aula", "4ª Aula", "5ª Aula", "6ª Aula", "7ª Aula", "8ª Aula", "9ª Aula"]
         
         st.write("**Selecione a(s) Aula(s):** *(Toque para selecionar várias)*")
-        # --- OS BOTÕES PILLS ESTÃO DE VOLTA AQUI ---
         aulas_selecionadas = st.segmented_control(
             "Aulas:", 
             options=lista_9_aulas, 
@@ -157,80 +161,122 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
         
         st.divider()
         
-        # 2. ESCOLHA DE PROFESSOR, ESPAÇO E EQUIPAMENTOS
+        # 2. ESCOLHA DE PROFESSOR E ESPAÇO
         st.write("**2. Dados da Reserva:**")
         col1, col2 = st.columns(2)
         
         with col1:
             professor = st.selectbox("Professor:", opcoes_professores, key="aba3_prof")
-            
-            # --- O NOVO CHECKBOX PARA A SALA DE AULA ---
             usar_na_sala = st.checkbox("Usarei na sala de aula (Apenas Equipamentos)", key="aba3_usar_sala")
             
         with col2:
             if usar_na_sala:
-                # Se marcou, o espaço vira automaticamente "Sala de Aula" e o campo fica cinza (desativado)
                 espaco = "Sala de Aula"
                 st.text_input("Espaço:", value="Sala de Aula (Própria)", disabled=True, key="aba3_espaco_disabled")
             else:
-                # Se não marcou, mostra a lista normal de espaços (sem Multimídia)
                 espaco = st.selectbox("Espaço:", ["-- Selecione --", "Auditório", "Laboratório", "Biblioteca", "Quadra"], key="aba3_espaco")
                 
-            equipamentos = st.text_input("Equipamentos:", placeholder="Ex: 1x Data show", key="aba3_equip")
+        # 3. ESCOLHA DOS EQUIPAMENTOS (CONTADORES INTELIGENTES)
+        st.write("**3. Equipamentos Necessários:**")
+        col_eq1, col_eq2, col_eq3 = st.columns(3)
+        with col_eq1:
+            qtd_datashow = st.number_input("🎥 Datashow (Máx 5)", min_value=0, max_value=5, value=0, key="aba3_qtd_data")
+        with col_eq2:
+            qtd_som = st.number_input("🔊 Caixa de Som (Máx 3)", min_value=0, max_value=3, value=0, key="aba3_qtd_som")
+        with col_eq3:
+            qtd_mic = st.number_input("🎤 Microfone (Máx 2)", min_value=0, max_value=2, value=0, key="aba3_qtd_mic")
             
         obs = st.text_input("Observações:", key="aba3_obs")
         
-        st.write("") # Dá um espacinho visual
+        st.write("") 
         
         if st.button("💾 Confirmar Reserva", type="primary"):
-            # Validações básicas
             if not aulas_selecionadas:
                 st.warning("⚠️ Selecione pelo menos uma aula clicando nos botões azuis.")
             elif professor == "-- Selecione --":
                 st.warning("⚠️ Selecione o professor.")
             elif espaco == "-- Selecione --" and not usar_na_sala:
                 st.warning("⚠️ Selecione um espaço ou marque 'Usarei na sala de aula'.")
+            elif qtd_datashow == 0 and qtd_som == 0 and qtd_mic == 0 and usar_na_sala:
+                st.warning("⚠️ Se vai usar na própria sala, você precisa selecionar pelo menos um equipamento!")
             else:
                 sucesso_total = True
-                aulas_com_conflito = []
+                aulas_com_conflito_espaco = []
+                aulas_sem_estoque = []
                 
-                # Para cada aula que o professor selecionou nos botões
+                # Monta o texto dos equipamentos para salvar no banco
+                equip_list = []
+                if qtd_datashow > 0: equip_list.append(f"{qtd_datashow}x Datashow")
+                if qtd_som > 0: equip_list.append(f"{qtd_som}x Som")
+                if qtd_mic > 0: equip_list.append(f"{qtd_mic}x Microfone")
+                equipamentos_texto = ", ".join(equip_list)
+                
+                # --- VERIFICAÇÕES AULA POR AULA ---
                 for aula in aulas_selecionadas:
+                    pode_salvar = True
                     
-                    # --- A MÁGICA DO CONFLITO: Ignora se for na própria sala ---
+                    # 1. VERIFICA CONFLITO DE ESPAÇO (Ignora se for "Sala de Aula")
                     if espaco != "Sala de Aula":
-                        conflito = supabase.table("reservas").select("*").eq("data_reserva", str(data_res)).eq("periodo", aula).eq("espaco", espaco).eq("status", "Ativa").execute()
-                        
-                        if conflito.data:
-                            aulas_com_conflito.append(aula)
+                        conflito_espaco = supabase.table("reservas").select("*").eq("data_reserva", str(data_res)).eq("periodo", aula).eq("espaco", espaco).eq("status", "Ativa").execute()
+                        if conflito_espaco.data:
+                            aulas_com_conflito_espaco.append(aula)
+                            pode_salvar = False
                             sucesso_total = False
-                            continue # Pula para a próxima aula
                     
-                    # Se passou pelo conflito (ou se é na própria sala), salva a reserva!
-                    try:
-                        dados_insert = {
-                            "data_reserva": str(data_res),
-                            "periodo": aula,
-                            "espaco": espaco,
-                            "professor": professor,
-                            "equipamentos": equipamentos,
-                            "obs": obs, # Certifique-se de que o nome no seu banco é "obs" ou "observacoes"
-                            "status": "Ativa"
-                        }
-                        supabase.table("reservas").insert(dados_insert).execute()
-                    except Exception as e:
-                        st.error(f"Erro ao salvar a {aula}: {e}")
-                        sucesso_total = False
+                    # 2. VERIFICA DISPONIBILIDADE DE ESTOQUE (Se pediu algum equipamento)
+                    if pode_salvar and (qtd_datashow > 0 or qtd_som > 0 or qtd_mic > 0):
+                        todas_reservas_aula = supabase.table("reservas").select("equipamentos").eq("data_reserva", str(data_res)).eq("periodo", aula).eq("status", "Ativa").execute()
+                        
+                        uso_atual = {"Datashow": 0, "Som": 0, "Microfone": 0}
+                        
+                        # Soma tudo que já está reservado nesta aula
+                        for r in todas_reservas_aula.data:
+                            eq_str = r.get("equipamentos", "")
+                            if eq_str:
+                                matches = re.findall(r"(\d+)x\s*(Datashow|Som|Microfone)", str(eq_str), re.IGNORECASE)
+                                for qtd, item in matches:
+                                    item_norm = item.capitalize()
+                                    if item_norm in uso_atual:
+                                        uso_atual[item_norm] += int(qtd)
+                        
+                        # Compara o que já está em uso + o que foi pedido agora com o Estoque Total
+                        if (qtd_datashow + uso_atual["Datashow"]) > ESTOQUE["Datashow"] or \
+                           (qtd_som + uso_atual["Som"]) > ESTOQUE["Som"] or \
+                           (qtd_mic + uso_atual["Microfone"]) > ESTOQUE["Microfone"]:
+                            
+                            aulas_sem_estoque.append(aula)
+                            pode_salvar = False
+                            sucesso_total = False
+                    
+                    # 3. SE TUDO ESTIVER OK, SALVA NO BANCO!
+                    if pode_salvar:
+                        try:
+                            dados_insert = {
+                                "data_reserva": str(data_res),
+                                "periodo": aula,
+                                "espaco": espaco,
+                                "professor": professor,
+                                "equipamentos": equipamentos_texto,
+                                "observacoes": obs,
+                                "status": "Ativa"
+                            }
+                            supabase.table("reservas").insert(dados_insert).execute()
+                        except Exception as e:
+                            st.error(f"Erro ao salvar a {aula}: {e}")
+                            sucesso_total = False
                 
-                # Mensagens finais
-                if aulas_com_conflito:
-                    st.error(f"❌ O espaço '{espaco}' já está reservado para as aulas: {', '.join(aulas_com_conflito)}.")
+                # --- MENSAGENS DE AVISO / SUCESSO ---
+                if aulas_com_conflito_espaco:
+                    st.error(f"❌ O espaço '{espaco}' já está reservado nestas aulas: {', '.join(aulas_com_conflito_espaco)}.")
+                
+                if aulas_sem_estoque:
+                    st.error(f"⚠️ Equipamento insuficiente no estoque para as aulas: {', '.join(aulas_sem_estoque)}. (Alguém já reservou antes).")
                 
                 if sucesso_total:
                     st.success("✅ Reserva(s) realizada(s) com sucesso!")
                     
-                    # --- LIMPEZA DE MEMÓRIA PARA REINICIAR A TELA ---
-                    chaves_para_limpar = ["aba3_data", "aba3_aulas", "aba3_prof", "aba3_usar_sala", "aba3_espaco", "aba3_equip", "aba3_obs"]
+                    # Limpeza de memória
+                    chaves_para_limpar = ["aba3_data", "aba3_aulas", "aba3_prof", "aba3_usar_sala", "aba3_espaco", "aba3_qtd_data", "aba3_qtd_som", "aba3_qtd_mic", "aba3_obs"]
                     for chave in chaves_para_limpar:
                         if chave in st.session_state:
                             del st.session_state[chave]
