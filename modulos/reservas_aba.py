@@ -131,44 +131,61 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     # FIM - ABA 2
     # =========================================================
     
-  # =========================================================
-    # INÍCIO - ABA 3: NOVA RESERVA (COM CHECKBOX "SALA DE AULA")
+ # =========================================================
+    # INÍCIO - ABA 3: NOVA RESERVA (PILLS + CHECKBOX "SALA DE AULA")
     # =========================================================
     with aba_nova:
         st.subheader("Agendar Espaço / Equipamento")
         
-        # Cria as duas colunas como você já tem no seu layout
+        # 1. ESCOLHA DE DATA E HORÁRIO (AULAS EM FORMATO PILL)
+        st.write("**1. Escolha a Data e Horário:**")
+        col_data, col_vazia = st.columns(2)
+        with col_data:
+            data_res = st.date_input("Data:", value=datetime.date.today(), format="DD/MM/YYYY", key="aba3_data")
+        
+        lista_9_aulas = ["1ª Aula", "2ª Aula", "3ª Aula", "4ª Aula", "5ª Aula", "6ª Aula", "7ª Aula", "8ª Aula", "9ª Aula"]
+        
+        st.write("**Selecione a(s) Aula(s):** *(Toque para selecionar várias)*")
+        # --- OS BOTÕES PILLS ESTÃO DE VOLTA AQUI ---
+        aulas_selecionadas = st.segmented_control(
+            "Aulas:", 
+            options=lista_9_aulas, 
+            selection_mode="multi",
+            label_visibility="collapsed",
+            key="aba3_aulas"
+        )
+        
+        st.divider()
+        
+        # 2. ESCOLHA DE PROFESSOR, ESPAÇO E EQUIPAMENTOS
+        st.write("**2. Dados da Reserva:**")
         col1, col2 = st.columns(2)
         
         with col1:
-            data_res = st.date_input("Data:", value=datetime.date.today(), format="DD/MM/YYYY")
+            professor = st.selectbox("Professor:", opcoes_professores, key="aba3_prof")
             
-            # Aqui você mantém seu multiselect lindo para as aulas que fizemos antes!
-            aulas_selecionadas = st.multiselect("Selecione a(s) Aula(s):", ["1ª Aula", "2ª Aula", "3ª Aula", "4ª Aula", "5ª Aula", "6ª Aula", "7ª Aula", "8ª Aula", "9ª Aula"])
-            
-            professor = st.selectbox("Professor:", opcoes_professores)
+            # --- O NOVO CHECKBOX PARA A SALA DE AULA ---
+            usar_na_sala = st.checkbox("Usarei na sala de aula (Apenas Equipamentos)", key="aba3_usar_sala")
             
         with col2:
-            # --- O NOVO CHECKBOX ENTRA AQUI ---
-            usar_na_sala = st.checkbox("Usarei na sala de aula")
-            
             if usar_na_sala:
                 # Se marcou, o espaço vira automaticamente "Sala de Aula" e o campo fica cinza (desativado)
                 espaco = "Sala de Aula"
-                st.text_input("Espaço:", value="Sala de Aula (Própria)", disabled=True)
+                st.text_input("Espaço:", value="Sala de Aula (Própria)", disabled=True, key="aba3_espaco_disabled")
             else:
-                # Se não marcou, mostra a lista normal de espaços
-                espaco = st.selectbox("Espaço:", ["-- Selecione --", "Auditório", "Laboratório", "Biblioteca", "Quadra", "Multimídia"])
+                # Se não marcou, mostra a lista normal de espaços (sem Multimídia)
+                espaco = st.selectbox("Espaço:", ["-- Selecione --", "Auditório", "Laboratório", "Biblioteca", "Quadra"], key="aba3_espaco")
                 
-            equipamentos = st.text_input("Equipamentos:", placeholder="Ex: 1x Data show")
-            obs = st.text_input("Observações:")
+            equipamentos = st.text_input("Equipamentos:", placeholder="Ex: 1x Data show", key="aba3_equip")
             
-        st.write("") # Dá um espacinho
+        obs = st.text_input("Observações:", key="aba3_obs")
+        
+        st.write("") # Dá um espacinho visual
         
         if st.button("💾 Confirmar Reserva", type="primary"):
             # Validações básicas
             if not aulas_selecionadas:
-                st.warning("⚠️ Selecione pelo menos uma aula.")
+                st.warning("⚠️ Selecione pelo menos uma aula clicando nos botões azuis.")
             elif professor == "-- Selecione --":
                 st.warning("⚠️ Selecione o professor.")
             elif espaco == "-- Selecione --" and not usar_na_sala:
@@ -177,11 +194,10 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                 sucesso_total = True
                 aulas_com_conflito = []
                 
-                # Para cada aula que o professor selecionou no multiselect
+                # Para cada aula que o professor selecionou nos botões
                 for aula in aulas_selecionadas:
                     
-                    # --- A MÁGICA DO CONFLITO ACONTECE AQUI ---
-                    # O sistema SÓ verifica se tem gente na sala se NÃO for "Sala de Aula"
+                    # --- A MÁGICA DO CONFLITO: Ignora se for na própria sala ---
                     if espaco != "Sala de Aula":
                         conflito = supabase.table("reservas").select("*").eq("data_reserva", str(data_res)).eq("periodo", aula).eq("espaco", espaco).eq("status", "Ativa").execute()
                         
@@ -198,7 +214,7 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                             "espaco": espaco,
                             "professor": professor,
                             "equipamentos": equipamentos,
-                            "observacoes": obs,
+                            "obs": obs, # Certifique-se de que o nome no seu banco é "obs" ou "observacoes"
                             "status": "Ativa"
                         }
                         supabase.table("reservas").insert(dados_insert).execute()
@@ -212,11 +228,17 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                 
                 if sucesso_total:
                     st.success("✅ Reserva(s) realizada(s) com sucesso!")
-                    # Opcional: st.rerun() aqui para limpar a tela após o sucesso!
+                    
+                    # --- LIMPEZA DE MEMÓRIA PARA REINICIAR A TELA ---
+                    chaves_para_limpar = ["aba3_data", "aba3_aulas", "aba3_prof", "aba3_usar_sala", "aba3_espaco", "aba3_equip", "aba3_obs"]
+                    for chave in chaves_para_limpar:
+                        if chave in st.session_state:
+                            del st.session_state[chave]
+                            
+                    st.rerun()
     # =========================================================
     # FIM - ABA 3
     # =========================================================
-
 
    # =========================================================
     # INÍCIO - ABA 4: GERENCIAR / CANCELAR (COM AVISO DE PRIVACIDADE)
