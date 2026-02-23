@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import datetime
+import re  # <--- ERRO CORRIGIDO: Importação necessária para o cálculo de estoque
 from streamlit_calendar import calendar
 
 # --- GESTORES COM PRIVILÉGIO TOTAL ---
@@ -65,25 +66,19 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                 st.info("Nenhuma reserva encontrada.")
         except Exception as e:
             st.error(f"Erro ao carregar calendário: {e}")
-    # =========================================================
-    # FIM - ABA 1
-    # =========================================================
 
-   # =========================================================
-    # INÍCIO - ABA 2: LISTA DIÁRIA (COM COLUNA DE QUEM CANCELOU)
+    # =========================================================
+    # INÍCIO - ABA 2: LISTA DIÁRIA
     # =========================================================
     with aba_lista:
         st.subheader("Visão Diária por Espaço")
         
-        # Data no formato BR
         d_lista = st.date_input("Ver detalhes do dia:", value=datetime.date.today(), format="DD/MM/YYYY", key="d_lista")
         
         try:
-            # Busca TODAS as reservas do dia (Ativas e Canceladas)
             res_lista = supabase.table("reservas").select("*").eq("data_reserva", str(d_lista)).execute()
             
             if res_lista.data:
-                # Agrupa as reservas pelo nome do espaço
                 reservas_por_espaco = {}
                 for r in res_lista.data:
                     esp = r.get("espaco", "Sem Espaço")
@@ -91,22 +86,17 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                         reservas_por_espaco[esp] = []
                     reservas_por_espaco[esp].append(r)
                 
-                # Cria aquela barra "sanfona" (expander) para cada espaço
                 for espaco, lista_res in reservas_por_espaco.items():
                     with st.expander(f"📍 {espaco} ({len(lista_res)} reservas)", expanded=True):
-                        
-                        # Prepara a lista que vai virar a tabela
                         dados_tabela = []
                         for r in lista_res:
                             status_bd = r.get("status", "Ativa")
                             
-                            # Lógica para mostrar os ícones e quem cancelou
                             if status_bd == "Ativa":
                                 situacao_icone = "🟢 Ativa"
-                                quem_cancelou = "-" # Fica um tracinho se a aula está normal
+                                quem_cancelou = "-"
                             else:
                                 situacao_icone = "❌ Cancelada"
-                                # Puxa o nome de quem cancelou (se não tiver, mostra 'Sistema')
                                 quem_cancelou = r.get("cancelado_por", "Sistema")
                                 
                             dados_tabela.append({
@@ -117,19 +107,13 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                                 "Cancelado Por": quem_cancelou
                             })
                         
-                        # Tenta ordenar da 1ª para a 9ª aula para ficar bonito
                         dados_tabela = sorted(dados_tabela, key=lambda x: x["Aula/Horário"])
-                        
-                        # Plota a tabela na tela ocupando a largura toda e escondendo o índice (0,1,2,3...)
                         st.dataframe(dados_tabela, use_container_width=True, hide_index=True)
                         
             else:
                 st.info("📅 Nenhuma reserva encontrada para este dia.")
         except Exception as e:
             st.error(f"Erro ao carregar lista diária: {e}")
-    # =========================================================
-    # FIM - ABA 2
-    # =========================================================
     
     # =========================================================
     # INÍCIO - ABA 3: NOVA RESERVA (PILLS + ESTOQUE + SALA)
@@ -137,10 +121,8 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     with aba_nova:
         st.subheader("Agendar Espaço / Equipamento")
         
-        # --- DEFINIÇÃO DO ESTOQUE TOTAL DA ESCOLA ---
         ESTOQUE = {"Datashow": 5, "Som": 3, "Microfone": 2}
         
-        # 1. ESCOLHA DE DATA E HORÁRIO
         st.write("**1. Escolha a Data e Horário:**")
         col_data, col_vazia = st.columns(2)
         with col_data:
@@ -159,7 +141,6 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
         
         st.divider()
         
-        # 2. ESCOLHA DE PROFESSOR E ESPAÇO
         st.write("**2. Dados da Reserva:**")
         col1, col2 = st.columns(2)
         
@@ -174,7 +155,6 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
             else:
                 espaco = st.selectbox("Espaço:", ["-- Selecione --", "Auditório", "Laboratório", "Biblioteca", "Quadra"], key="aba3_espaco")
                 
-        # 3. ESCOLHA DOS EQUIPAMENTOS (CONTADORES INTELIGENTES)
         st.write("**3. Equipamentos Necessários:**")
         col_eq1, col_eq2, col_eq3 = st.columns(3)
         with col_eq1:
@@ -185,8 +165,6 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
             qtd_mic = st.number_input("🎤 Microfone (Máx 2)", min_value=0, max_value=2, value=0, key="aba3_qtd_mic")
             
         obs = st.text_input("Observações:", key="aba3_obs")
-        
-        st.write("") 
         
         if st.button("💾 Confirmar Reserva", type="primary"):
             if not aulas_selecionadas:
@@ -202,18 +180,15 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                 aulas_com_conflito_espaco = []
                 aulas_sem_estoque = []
                 
-                # Monta o texto dos equipamentos para salvar no banco
                 equip_list = []
                 if qtd_datashow > 0: equip_list.append(f"{qtd_datashow}x Datashow")
                 if qtd_som > 0: equip_list.append(f"{qtd_som}x Som")
                 if qtd_mic > 0: equip_list.append(f"{qtd_mic}x Microfone")
                 equipamentos_texto = ", ".join(equip_list)
                 
-                # --- VERIFICAÇÕES AULA POR AULA ---
                 for aula in aulas_selecionadas:
                     pode_salvar = True
                     
-                    # 1. VERIFICA CONFLITO DE ESPAÇO (Ignora se for "Sala de Aula")
                     if espaco != "Sala de Aula":
                         conflito_espaco = supabase.table("reservas").select("*").eq("data_reserva", str(data_res)).eq("periodo", aula).eq("espaco", espaco).eq("status", "Ativa").execute()
                         if conflito_espaco.data:
@@ -221,23 +196,21 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                             pode_salvar = False
                             sucesso_total = False
                     
-                    # 2. VERIFICA DISPONIBILIDADE DE ESTOQUE (Se pediu algum equipamento)
                     if pode_salvar and (qtd_datashow > 0 or qtd_som > 0 or qtd_mic > 0):
                         todas_reservas_aula = supabase.table("reservas").select("equipamentos").eq("data_reserva", str(data_res)).eq("periodo", aula).eq("status", "Ativa").execute()
                         
                         uso_atual = {"Datashow": 0, "Som": 0, "Microfone": 0}
                         
-                        # Soma tudo que já está reservado nesta aula
                         for r in todas_reservas_aula.data:
                             eq_str = r.get("equipamentos", "")
                             if eq_str:
+                                # Aqui o 're' importado é utilizado
                                 matches = re.findall(r"(\d+)x\s*(Datashow|Som|Microfone)", str(eq_str), re.IGNORECASE)
                                 for qtd, item in matches:
                                     item_norm = item.capitalize()
                                     if item_norm in uso_atual:
                                         uso_atual[item_norm] += int(qtd)
                         
-                        # Compara o que já está em uso + o que foi pedido agora com o Estoque Total
                         if (qtd_datashow + uso_atual["Datashow"]) > ESTOQUE["Datashow"] or \
                            (qtd_som + uso_atual["Som"]) > ESTOQUE["Som"] or \
                            (qtd_mic + uso_atual["Microfone"]) > ESTOQUE["Microfone"]:
@@ -246,7 +219,6 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                             pode_salvar = False
                             sucesso_total = False
                     
-                    # 3. SE TUDO ESTIVER OK, SALVA NO BANCO!
                     if pode_salvar:
                         try:
                             dados_insert = {
@@ -263,34 +235,25 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                             st.error(f"Erro ao salvar a {aula}: {e}")
                             sucesso_total = False
                 
-                # --- MENSAGENS DE AVISO / SUCESSO ---
                 if aulas_com_conflito_espaco:
                     st.error(f"❌ O espaço '{espaco}' já está reservado nestas aulas: {', '.join(aulas_com_conflito_espaco)}.")
                 
                 if aulas_sem_estoque:
-                    st.error(f"⚠️ Equipamento insuficiente no estoque para as aulas: {', '.join(aulas_sem_estoque)}. (Alguém já reservou antes).")
+                    st.error(f"⚠️ Equipamento insuficiente no estoque para as aulas: {', '.join(aulas_sem_estoque)}.")
                 
                 if sucesso_total:
                     st.success("✅ Reserva(s) realizada(s) com sucesso!")
-                    
-                    # Limpeza de memória
                     chaves_para_limpar = ["aba3_data", "aba3_aulas", "aba3_prof", "aba3_usar_sala", "aba3_espaco", "aba3_qtd_data", "aba3_qtd_som", "aba3_qtd_mic", "aba3_obs"]
                     for chave in chaves_para_limpar:
                         if chave in st.session_state:
                             del st.session_state[chave]
-                            
                     st.rerun()
-    # =========================================================
-    # FIM - ABA 3
-    # =========================================================
 
-   # =========================================================
-    # INÍCIO - ABA 4: GERENCIAR / CANCELAR (COM AVISO DE PRIVACIDADE)
+    # =========================================================
+    # INÍCIO - ABA 4: GERENCIAR / CANCELAR
     # =========================================================
     with aba_cancelar:
         st.subheader("Gerenciar Reservas")
-        
-        # O campo de data com key específica
         d_can = st.date_input("Data da reserva que deseja alterar:", value=datetime.date.today(), format="DD/MM/YYYY", key="aba4_data")
         
         try:
@@ -304,8 +267,6 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                     opcoes_res[texto] = r
 
                 st.write("**1. Selecione a(s) reserva(s) que deseja alterar:**")
-                
-                # Multiselect para escolher várias reservas
                 reservas_selecionadas = st.multiselect(
                     "Reservas encontradas:", 
                     options=list(opcoes_res.keys()),
@@ -315,26 +276,19 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                 
                 if reservas_selecionadas:
                     st.write("**2. O que deseja fazer?**")
-                    
                     if len(reservas_selecionadas) == 1:
                         acao = st.radio("Escolha a ação:", ["❌ Cancelar a Reserva (Liberar Espaço e Equipamentos)", "✏️ Editar/Remover apenas Equipamentos"], label_visibility="collapsed", key="aba4_acao")
-                        
                         res_unica = opcoes_res[reservas_selecionadas[0]]
-                        equip_atual = res_unica.get('equipamentos', '')
-                        if equip_atual is None: equip_atual = ""
-                        
+                        equip_atual = res_unica.get('equipamentos', '') or ""
                         novo_equip = equip_atual
                         if "Editar" in acao:
-                            novo_equip = st.text_input("Equipamentos desta reserva (apague o que não for mais usar):", value=str(equip_atual), key="aba4_equip")
+                            novo_equip = st.text_input("Equipamentos desta reserva:", value=str(equip_atual), key="aba4_equip")
                     else:
-                        acao = st.radio("Ação em Lote:", ["❌ Cancelar Todas as Selecionadas", "🧹 Limpar Equipamentos de Todas (Devolver equipamentos)"], label_visibility="collapsed", key="aba4_acao")
+                        acao = st.radio("Ação em Lote:", ["❌ Cancelar Todas as Selecionadas", "🧹 Limpar Equipamentos de Todas"], label_visibility="collapsed", key="aba4_acao")
                     
                     st.divider()
                     st.write("**3. Assinatura Eletrônica**")
-                    
-                    # --- AVISO GRITANTE DE SEGURANÇA ADICIONADO AQUI ---
-                    st.warning("🔒 **AVISO DE PRIVACIDADE E SEGURANÇA:**\n\nSua **Matrícula** funciona como a sua **senha pessoal** neste sistema. Fique tranquilo(a): ela **NÃO será exposta** em nenhuma tela pública, relatório ou tabela. \n\nSua única finalidade é garantir a segurança da sua agenda, permitindo que **apenas você** (ou a gestão da escola) possa cancelar ou alterar as reservas feitas em seu nome.")
-                    
+                    st.warning("🔒 **AVISO DE PRIVACIDADE E SEGURANÇA:** Sua Matrícula funciona como a sua senha pessoal.")
                     senha = st.text_input("Sua Matrícula (Senha):", type="password", key="aba4_senha")
                     
                     if st.button("💾 Confirmar Ação", type="primary"):
@@ -342,94 +296,54 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                             st.warning("⚠️ Digite sua matrícula para confirmar.")
                         else:
                             verif = supabase.table("professores_matriculas").select("professor").eq("matricula", senha).execute()
-                            
                             if verif.data:
                                 user_nome = verif.data[0]['professor']
                                 sem_permissao = []
-                                
                                 for sel in reservas_selecionadas:
                                     res_dados = opcoes_res[sel]
                                     if user_nome not in GESTORES and user_nome != res_dados['professor']:
                                         sem_permissao.append(res_dados.get('periodo', 'Aula Indefinida'))
                                 
                                 if sem_permissao:
-                                    st.error(f"⛔ Sem permissão. Você não pode alterar reservas de outro professor: {', '.join(sem_permissao)}")
+                                    st.error(f"⛔ Sem permissão para alterar reservas de outro professor: {', '.join(sem_permissao)}")
                                 else:
                                     for sel in reservas_selecionadas:
                                         id_r = opcoes_res[sel]['id']
-                                        
                                         if "Cancelar" in acao:
                                             supabase.table("reservas").update({"status": "Cancelada", "cancelado_por": user_nome}).eq("id", id_r).execute()
                                         elif "Editar" in acao:
                                             supabase.table("reservas").update({"equipamentos": novo_equip}).eq("id", id_r).execute()
                                         elif "Limpar" in acao:
                                             supabase.table("reservas").update({"equipamentos": ""}).eq("id", id_r).execute()
-                                            
-                                    st.success(f"✅ Operação realizada com sucesso por {user_nome}!")
-                                    
-                                    # Limpeza da memória
-                                    chaves_aba4 = ["aba4_multiselect", "aba4_acao", "aba4_equip", "aba4_senha"]
-                                    for chave in chaves_aba4:
-                                        if chave in st.session_state:
-                                            del st.session_state[chave]
-                                    
+                                    st.success(f"✅ Operação realizada por {user_nome}!")
                                     st.rerun()
                             else:
-                                st.error("❌ Matrícula incorreta ou não cadastrada.")
+                                st.error("❌ Matrícula incorreta.")
             else:
                 st.info("Nenhuma reserva ativa encontrada para esta data.")
         except Exception as e:
             st.error(f"Erro ao carregar reservas: {e}")
-    # =========================================================
-    # FIM - ABA 4
-    # =========================================================
-
 
     # =========================================================
-    # INÍCIO - ABA 5: ASSINATURA (COM AVISO DE PRIVACIDADE)
+    # INÍCIO - ABA 5: ASSINATURA
     # =========================================================
     with aba_assinatura:
         st.subheader("Cadastro de Assinatura Eletrônica")
-        
-        # --- AVISO GRITANTE DE SEGURANÇA E PRIVACIDADE ---
-        st.warning("🔒 **AVISO DE PRIVACIDADE E SEGURANÇA:**\n\nSua **Matrícula** funciona como a sua **senha pessoal** neste sistema. Fique tranquilo(a): ela **NÃO será exposta** em nenhuma tela pública, relatório ou tabela. \n\nSua única finalidade é garantir a segurança da sua agenda, permitindo que **apenas você** (ou a gestão da escola) possa cancelar ou alterar as reservas feitas em seu nome.")
-        
-        st.write("Preencha os dados abaixo para registrar sua assinatura no sistema:")
-        
-        # Adicionando 'key' aos campos para podermos limpar a tela depois
+        st.warning("🔒 **AVISO DE PRIVACIDADE E SEGURANÇA:** Sua Matrícula funciona como senha.")
         nome_prof = st.selectbox("Seu Nome:", opcoes_professores, key="aba5_nome")
         matricula_prof = st.text_input("Sua Matrícula (Senha):", type="password", key="aba5_matricula")
         
         if st.button("💾 Salvar Assinatura", type="primary"):
-            if nome_prof == "-- Selecione --":
-                st.error("⚠️ Selecione seu nome na lista.")
-            elif not matricula_prof:
-                st.error("⚠️ Digite sua matrícula.")
+            if nome_prof == "-- Selecione --" or not matricula_prof:
+                st.error("⚠️ Preencha todos os campos.")
             else:
                 try:
-                    # Verifica se o professor já tem senha cadastrada
                     verif = supabase.table("professores_matriculas").select("*").eq("professor", nome_prof).execute()
-                    
                     if verif.data:
-                        # Se já tem, ATUALIZA a senha
                         supabase.table("professores_matriculas").update({"matricula": matricula_prof}).eq("professor", nome_prof).execute()
                     else:
-                        # Se não tem, CRIA uma nova
                         supabase.table("professores_matriculas").insert({"professor": nome_prof, "matricula": matricula_prof}).execute()
-                        
-                    st.success(f"✅ Assinatura de {nome_prof} cadastrada/atualizada com sucesso!")
-                    
-                    # --- LIMPEZA DE MEMÓRIA PARA PROTEGER OS DADOS ---
-                    chaves_aba5 = ["aba5_nome", "aba5_matricula"]
-                    for chave in chaves_aba5:
-                        if chave in st.session_state:
-                            del st.session_state[chave]
-                            
-                    # Reinicia a tela para apagar os campos visuais
+                    st.success(f"✅ Assinatura de {nome_prof} cadastrada!")
                     st.rerun()
-                    
                 except Exception as e:
                     st.error(f"Erro ao salvar assinatura: {e}")
-    # =========================================================
-    # FIM - ABA 5
-    # =========================================================
