@@ -80,10 +80,33 @@ def listar_arquivos_bucket():
         return {limpar_texto_absoluto(arq.get('name')): arq.get('name') for arq in arquivos if arq.get('name')}
     except: return {}
 
-params = st.query_params
-token_url = params.get("t", None)
+# ==========================================
+# 2. CAPTURA DO LINK (BLINDADA)
+# ==========================================
+token_url = None
 
-if token_url in MAPA_TURMAS:
+try:
+    # Tenta usar o formato novo do Streamlit
+    if "t" in st.query_params:
+        raw_token = st.query_params["t"]
+        # Se vier como lista (comportamento antigo de algumas versões), pega o primeiro item
+        if isinstance(raw_token, list):
+            token_url = str(raw_token[0]).lower().strip()
+        else:
+            token_url = str(raw_token).lower().strip()
+except Exception as e:
+    # Fallback caso a versão do Streamlit seja muito antiga
+    try:
+        params = st.experimental_get_query_params()
+        if "t" in params:
+            token_url = str(params["t"][0]).lower().strip()
+    except:
+        pass
+
+# ==========================================
+# 3. LÓGICA DA CHAMADA
+# ==========================================
+if token_url and token_url in MAPA_TURMAS:
     turma_real = MAPA_TURMAS[token_url]
     st.title(f"📝 Chamada: {turma_real}")
     
@@ -105,7 +128,6 @@ if token_url in MAPA_TURMAS:
             cache_buster = int(time.time())
             
             for i, aluno in enumerate(alunos):
-                # Criamos 3 colunas para simular a linha do print
                 col_foto, col_nome, col_check = st.columns([1, 3, 2])
                 
                 chave_aluno = limpar_texto_absoluto(aluno['nome'])
@@ -122,7 +144,6 @@ if token_url in MAPA_TURMAS:
                     st.markdown(f"<div style='padding-top:15px'><b>{aluno['nome']}</b></div>", unsafe_allow_html=True)
                 
                 with col_check:
-                    # Checkbox com label "Presente" que já vem marcado (True)
                     st.write("") # Espaçador
                     presencas[aluno['nome']] = st.checkbox("Presente", value=True, key=f"c_{i}")
 
@@ -135,5 +156,10 @@ if token_url in MAPA_TURMAS:
                     st.success("Enviado!")
                     st.balloons()
                 except Exception as e: st.error(f"Erro: {e}")
+    else:
+        st.info(f"Nenhum aluno encontrado na turma {turma_real} no banco de dados.")
 else:
+    # Mensagem de erro melhorada para te ajudar a debugar se der ruim
     st.error("🚫 Use o QR Code da sala.")
+    if token_url:
+        st.warning(f"⚠️ Link não reconhecido: '{token_url}'")
