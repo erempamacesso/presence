@@ -3,7 +3,6 @@ import pandas as pd
 import datetime
 
 def exibir_cenario(supabase):
-    # 👇 Se isso não aparecer na tela, o GitHub ainda não atualizou seu app!
     st.title("📊 Cenário do Dia (Nova Versão)") 
     
     # --- CALENDÁRIO PE 2026 ---
@@ -15,12 +14,12 @@ def exibir_cenario(supabase):
     RECESSO = (datetime.date(2026, 7, 10), datetime.date(2026, 7, 24))
 
     # ==========================================
-    # 1. DIVISÃO DA TELA IMEDIATAMENTE (70% Esq / 30% Dir)
+    # 1. DIVISÃO DA TELA (70% Esq / 30% Dir)
     # ==========================================
     col_esq, col_dir = st.columns([7, 3], gap="large")
 
     # ==========================================
-    # 2. BUSCA DE DADOS (Baseado na data escolhida)
+    # 2. BUSCA DE DADOS GLOBAL
     # ==========================================
     with col_esq:
         data_hoje = st.date_input("Data de Análise:", value=datetime.date.today(), format="DD/MM/YYYY")
@@ -49,7 +48,7 @@ def exibir_cenario(supabase):
         st.error(f"⚠️ Erro na conexão: {e}")
 
     # ==========================================
-    # 3. PREENCHENDO O LADO ESQUERDO
+    # 3. LADO ESQUERDO (Gráficos e Censo)
     # ==========================================
     with col_esq:
         st.divider()
@@ -65,81 +64,28 @@ def exibir_cenario(supabase):
 
         st.divider()
 
-        # --- TERMÔMETRO ---
-        st.subheader("🌡️ Termômetro de Evolução")
-        periodo_sel = st.pills("Selecione o Trimestre:", options=list(TRIMESTRES.keys()), default="1º Tri")
-        inicio_tri, fim_tri = TRIMESTRES[periodo_sel]
-
-        st.write("### 🔍 Raio-X por Aluno")
-        try:
-            res_t = supabase.table("alunos").select("turma").execute().data
-            lista_turmas = sorted(list(set([t['turma'] for t in res_t if t.get('turma')])))
-            turma_escolhida = st.segmented_control("Selecione a Turma:", options=lista_turmas)
-            
-            if turma_escolhida:
-                res_a = supabase.table("alunos").select("nome").eq("turma", turma_escolhida).order("nome").execute().data
-                lista_alunos = [a['nome'] for a in res_a]
-                aluno_escolhido = st.selectbox(f"👤 Alunos do {turma_escolhida}:", ["-- Selecione --"] + lista_alunos)
-                
-                if aluno_escolhido != "-- Selecione --":
-                    presencas_tri = supabase.table("frequencia").select("data_chamada")\
-                        .eq("aluno_nome", aluno_escolhido)\
-                        .gte("data_chamada", str(inicio_tri))\
-                        .lte("data_chamada", str(fim_tri)).execute().data
-
-                    if presencas_tri:
-                        df_tri = pd.DataFrame(presencas_tri)
-                        df_tri['data_chamada'] = pd.to_datetime(df_tri['data_chamada'])
-                        df_tri['mes'] = df_tri['data_chamada'].dt.strftime('%m - %b')
-                        contagem = df_tri.groupby('mes').size().reset_index(name='dias_presenca')
-
-                        st.markdown(f"**Análise: {aluno_escolhido}**")
-                        for _, row in contagem.iterrows():
-                            dias = row['dias_presenca']
-                            if dias >= 18: cor, lbl = "#00ced1", "Frio (Excelente)"
-                            elif dias >= 15: cor, lbl = "#ffa500", "Morno (Atenção)"
-                            else: cor, lbl = "#ff4b4b", "QUENTE (Risco)"
-
-                            st.markdown(f"""
-                                <div style="margin-bottom:10px">
-                                    <small>{row['mes']}</small>
-                                    <div style="width: 100%; background-color: #f0f2f6; border-radius: 8px;">
-                                        <div style="width: {min(dias*5, 100)}%; background-color: {cor}; 
-                                                padding: 5px; color: white; text-align: right; border-radius: 8px; font-size: 11px;">
-                                            {dias} dias - {lbl}
-                                        </div>
-                                    </div>
-                                </div>
-                            """, unsafe_allow_html=True)
-                    else:
-                        st.warning("🚨 Nenhuma presença neste período.")
-            else:
-                st.info("👆 Toque em uma turma para carregar os alunos.")
-        except Exception as e:
-            st.error(f"Erro ao carregar dados: {e}")
-
-        st.divider()
-
-        # --- GRÁFICO ---
+        # --- GRÁFICO DE TURMAS ---
         try:
             if not df_presentes_hoje.empty and 'turma' in df_presentes_hoje.columns:
                 st.subheader("🏫 Presença por Turma (Hoje)")
                 df_turmas = df_presentes_hoje.groupby('turma').size().reset_index(name='Presentes')
                 st.bar_chart(df_turmas.set_index('turma'))
+            else:
+                st.info("Aguardando registros de chamada para gerar o gráfico.")
         except:
             pass
 
     # ==========================================
-    # 4. PREENCHENDO O LADO DIREITO (TABELA)
+    # 4. LADO DIREITO (Tabela + Novo Ranking de Faltas)
     # ==========================================
     with col_dir:
+        # --- TABELA DE PRESENTES ---
         st.subheader("📋 Presentes por Sala")
         
         if not df_presentes_hoje.empty and 'turma' in df_presentes_hoje.columns:
             df_resumo = df_presentes_hoje.groupby('turma').size().reset_index(name='Qtd')
             df_resumo = df_resumo.sort_values(by='turma')
             
-            # Altura ajustada para acompanhar o layout lateral
             st.dataframe(
                 df_resumo,
                 use_container_width=True,
@@ -147,8 +93,66 @@ def exibir_cenario(supabase):
                 column_config={
                     "turma": st.column_config.TextColumn("Turma"),
                     "Qtd": st.column_config.NumberColumn("Qtd")
-                },
-                height=600 
+                }
             )
         else:
             st.info("Nenhuma presença registrada hoje.")
+
+        st.divider()
+
+        # --- NOVO: RANKING DE FALTAS ---
+        st.subheader("🚨 Ranking de Faltas")
+        st.caption("Acumulado de ausências por estudante")
+
+        try:
+            # Puxa a lista de turmas para gerar os botões (Pills)
+            res_t = supabase.table("alunos").select("turma").execute().data
+            lista_turmas = sorted(list(set([t['turma'] for t in res_t if t.get('turma')])))
+            
+            # Usando st.pills como você pediu
+            turma_rank = st.pills("Selecione a Turma:", options=lista_turmas)
+            
+            if turma_rank:
+                # 1. Puxa todos os alunos da turma para garantir que todos apareçam (mesmo os com 0 faltas)
+                res_a = supabase.table("alunos").select("nome").eq("turma", turma_rank).execute().data
+                df_alunos = pd.DataFrame(res_a)
+                
+                # 2. Puxa só as FALTAS ("F") dessa turma na tabela de frequência
+                res_f = supabase.table("frequencia").select("aluno_nome").eq("turma", turma_rank).eq("status", "F").execute().data
+                
+                if not df_alunos.empty:
+                    df_alunos = df_alunos.rename(columns={'nome': 'aluno_nome'})
+                    
+                    if res_f:
+                        # Conta as faltas
+                        df_faltas = pd.DataFrame(res_f)
+                        contagem_faltas = df_faltas.groupby('aluno_nome').size().reset_index(name='Faltas')
+                        
+                        # Junta com a lista de todos os alunos (quem não tiver falta fica com 0)
+                        df_ranking = pd.merge(df_alunos, contagem_faltas, on='aluno_nome', how='left').fillna(0)
+                    else:
+                        # Se ninguém faltou ainda
+                        df_ranking = df_alunos.copy()
+                        df_ranking['Faltas'] = 0
+
+                    # 3. Organiza o Ranking (Do maior número de faltas para o menor)
+                    df_ranking = df_ranking.sort_values(by=['Faltas', 'aluno_nome'], ascending=[False, True])
+                    
+                    # 4. Adiciona o Ícone
+                    df_ranking['Ícone'] = "👤"
+                    df_ranking = df_ranking[['Ícone', 'aluno_nome', 'Faltas']] # Reordena as colunas
+                    
+                    # 5. Exibe a mini-tabela formatada
+                    st.dataframe(
+                        df_ranking,
+                        use_container_width=True,
+                        hide_index=True,
+                        height=400, # Altura fixa para caber bonitinho na lateral
+                        column_config={
+                            "Ícone": st.column_config.TextColumn("", width="small"),
+                            "aluno_nome": st.column_config.TextColumn("Estudante"),
+                            "Faltas": st.column_config.NumberColumn("Faltas Acumuladas", format="%d")
+                        }
+                    )
+        except Exception as e:
+            st.error(f"Erro ao gerar ranking: {e}")
