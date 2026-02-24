@@ -24,6 +24,9 @@ def exibir_cadastro(supabase):
     
     aba_gerenciar, aba_manual = st.tabs(["📸 Gerenciar Turmas e Fotos", "➕ Cadastro Manual"])
 
+    # =========================================================
+    # INÍCIO - ABA 1: GERENCIAR TURMAS E FOTOS
+    # =========================================================
     with aba_gerenciar:
         # Busca turmas para o filtro
         res_t = supabase.table("alunos").select("turma").execute()
@@ -86,7 +89,14 @@ def exibir_cadastro(supabase):
                                     st.error(f"Erro no upload: {e}")
         else:
             st.warning("Cadastre uma turma ou importe alunos primeiro.")
+    # =========================================================
+    # FIM - ABA 1: GERENCIAR TURMAS E FOTOS
+    # =========================================================
 
+
+    # =========================================================
+    # INÍCIO - ABA 2: CADASTRO MANUAL
+    # =========================================================
     with aba_manual:
         st.subheader("Novo Cadastro Avulso")
         with st.form("f_manual", clear_on_submit=True):
@@ -97,3 +107,6 @@ def exibir_cadastro(supabase):
                     supabase.table("alunos").insert({"nome": n.upper().strip(), "turma": t.upper().strip()}).execute()
                     st.success("Cadastrado!")
                     st.rerun()
+    # =========================================================
+    # FIM - ABA 2: CADASTRO MANUAL
+    # =========================================================
