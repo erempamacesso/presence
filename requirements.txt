@@ -7,3 +7,4 @@ pytz
 streamlit-option-menu
 openpyxl
 streamlit-calendar 
+fpdf
