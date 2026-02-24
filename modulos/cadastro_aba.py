@@ -46,16 +46,18 @@ def exibir_cadastro(supabase):
                     nome_aluno = aluno['nome']
                     chave = limpar_texto(nome_aluno)
                     
+                    # Descobre se a foto existe para usar nas outras colunas
+                    foto_real = mapa_fotos.get(chave)
+                    
                     # --- COLUNA 1: FOTO ATUAL ---
                     with c1:
-                        foto_real = mapa_fotos.get(chave)
                         if foto_real:
                             url = supabase.storage.from_('fotos-alunos').get_public_url(foto_real)
                             st.image(url, width=70)
                         else:
                             st.markdown("🟡 **Sem Foto**")
 
-                    # --- COLUNA 2: INFO E TROCAR TURMA ---
+                    # --- COLUNA 2: INFO, TROCAR TURMA E EXCLUIR ALUNO ---
                     with c2:
                         st.markdown(f"**{nome_aluno}**")
                         nova_t = st.selectbox("Mudar Turma:", lista_turmas, 
@@ -66,16 +68,31 @@ def exibir_cadastro(supabase):
                             st.toast("Turma atualizada!")
                             time.sleep(0.5)
                             st.rerun()
+                            
+                        # BOTÃO DE EXCLUSÃO DO ALUNO COM CONFIRMAÇÃO
+                        with st.popover("🗑️ Excluir Aluno (Total)"):
+                            st.write(f"Deseja excluir **{nome_aluno}** e sua foto permanentemente?")
+                            if st.button("Sim, Excluir Aluno", key=f"del_{uid}", type="primary"):
+                                try:
+                                    # 1. Exclui a foto do Bucket (se existir)
+                                    if foto_real:
+                                        supabase.storage.from_('fotos-alunos').remove([foto_real])
+                                    
+                                    # 2. Exclui o registro do banco de dados
+                                    supabase.table("alunos").delete().eq("id", uid).execute()
+                                    
+                                    st.success("Aluno excluído com sucesso!")
+                                    time.sleep(1.5)
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro ao excluir: {e}")
 
-                    # --- COLUNA 3: UPLOAD DE FOTO DIRETO NO BUCKET ---
+                    # --- COLUNA 3: UPLOAD E EXCLUSÃO APENAS DA FOTO ---
                     with c3:
                         foto_nova = st.file_uploader("Trocar Foto (.png)", type=["png"], key=f"up_{uid}")
                         if foto_nova:
-                            if st.button("Salvar Foto", key=f"btn_{uid}"):
-                                # Define o nome do arquivo como o nome do aluno limpo + .png
+                            if st.button("Salvar Nova Foto", key=f"btn_{uid}"):
                                 nome_arquivo = f"{chave}.png"
-                                
-                                # Upload para o Supabase Bucket (usando upsert=True para substituir a velha)
                                 try:
                                     res_up = supabase.storage.from_('fotos-alunos').upload(
                                         path=nome_arquivo,
@@ -83,16 +100,26 @@ def exibir_cadastro(supabase):
                                         file_options={"content-type": "image/png", "upsert": "true"}
                                     )
                                     st.success("Foto salva!")
-                                    time.sleep(1)
+                                    time.sleep(1.5)
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Erro no upload: {e}")
+                                    
+                        # NOVO: APAGAR APENAS A FOTO (Só aparece se o aluno tiver foto e não estiver subindo uma nova)
+                        elif foto_real:
+                            if st.button("🗑️ Apagar apenas a foto", key=f"del_pic_{uid}"):
+                                try:
+                                    supabase.storage.from_('fotos-alunos').remove([foto_real])
+                                    st.success("Foto apagada do sistema!")
+                                    time.sleep(1.5)
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro ao apagar foto: {e}")
         else:
             st.warning("Cadastre uma turma ou importe alunos primeiro.")
     # =========================================================
     # FIM - ABA 1: GERENCIAR TURMAS E FOTOS
     # =========================================================
-
 
     # =========================================================
     # INÍCIO - ABA 2: CADASTRO MANUAL
