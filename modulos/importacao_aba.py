@@ -45,7 +45,7 @@ def exibir_importacao(supabase):
                         nome_limpo = str(row['nome']).upper().strip()
                         turma_limpa = str(row['turma']).upper().strip()
 
-                        if nome_limpo and nome_limpo != "NAN":
+                        if nome_limpo and nome_limpo != "nan":
                             if nome_limpo not in nomes_no_banco:
                                 novos_alunos.append({"nome": nome_limpo, "turma": turma_limpa})
                             else:
@@ -75,7 +75,7 @@ def exibir_importacao(supabase):
         with col1:
             texto_nomes = st.text_area("Lista de Nomes (Cole aqui):", height=200)
         with col2:
-            # Você pode puxar essas turmas do banco depois, deixei fixo como exemplo
+            # Opções de turmas (você pode ajustar conforme a realidade da escola)
             opcoes_turmas = ["1º A", "1º B", "1º C", "1º D", "1º E", "2º A", "3º A"]
             turma_selecionada = st.selectbox("Selecione a Turma:", opcoes_turmas)
         
