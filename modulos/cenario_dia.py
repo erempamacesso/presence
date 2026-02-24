@@ -3,7 +3,8 @@ import pandas as pd
 import datetime
 
 def exibir_cenario(supabase):
-    st.title("📊 Cenário do Dia")
+    # 👇 Se isso não aparecer na tela, o GitHub ainda não atualizou seu app!
+    st.title("📊 Cenário do Dia (Nova Versão)") 
     
     # --- CALENDÁRIO PE 2026 ---
     TRIMESTRES = {
@@ -14,16 +15,19 @@ def exibir_cenario(supabase):
     RECESSO = (datetime.date(2026, 7, 10), datetime.date(2026, 7, 24))
 
     # ==========================================
-    # 0. BUSCA DE DADOS GLOBAL (Fazemos no topo para usar nas duas colunas)
+    # 1. DIVISÃO DA TELA IMEDIATAMENTE (70% Esq / 30% Dir)
     # ==========================================
-    data_hoje = st.date_input("Data de Análise:", value=datetime.date.today(), format="DD/MM/YYYY")
-    hoje_iso = data_hoje.isoformat()
+    col_esq, col_dir = st.columns([7, 3], gap="large")
 
+    # ==========================================
+    # 2. BUSCA DE DADOS (Baseado na data escolhida)
+    # ==========================================
+    with col_esq:
+        data_hoje = st.date_input("Data de Análise:", value=datetime.date.today(), format="DD/MM/YYYY")
+    
+    hoje_iso = data_hoje.isoformat()
     df_presentes_hoje = pd.DataFrame()
-    n_presentes = 0
-    total_alunos = 0
-    n_faltas = 0
-    perc = 0
+    n_presentes, total_alunos, n_faltas, perc = 0, 0, 0, 0
 
     try:
         res_total = supabase.table("alunos").select("id", count="exact").execute()
@@ -33,8 +37,6 @@ def exibir_cenario(supabase):
         
         if res_freq.data:
             df_presentes_hoje = pd.DataFrame(res_freq.data)
-            
-            # Busca coluna correta de forma dinâmica
             col_nome = next((c for c in ['aluno_nome', 'nome_aluno'] if c in df_presentes_hoje.columns), None)
             if col_nome:
                 n_presentes = len(df_presentes_hoje[col_nome].unique())
@@ -43,22 +45,15 @@ def exibir_cenario(supabase):
                 
         n_faltas = total_alunos - n_presentes
         perc = (n_presentes / total_alunos * 100) if total_alunos > 0 else 0
-
     except Exception as e:
         st.error(f"⚠️ Erro na conexão: {e}")
 
-    st.divider()
-
     # ==========================================
-    # ESTRATÉGIA DE DIVISÃO DE TELA (70% Esquerda, 30% Direita)
+    # 3. PREENCHENDO O LADO ESQUERDO
     # ==========================================
-    col_esq, col_dir = st.columns([7, 3], gap="large")
-
-    # ==============================
-    # LADO ESQUERDO DA TELA
-    # ==============================
     with col_esq:
-        # --- 1. CENSO EM TEMPO REAL ---
+        st.divider()
+        # --- CENSO ---
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Presentes", n_presentes)
         c2.metric("Ausentes", n_faltas, delta=f"{n_faltas}", delta_color="inverse")
@@ -70,24 +65,20 @@ def exibir_cenario(supabase):
 
         st.divider()
 
-        # --- 2. TERMÔMETRO DE ASSIDUIDADE ---
+        # --- TERMÔMETRO ---
         st.subheader("🌡️ Termômetro de Evolução")
-        
         periodo_sel = st.pills("Selecione o Trimestre:", options=list(TRIMESTRES.keys()), default="1º Tri")
         inicio_tri, fim_tri = TRIMESTRES[periodo_sel]
 
         st.write("### 🔍 Raio-X por Aluno")
-        
         try:
             res_t = supabase.table("alunos").select("turma").execute().data
             lista_turmas = sorted(list(set([t['turma'] for t in res_t if t.get('turma')])))
-            
             turma_escolhida = st.segmented_control("Selecione a Turma:", options=lista_turmas)
             
             if turma_escolhida:
                 res_a = supabase.table("alunos").select("nome").eq("turma", turma_escolhida).order("nome").execute().data
                 lista_alunos = [a['nome'] for a in res_a]
-                
                 aluno_escolhido = st.selectbox(f"👤 Alunos do {turma_escolhida}:", ["-- Selecione --"] + lista_alunos)
                 
                 if aluno_escolhido != "-- Selecione --":
@@ -103,7 +94,6 @@ def exibir_cenario(supabase):
                         contagem = df_tri.groupby('mes').size().reset_index(name='dias_presenca')
 
                         st.markdown(f"**Análise: {aluno_escolhido}**")
-                        
                         for _, row in contagem.iterrows():
                             dias = row['dias_presenca']
                             if dias >= 18: cor, lbl = "#00ced1", "Frio (Excelente)"
@@ -125,13 +115,12 @@ def exibir_cenario(supabase):
                         st.warning("🚨 Nenhuma presença neste período.")
             else:
                 st.info("👆 Toque em uma turma para carregar os alunos.")
-                
         except Exception as e:
             st.error(f"Erro ao carregar dados: {e}")
 
         st.divider()
 
-        # --- 3. GRÁFICO DE TURMAS ---
+        # --- GRÁFICO ---
         try:
             if not df_presentes_hoje.empty and 'turma' in df_presentes_hoje.columns:
                 st.subheader("🏫 Presença por Turma (Hoje)")
@@ -140,27 +129,26 @@ def exibir_cenario(supabase):
         except:
             pass
 
-    # ==============================
-    # LADO DIREITO DA TELA (TABELA)
-    # ==============================
+    # ==========================================
+    # 4. PREENCHENDO O LADO DIREITO (TABELA)
+    # ==========================================
     with col_dir:
         st.subheader("📋 Presentes por Sala")
         
-        # Verifica se tem alunos e se a coluna turma existe no DataFrame
         if not df_presentes_hoje.empty and 'turma' in df_presentes_hoje.columns:
-            # Agrupa os dados contando quantos alunos tem em cada turma
             df_resumo = df_presentes_hoje.groupby('turma').size().reset_index(name='Qtd')
-            df_resumo = df_resumo.sort_values(by='turma') # Ordem alfabética
+            df_resumo = df_resumo.sort_values(by='turma')
             
-            # Desenha uma tabela bonita nativa do Streamlit
+            # Altura ajustada para acompanhar o layout lateral
             st.dataframe(
                 df_resumo,
-                use_container_width=True, # Faz a tabela ocupar toda a coluna direita
-                hide_index=True,          # Tira aquele numero 0, 1, 2, 3 do lado
+                use_container_width=True,
+                hide_index=True,
                 column_config={
                     "turma": st.column_config.TextColumn("Turma"),
-                    "Qtd": st.column_config.NumberColumn("Presentes")
-                }
+                    "Qtd": st.column_config.NumberColumn("Qtd")
+                },
+                height=600 
             )
         else:
-            st.info("Nenhuma presença registrada para esta data.")
+            st.info("Nenhuma presença registrada hoje.")
