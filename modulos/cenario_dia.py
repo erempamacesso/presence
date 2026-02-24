@@ -64,12 +64,19 @@ def exibir_cenario(supabase):
 
         st.divider()
 
-        # --- GRÁFICO DE TURMAS ---
+       # --- GRÁFICO DE TURMAS ---
         try:
             if not df_presentes_hoje.empty and 'turma' in df_presentes_hoje.columns:
                 st.subheader("🏫 Presença por Turma (Hoje)")
                 df_turmas = df_presentes_hoje.groupby('turma').size().reset_index(name='Presentes')
-                st.bar_chart(df_turmas.set_index('turma'))
+                
+                # O parâmetro color="turma" é a mágica que dá uma cor pra cada sala!
+                st.bar_chart(
+                    data=df_turmas,
+                    x="turma",
+                    y="Presentes",
+                    color="turma" 
+                )
             else:
                 st.info("Aguardando registros de chamada para gerar o gráfico.")
         except:
