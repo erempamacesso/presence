@@ -14,12 +14,12 @@ def exibir_cenario(supabase):
     RECESSO = (datetime.date(2026, 7, 10), datetime.date(2026, 7, 24))
 
     # ==========================================
-    # 1. DIVISÃO DA TELA (70% Esq / 30% Dir)
+    # 1. DIVISÃO DA TELA SUPERIOR (70% Esq / 30% Dir)
     # ==========================================
     col_esq, col_dir = st.columns([7, 3], gap="large")
 
     # ==========================================
-    # 2. BUSCA DE DADOS GLOBAL (Corrigido para contar só "P")
+    # 2. BUSCA DE DADOS GLOBAL
     # ==========================================
     with col_esq:
         data_hoje = st.date_input("Data de Análise:", value=datetime.date.today(), format="DD/MM/YYYY")
@@ -29,11 +29,9 @@ def exibir_cenario(supabase):
     n_presentes, total_alunos, n_faltas, perc = 0, 0, 0, 0
 
     try:
-        # Pega o total de alunos na escola
         res_total = supabase.table("alunos").select("id", count="exact").execute()
         total_alunos = res_total.count if res_total.count else 0
         
-        # CORREÇÃO: Puxa APENAS quem tem status "P" na data selecionada
         res_freq = supabase.table("frequencia").select("*").eq("data_chamada", hoje_iso).eq("status", "P").execute()
         
         if res_freq.data:
@@ -44,7 +42,6 @@ def exibir_cenario(supabase):
             else:
                 n_presentes = len(df_presentes_hoje)
                 
-        # Calcula as faltas subtraindo os presentes do total de matrículas
         n_faltas = total_alunos - n_presentes
         perc = (n_presentes / total_alunos * 100) if total_alunos > 0 else 0
     except Exception as e:
@@ -55,7 +52,6 @@ def exibir_cenario(supabase):
     # ==========================================
     with col_esq:
         st.divider()
-        # --- CENSO ---
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Presentes", n_presentes)
         c2.metric("Ausentes", n_faltas, delta=f"{n_faltas}", delta_color="inverse")
@@ -67,13 +63,11 @@ def exibir_cenario(supabase):
 
         st.divider()
 
-       # --- GRÁFICO DE TURMAS ---
         try:
             if not df_presentes_hoje.empty and 'turma' in df_presentes_hoje.columns:
                 st.subheader("🏫 Presença por Turma (Hoje)")
                 df_turmas = df_presentes_hoje.groupby('turma').size().reset_index(name='Presentes')
                 
-                # O parâmetro color="turma" é a mágica que dá uma cor pra cada sala!
                 st.bar_chart(
                     data=df_turmas,
                     x="turma",
@@ -86,10 +80,9 @@ def exibir_cenario(supabase):
             pass
 
     # ==========================================
-    # 4. LADO DIREITO (Tabela + Novo Ranking de Faltas)
+    # 4. LADO DIREITO (Tabela de Presentes)
     # ==========================================
     with col_dir:
-        # --- TABELA DE PRESENTES ---
         st.subheader("📋 Presentes por Sala")
         
         if not df_presentes_hoje.empty and 'turma' in df_presentes_hoje.columns:
@@ -108,64 +101,56 @@ def exibir_cenario(supabase):
         else:
             st.info("Nenhuma presença registrada hoje.")
 
-        st.divider()
+    # ==========================================
+    # 5. ÁREA INFERIOR (Ranking Full-Width igual ao Raio-X)
+    # ==========================================
+    st.divider() # Adiciona uma linha separadora para organizar
+    st.subheader("🚨 Ranking de Faltas")
+    st.caption("Acumulado de ausências por estudante")
 
-        # --- NOVO: RANKING DE FALTAS ---
-        st.subheader("🚨 Ranking de Faltas")
-        st.caption("Acumulado de ausências por estudante")
-
-        try:
-            # Puxa a lista de turmas para gerar os botões (Pills)
-            # Para evitar erro se a coluna turma estiver vazia em algum lugar
-            res_t_raw = supabase.table("alunos").select("turma").execute().data
-            lista_turmas = []
-            if res_t_raw:
-                lista_turmas = sorted(list(set([t['turma'] for t in res_t_raw if t.get('turma')])))
+    try:
+        res_t_raw = supabase.table("alunos").select("turma").execute().data
+        lista_turmas = []
+        if res_t_raw:
+            lista_turmas = sorted(list(set([t['turma'] for t in res_t_raw if t.get('turma')])))
+        
+        # Como está fora das colunas, ele vai usar a tela inteira e ficar na horizontal!
+        turma_rank = st.pills("Selecione a Turma:", options=lista_turmas)
+        
+        if turma_rank:
+            res_a = supabase.table("alunos").select("nome").eq("turma", turma_rank).execute().data
+            df_alunos = pd.DataFrame(res_a)
             
-            # Usando st.pills
-            turma_rank = st.pills("Selecione a Turma:", options=lista_turmas)
+            res_f = supabase.table("frequencia").select("aluno_nome").eq("turma", turma_rank).eq("status", "F").execute().data
             
-            if turma_rank:
-                # 1. Puxa todos os alunos da turma para garantir que todos apareçam (mesmo os com 0 faltas)
-                res_a = supabase.table("alunos").select("nome").eq("turma", turma_rank).execute().data
-                df_alunos = pd.DataFrame(res_a)
+            if not df_alunos.empty:
+                df_alunos = df_alunos.rename(columns={'nome': 'aluno_nome'})
                 
-                # 2. Puxa só as FALTAS ("F") dessa turma na tabela de frequência
-                res_f = supabase.table("frequencia").select("aluno_nome").eq("turma", turma_rank).eq("status", "F").execute().data
-                
-                if not df_alunos.empty:
-                    df_alunos = df_alunos.rename(columns={'nome': 'aluno_nome'})
-                    
-                    if res_f:
-                        # Conta as faltas
-                        df_faltas = pd.DataFrame(res_f)
-                        contagem_faltas = df_faltas.groupby('aluno_nome').size().reset_index(name='Faltas')
-                        
-                        # Junta com a lista de todos os alunos (quem não tiver falta fica com 0)
-                        df_ranking = pd.merge(df_alunos, contagem_faltas, on='aluno_nome', how='left').fillna(0)
-                    else:
-                        # Se ninguém faltou ainda
-                        df_ranking = df_alunos.copy()
-                        df_ranking['Faltas'] = 0
+                if res_f:
+                    df_faltas = pd.DataFrame(res_f)
+                    contagem_faltas = df_faltas.groupby('aluno_nome').size().reset_index(name='Faltas')
+                    df_ranking = pd.merge(df_alunos, contagem_faltas, on='aluno_nome', how='left').fillna(0)
+                else:
+                    df_ranking = df_alunos.copy()
+                    df_ranking['Faltas'] = 0
 
-                    # 3. Organiza o Ranking (Do maior número de faltas para o menor)
-                    df_ranking = df_ranking.sort_values(by=['Faltas', 'aluno_nome'], ascending=[False, True])
-                    
-                    # 4. Adiciona o Ícone
-                    df_ranking['Ícone'] = "👤"
-                    df_ranking = df_ranking[['Ícone', 'aluno_nome', 'Faltas']] # Reordena as colunas
-                    
-                    # 5. Exibe a mini-tabela formatada
+                df_ranking = df_ranking.sort_values(by=['Faltas', 'aluno_nome'], ascending=[False, True])
+                df_ranking['Ícone'] = "👤"
+                df_ranking = df_ranking[['Ícone', 'aluno_nome', 'Faltas']] 
+                
+                # Centraliza a tabela na tela usando colunas vazias nas laterais para ficar elegante
+                col_vazia1, col_tabela, col_vazia2 = st.columns([1, 2, 1])
+                with col_tabela:
                     st.dataframe(
                         df_ranking,
                         use_container_width=True,
                         hide_index=True,
-                        height=400, # Altura fixa para caber bonitinho na lateral
+                        height=400,
                         column_config={
                             "Ícone": st.column_config.TextColumn("", width="small"),
                             "aluno_nome": st.column_config.TextColumn("Estudante"),
                             "Faltas": st.column_config.NumberColumn("Faltas Acumuladas", format="%d")
                         }
                     )
-        except Exception as e:
-            st.error(f"Erro ao gerar ranking: {e}")
+    except Exception as e:
+        st.error(f"Erro ao gerar ranking: {e}")
