@@ -86,16 +86,13 @@ def listar_arquivos_bucket():
 token_url = None
 
 try:
-    # Tenta usar o formato novo do Streamlit
     if "t" in st.query_params:
         raw_token = st.query_params["t"]
-        # Se vier como lista (comportamento antigo de algumas versões), pega o primeiro item
         if isinstance(raw_token, list):
             token_url = str(raw_token[0]).lower().strip()
         else:
             token_url = str(raw_token).lower().strip()
 except Exception as e:
-    # Fallback caso a versão do Streamlit seja muito antiga
     try:
         params = st.experimental_get_query_params()
         if "t" in params:
@@ -119,11 +116,25 @@ if token_url and token_url in MAPA_TURMAS:
         st.error("Erro no banco."); st.stop()
 
     if alunos:
+        # Pega a data de hoje baseada no fuso de Recife
+        fuso = pytz.timezone('America/Recife')
+        data_hoje = datetime.now(fuso).strftime('%Y-%m-%d')
+        st.caption(f"📅 Data: {datetime.now(fuso).strftime('%d/%m/%Y')}")
+
+        # ====================================================================
+        # NOVO: BUSCA SE JÁ EXISTE CHAMADA FEITA HOJE PARA ESTA TURMA
+        # ====================================================================
+        presencas_salvas = {}
+        try:
+            res_chamada_hoje = supabase.table("frequencia").select("aluno_nome, status").eq("turma", turma_real).eq("data_chamada", data_hoje).execute()
+            if res_chamada_hoje.data:
+                # Cria um dicionário rápido: {'João': 'P', 'Maria': 'F'}
+                presencas_salvas = {registro['aluno_nome']: registro['status'] for registro in res_chamada_hoje.data}
+        except Exception as e:
+            pass # Se der erro, segue o jogo como se fosse a primeira chamada
+        # ====================================================================
+
         with st.form("form_chamada"):
-            fuso = pytz.timezone('America/Recife')
-            data_hoje = datetime.now(fuso).strftime('%Y-%m-%d')
-            st.caption(f"📅 Data: {datetime.now(fuso).strftime('%d/%m/%Y')}")
-            
             presencas = {}
             cache_buster = int(time.time())
             
@@ -145,7 +156,15 @@ if token_url and token_url in MAPA_TURMAS:
                 
                 with col_check:
                     st.write("") # Espaçador
-                    presencas[aluno['nome']] = st.checkbox("Presente", value=True, key=f"c_{i}")
+                    
+                    # --- LÓGICA DE MANTER O BOTÃO COMO ESTAVA ---
+                    status_atual = presencas_salvas.get(aluno['nome'])
+                    if status_atual == "F":
+                        marcado = False  # Se tomou falta antes, aparece desmarcado
+                    else:
+                        marcado = True   # Se tomou presença (ou se é a primeira chamada do dia), aparece marcado
+                    
+                    presencas[aluno['nome']] = st.checkbox("Presente", value=marcado, key=f"c_{i}")
 
             st.markdown("---")
             if st.form_submit_button("🚀 FINALIZAR CHAMADA", use_container_width=True):
@@ -153,13 +172,12 @@ if token_url and token_url in MAPA_TURMAS:
                 try:
                     supabase.table("frequencia").delete().match({"turma": turma_real, "data_chamada": data_hoje}).execute()
                     supabase.table("frequencia").insert(dados).execute()
-                    st.success("Enviado!")
+                    st.success("Chamada salva/atualizada com sucesso!")
                     st.balloons()
                 except Exception as e: st.error(f"Erro: {e}")
     else:
         st.info(f"Nenhum aluno encontrado na turma {turma_real} no banco de dados.")
 else:
-    # Mensagem de erro melhorada para te ajudar a debugar se der ruim
     st.error("🚫 Use o QR Code da sala.")
     if token_url:
         st.warning(f"⚠️ Link não reconhecido: '{token_url}'")
