@@ -13,7 +13,8 @@ def exibir_importacao(supabase):
         st.subheader("Importação e Atualização em Massa (Excel)")
         st.info("O sistema fará uma varredura cruzando o Excel com o banco atual e emitirá um relatório das mudanças.")
         
-        arquivo = st.file_uploader("Suba a planilha oficial da secretaria (.xlsx)", type=["xlsx"])
+        # AJUSTE 1: Aceitar ambos os formatos no uploader
+        arquivo = st.file_uploader("Suba a planilha oficial da secretaria (.xlsx, .xls)", type=["xlsx", "xls"])
         
         if arquivo:
             if st.button("🚀 Iniciar Sincronização e Gerar Relatório", type="primary"):
@@ -23,15 +24,17 @@ def exibir_importacao(supabase):
                         res_banco = supabase.table("alunos").select("nome, turma").execute()
                         banco_dict = {str(item['nome']).upper().strip(): item.get('turma', 'Sem Turma') for item in res_banco.data}
                         
-                        xl = pd.ExcelFile(arquivo)
+                        # AJUSTE 2: Identificar o motor de leitura correto para cada extensão
+                        # Se for .xls usa 'xlrd', se for .xlsx usa 'openpyxl'
+                        engine_excel = 'xlrd' if arquivo.name.endswith('.xls') else 'openpyxl'
+                        xl = pd.ExcelFile(arquivo, engine=engine_excel)
+                        
                         abas_turmas = [a for a in xl.sheet_names if "EM45" in a]
                         
                         if not abas_turmas:
                             st.error("Nenhuma aba com o padrão 'EM45' foi encontrada no arquivo.")
                         else:
                             dados_upsert = []
-                            
-                            # Variáveis para o Relatório
                             relatorio_inseridos = []
                             relatorio_transferidos = []
                             nomes_processados_neste_excel = set()
@@ -48,7 +51,8 @@ def exibir_importacao(supabase):
                                 else:
                                     turma_nova = nome_aba
                                     
-                                df = pd.read_excel(xl, sheet_name=nome_aba)
+                                # AJUSTE 3: Aplicar o motor de leitura também no read_excel
+                                df = pd.read_excel(xl, sheet_name=nome_aba, engine=engine_excel)
                                 
                                 for _, linha in df.iterrows():
                                     if pd.isna(linha.get('Nome')):
@@ -56,18 +60,15 @@ def exibir_importacao(supabase):
                                         
                                     nome_limpo = str(linha['Nome']).upper().strip()
                                     
-                                    # Evita que o mesmo aluno seja processado duas vezes se estiver duplicado no Excel
                                     if nome_limpo in nomes_processados_neste_excel:
                                         duplicados_excel += 1
                                         continue
                                     nomes_processados_neste_excel.add(nome_limpo)
                                     
-                                    # LÓGICA DE AUDITORIA (O Relatório)
+                                    # LÓGICA DE AUDITORIA
                                     if nome_limpo not in banco_dict:
-                                        # É um aluno inédito
                                         relatorio_inseridos.append({"Nome": nome_limpo, "Turma Atribuída": turma_nova})
                                     else:
-                                        # O aluno já existe. A turma mudou?
                                         turma_antiga = banco_dict[nome_limpo]
                                         if turma_antiga != turma_nova:
                                             relatorio_transferidos.append({
@@ -94,7 +95,7 @@ def exibir_importacao(supabase):
                                 
                                 barra.progress((i + 1) / len(abas_turmas))
                             
-                            # 3. Executa a gravação no banco de fato
+                            # 3. Executa a gravação no banco
                             if dados_upsert:
                                 supabase.table("alunos").upsert(dados_upsert, on_conflict="nome").execute()
                             
@@ -102,29 +103,26 @@ def exibir_importacao(supabase):
                             st.divider()
                             st.subheader("📋 Relatório de Sincronização")
                             
-                            # Métricas visuais
                             c1, c2, c3 = st.columns(3)
                             c1.metric("Novos Alunos Cadastrados", len(relatorio_inseridos))
                             c2.metric("Mudanças de Sala", len(relatorio_transferidos))
                             c3.metric("Total Processado", len(dados_upsert))
                             
                             if duplicados_excel > 0:
-                                st.warning(f"⚠️ **{duplicados_excel} ocorrências duplicadas** foram encontradas dentro da sua planilha Excel e foram ignoradas (o sistema manteve apenas a primeira ocorrência).")
+                                st.warning(f"⚠️ **{duplicados_excel} ocorrências duplicadas** ignoradas.")
                             
-                            st.success("O Banco de Dados foi atualizado com sucesso e as datas de nascimento/sexo foram preenchidas para todos os alunos válidos da planilha.")
+                            st.success("O Banco de Dados foi atualizado com sucesso!")
                             
-                            # Tabelas expansíveis para detalhamento
                             if relatorio_inseridos:
-                                with st.expander(f"➕ Ver lista de {len(relatorio_inseridos)} novos alunos inseridos", expanded=False):
+                                with st.expander(f"➕ Ver {len(relatorio_inseridos)} novos alunos", expanded=False):
                                     st.dataframe(pd.DataFrame(relatorio_inseridos), use_container_width=True, hide_index=True)
                             
                             if relatorio_transferidos:
-                                with st.expander(f"🔄 Ver lista de {len(relatorio_transferidos)} alunos que mudaram de sala", expanded=False):
+                                with st.expander(f"🔄 Ver {len(relatorio_transferidos)} mudanças de sala", expanded=False):
                                     st.dataframe(pd.DataFrame(relatorio_transferidos), use_container_width=True, hide_index=True)
 
                     except Exception as e:
-                        st.error(f"❌ Ocorreu um erro crítico durante o processamento: {e}")
-
+                        st.error(f"❌ Erro crítico: {e}")
     # ==========================================
     # ABA 2: COLAR NOMES (MANTIDA IGUAL PARA INSERÇÕES RÁPIDAS)
     # ==========================================
