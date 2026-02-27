@@ -19,7 +19,7 @@ def exibir_cenario(supabase):
     col_esq, col_dir = st.columns([7, 3], gap="large")
 
     # ==========================================
-    # 2. BUSCA DE DADOS GLOBAL
+    # 2. BUSCA DE DADOS GLOBAL (Corrigido para contar só "P")
     # ==========================================
     with col_esq:
         data_hoje = st.date_input("Data de Análise:", value=datetime.date.today(), format="DD/MM/YYYY")
@@ -29,10 +29,12 @@ def exibir_cenario(supabase):
     n_presentes, total_alunos, n_faltas, perc = 0, 0, 0, 0
 
     try:
+        # Pega o total de alunos na escola
         res_total = supabase.table("alunos").select("id", count="exact").execute()
         total_alunos = res_total.count if res_total.count else 0
         
-        res_freq = supabase.table("frequencia").select("*").eq("data_chamada", hoje_iso).execute()
+        # CORREÇÃO: Puxa APENAS quem tem status "P" na data selecionada
+        res_freq = supabase.table("frequencia").select("*").eq("data_chamada", hoje_iso).eq("status", "P").execute()
         
         if res_freq.data:
             df_presentes_hoje = pd.DataFrame(res_freq.data)
@@ -42,6 +44,7 @@ def exibir_cenario(supabase):
             else:
                 n_presentes = len(df_presentes_hoje)
                 
+        # Calcula as faltas subtraindo os presentes do total de matrículas
         n_faltas = total_alunos - n_presentes
         perc = (n_presentes / total_alunos * 100) if total_alunos > 0 else 0
     except Exception as e:
@@ -113,10 +116,13 @@ def exibir_cenario(supabase):
 
         try:
             # Puxa a lista de turmas para gerar os botões (Pills)
-            res_t = supabase.table("alunos").select("turma").execute().data
-            lista_turmas = sorted(list(set([t['turma'] for t in res_t if t.get('turma')])))
+            # Para evitar erro se a coluna turma estiver vazia em algum lugar
+            res_t_raw = supabase.table("alunos").select("turma").execute().data
+            lista_turmas = []
+            if res_t_raw:
+                lista_turmas = sorted(list(set([t['turma'] for t in res_t_raw if t.get('turma')])))
             
-            # Usando st.pills como você pediu
+            # Usando st.pills
             turma_rank = st.pills("Selecione a Turma:", options=lista_turmas)
             
             if turma_rank:
