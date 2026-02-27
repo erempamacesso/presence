@@ -23,15 +23,23 @@ def limpar_texto(texto):
     return "".join(filter(str.isalnum, texto_limpo))
 
 def calcular_idade_completa(data_nascimento):
-    """Calcula a idade real baseada no dia de hoje"""
-    if not data_nascimento or pd.isna(data_nascimento): return ""
+    """Calcula a idade real baseada no dia de hoje (Blindado contra erros)"""
     try:
-        dt_nasc = pd.to_datetime(data_nascimento, dayfirst=True, errors='coerce')
-        if pd.isnat(dt_nasc): return ""
+        # Se vier vazio ou nulo, já corta aqui
+        if not data_nascimento or str(data_nascimento).strip() == "": 
+            return ""
         
+        # Converte o formato do Supabase (YYYY-MM-DD) para Data real
+        dt_nasc = pd.to_datetime(str(data_nascimento).split('T')[0], errors='coerce')
+        
+        if pd.isnull(dt_nasc): 
+            return ""
+            
         hoje = datetime.now()
+        # Calcula a diferença e subtrai 1 se o aniversário ainda não chegou no ano atual
         idade = hoje.year - dt_nasc.year - ((hoje.month, hoje.day) < (dt_nasc.month, dt_nasc.day))
-        return f"{idade} anos"
+        
+        return f"{int(idade)} anos"
     except:
         return ""
 
@@ -65,7 +73,7 @@ def gerar_pdf_mapa_sala_com_fotos(alunos, turma, mapa_fotos, supabase_url):
         
         idade_str = calcular_idade_completa(raw_date)
         try:
-            dt_fmt = pd.to_datetime(raw_date, dayfirst=True).strftime('%d/%m/%Y') if raw_date else ""
+            dt_fmt = pd.to_datetime(str(raw_date).split('T')[0], errors='coerce').strftime('%d/%m/%Y') if raw_date else ""
         except:
             dt_fmt = ""
         
@@ -149,14 +157,17 @@ def exibir_fotograma(supabase):
                                 else:
                                     st.markdown("<div style='height:80px; background:#f0f0f0; border-radius:5px; display:flex; align-items:center; justify-content:center; font-size:24px;'>👤</div>", unsafe_allow_html=True)
                                 
-                                # 2. Renderiza o Nome Completo (Formatado para caber bonito)
+                                # 2. Renderiza o Nome Completo
                                 st.markdown(f"<p style='text-align:center; font-size:10px; font-weight:bold; margin-top:5px; margin-bottom:0px; line-height:1.2;'>{nome}</p>", unsafe_allow_html=True)
                                 
-                                # 3. Renderiza Data e Idade na mesma linha
+                                # 3. Renderiza Data e Idade (Agora com a garantia de que vai aparecer)
                                 raw_date = aluno.get(COLUNA_DATA) or aluno.get('Data de nascimento')
                                 idade = calcular_idade_completa(raw_date)
+                                
                                 try:
-                                    dt_fmt = pd.to_datetime(raw_date, dayfirst=True).strftime('%d/%m/%Y') if raw_date else "--/--/----"
+                                    # Pega apenas a parte da data e ignora horários (T00:00:00) para não dar erro
+                                    dt_obj = pd.to_datetime(str(raw_date).split('T')[0], errors='coerce')
+                                    dt_fmt = dt_obj.strftime('%d/%m/%Y') if not pd.isnull(dt_obj) else "--/--/----"
                                 except:
                                     dt_fmt = "--/--/----"
                                 
