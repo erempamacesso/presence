@@ -50,7 +50,7 @@ with st.sidebar:
     # Botões de Navegação
     st.button("📊 Cenário do Dia", on_click=mudar_pagina, args=('cenario',), use_container_width=True)
     st.button("📸 Fotograma", on_click=mudar_pagina, args=('fotograma',), use_container_width=True)
-    st.button("📝 Cadastro Manual", on_click=mudar_pagina, args=('cadastro',), use_container_width=True)
+    st.button("📝 Gestão de Alunos", on_click=mudar_pagina, args=('cadastro',), use_container_width=True)
     st.button("📅 Reservas", on_click=mudar_pagina, args=('reservas',), use_container_width=True)
     
     st.divider()
@@ -81,3 +81,4 @@ elif st.session_state.pagina == 'reservas':
 elif st.session_state.pagina == 'importacao':
     # Quando clicar no botão primário, ele carrega toda a mágica que fizemos no atualiza_alunos.py
     exibir_importacao(supabase)
+
