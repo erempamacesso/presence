@@ -1,12 +1,30 @@
 import streamlit as st
+import pandas as pd
 import unicodedata
 from urllib.parse import quote
 import time
 from fpdf import FPDF
+from datetime import datetime
 
 # ==========================================
 # FUNÇÕES AUXILIARES
 # ==========================================
+def calcular_idade(data_nascimento):
+    """Calcula idade a partir de uma string ou objeto de data"""
+    if not data_nascimento: return ""
+    try:
+        # Tenta converter se for string (ajuste o formato se necessário, ex: %Y-%m-%d)
+        if isinstance(data_nascimento, str):
+            dt_nasc = pd.to_datetime(data_nascimento)
+        else:
+            dt_nasc = data_nascimento
+            
+        hoje = datetime.now()
+        idade = hoje.year - dt_nasc.year - ((hoje.month, hoje.day) < (dt_nasc.month, dt_nasc.day))
+        return f"{idade} anos"
+    except:
+        return ""
+
 def limpar_texto(texto):
     if not texto: return ""
     if "." in str(texto): texto = str(texto).rsplit('.', 1)[0]
@@ -14,7 +32,6 @@ def limpar_texto(texto):
     texto_limpo = "".join([c for c in nfkd if not unicodedata.combining(c)]).lower()
     return "".join(filter(str.isalnum, texto_limpo))
 
-# 1ª OTIMIZAÇÃO: Guarda a lista de fotos na memória por 10 minutos (600s)
 @st.cache_data(ttl=600)
 def listar_arquivos_bucket(_supabase):
     try:
@@ -23,7 +40,7 @@ def listar_arquivos_bucket(_supabase):
     except: return {}
 
 # ==========================================
-# GERADOR DE PDF (MANTIDO IGUAL)
+# GERADOR DE PDF ATUALIZADO
 # ==========================================
 def gerar_pdf_mapa_sala_com_fotos(alunos, turma, mapa_fotos, supabase_url):
     pdf = FPDF(orientation='L', unit='mm', format='A4')
@@ -33,10 +50,8 @@ def gerar_pdf_mapa_sala_com_fotos(alunos, turma, mapa_fotos, supabase_url):
     pdf.cell(0, 10, txt=f"Mapa de Sala - Turma {turma}", ln=True, align='C')
     pdf.ln(5)
 
-    pdf.set_font("Arial", size=9)
-    
     largura_col = 45 
-    altura_linha = 40
+    altura_linha = 45 # Aumentei levemente (5mm) para caber as 3 linhas de texto sem apertar
     
     start_x = pdf.get_x()
     start_y = pdf.get_y()
@@ -45,31 +60,46 @@ def gerar_pdf_mapa_sala_com_fotos(alunos, turma, mapa_fotos, supabase_url):
     y = start_y
     
     for i, aluno in enumerate(alunos):
+        # Tratamento de Nome
         nome_completo = str(aluno['nome']).encode('latin-1', 'ignore').decode('latin-1')
         partes_nome = nome_completo.split()
         nome_curto = " ".join(partes_nome[:2]) if len(partes_nome) > 1 else partes_nome[0]
         
+        # Dados Extras
+        data_nasc = aluno.get('data_nascimento', '')
+        # Formata data para DD/MM/AAAA se existir
+        data_formatada = pd.to_datetime(data_nasc).strftime('%d/%m/%Y') if data_nasc else ""
+        idade_str = calcular_idade(data_nasc)
+        info_extra = f"{data_formatada} - {idade_str}"
+
         pdf.set_xy(x, y)
         pdf.cell(largura_col, altura_linha, txt="", border=1)
         
         chave = limpar_texto(aluno['nome'])
         foto_arq = mapa_fotos.get(chave)
         
+        # Imagem
         if foto_arq:
             url_img = f"{supabase_url}/storage/v1/object/public/fotos-alunos/{quote(foto_arq)}"
             img_size = 22
             img_x = x + (largura_col - img_size) / 2
-            img_y = y + 4
-            
+            img_y = y + 3
             try:
                 pdf.image(url_img, x=img_x, y=img_y, w=img_size, h=img_size)
-            except Exception:
-                pdf.set_xy(x, img_y + 5)
-                pdf.cell(largura_col, 5, txt="(Sem Foto)", border=0, align='C')
+            except:
+                pass
         
-        pdf.set_xy(x, y + 28)
-        pdf.cell(largura_col, 10, txt=nome_curto, border=0, align='C')
+        # Texto: Nome
+        pdf.set_font("Arial", style='B', size=8)
+        pdf.set_xy(x, y + 27)
+        pdf.cell(largura_col, 5, txt=nome_curto, border=0, align='C')
         
+        # Texto: Data e Idade (Fonte menor)
+        pdf.set_font("Arial", size=7)
+        pdf.set_xy(x, y + 32)
+        pdf.cell(largura_col, 5, txt=info_extra, border=0, align='C')
+        
+        # Lógica de Grade
         if (i + 1) % 6 == 0:
             x = start_x
             y += altura_linha
@@ -80,19 +110,13 @@ def gerar_pdf_mapa_sala_com_fotos(alunos, turma, mapa_fotos, supabase_url):
         else:
             x += largura_col
             
-    try:
-        out = pdf.output(dest='S')
-        if isinstance(out, str): return out.encode('latin-1')
-        return bytes(out)
-    except Exception:
-        return bytes(pdf.output())
+    return bytes(pdf.output(dest='S'))
 
 # ==========================================
 # TELA PRINCIPAL (FOTOGRAMA)
 # ==========================================
 def exibir_fotograma(supabase):
     st.title("📸 Fotograma (Mapa de Sala)")
-    st.divider()
     
     try:
         res_turmas = supabase.table("alunos").select("turma").execute()
@@ -100,41 +124,23 @@ def exibir_fotograma(supabase):
         
         if lista_turmas:
             col_pills, col_btn = st.columns([8, 2], vertical_alignment="bottom")
-            
             with col_pills:
                 turma_sel = st.pills("Selecione a Turma:", options=lista_turmas)
-                
-            st.divider()
-            
-            # Reseta o botão de PDF se trocar de turma
-            if "turma_pdf_atual" not in st.session_state or st.session_state.turma_pdf_atual != turma_sel:
-                st.session_state.pdf_gerado = False
-                st.session_state.turma_pdf_atual = turma_sel
             
             if turma_sel:
                 alunos = supabase.table("alunos").select("*").eq("turma", turma_sel).order("nome").execute().data
                 mapa_fotos = listar_arquivos_bucket(supabase)
                 supabase_url = st.secrets['SUPABASE_URL']
                 
-                # --- 2ª OTIMIZAÇÃO: BOTÃO DE DOWNLOAD SOB DEMANDA ---
+                # Botão PDF
                 with col_btn:
-                    if not st.session_state.pdf_gerado:
-                        if st.button("⚙️ Preparar PDF", use_container_width=True):
-                            with st.spinner("Montando..."):
-                                st.session_state.pdf_bytes = gerar_pdf_mapa_sala_com_fotos(alunos, turma_sel, mapa_fotos, supabase_url)
-                                st.session_state.pdf_gerado = True
-                                st.rerun() # Atualiza a tela para mostrar o botão de baixar
-                    else:
-                        st.download_button(
-                            label="📥 Baixar PDF",
-                            data=st.session_state.pdf_bytes,
-                            file_name=f"Mapa_Sala_Fotos_{turma_sel.replace(' ', '_')}.pdf",
-                            mime="application/pdf",
-                            use_container_width=True,
-                            type="primary"
-                        )
-                
-                # --- GRADE DE FOTOS NA TELA DO APP ---
+                    if st.button("⚙️ Gerar PDF", use_container_width=True):
+                        pdf_bytes = gerar_pdf_mapa_sala_com_fotos(alunos, turma_sel, mapa_fotos, supabase_url)
+                        st.download_button("📥 Baixar", data=pdf_bytes, file_name=f"Mapa_{turma_sel}.pdf", mime="application/pdf", use_container_width=True)
+
+                st.divider()
+
+                # Grade de Fotos
                 num_cols = 6
                 for i in range(0, len(alunos), num_cols):
                     linha_alunos = alunos[i : i + num_cols]
@@ -148,13 +154,19 @@ def exibir_fotograma(supabase):
                                 
                                 if foto_arq:
                                     url_base = f"{supabase_url}/storage/v1/object/public/fotos-alunos/{quote(foto_arq)}"
-                                    # 3ª OTIMIZAÇÃO: Removido o cache-buster (?t=...) para a imagem carregar instantaneamente
                                     st.image(url_base, use_container_width=True)
                                 else:
                                     st.markdown("<div style='height:80px; background:#f9f9f9; display:flex; align-items:center; justify-content:center; border-radius:8px; border: 1px dashed #ccc; font-size:24px;'>👤</div>", unsafe_allow_html=True)
                                 
-                                st.markdown(f"<p style='text-align:center; font-size:10px; font-weight:bold; margin-top:4px; line-height:1.1;'>{aluno['nome']}</p>", unsafe_allow_html=True)
+                                # Nome do Aluno
+                                st.markdown(f"<p style='text-align:center; font-size:10px; font-weight:bold; margin-bottom:0px;'>{aluno['nome']}</p>", unsafe_allow_html=True)
+                                
+                                # Data e Idade (Legenda sutil)
+                                dt_nasc = aluno.get('data_nascimento', '')
+                                dt_formatada = pd.to_datetime(dt_nasc).strftime('%d/%m/%Y') if dt_nasc else "--/--/----"
+                                idade = calcular_idade(dt_nasc)
+                                st.markdown(f"<p style='text-align:center; font-size:9px; color:gray; margin-top:0px;'>{dt_formatada} • {idade}</p>", unsafe_allow_html=True)
         else:
             st.warning("Nenhuma turma encontrada.")
     except Exception as e:
-        st.error(f"Erro na conexão do banco: {e}")
+        st.error(f"Erro: {e}")
