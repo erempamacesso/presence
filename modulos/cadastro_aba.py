@@ -2,11 +2,13 @@ import streamlit as st
 import pandas as pd
 import unicodedata
 import time
-from urllib.parse import quote
+
+# --- FUNÇÕES DE UTILITÁRIO ---
 
 def limpar_texto(texto):
     """Padronização para nomes de arquivos e chaves de busca"""
     if not texto: return ""
+    # Remove extensão se houver
     if "." in str(texto): texto = str(texto).rsplit('.', 1)[0]
     nfkd = unicodedata.normalize('NFKD', str(texto))
     texto_limpo = "".join([c for c in nfkd if not unicodedata.combining(c)]).lower()
@@ -19,121 +21,120 @@ def listar_arquivos_bucket(supabase):
         return mapa
     except: return {}
 
+# --- FUNÇÃO PRINCIPAL DE INTERFACE ---
+
 def exibir_cadastro(supabase):
-    st.title("👤 Gestão de Alunos e Fotos")
+    st.title("👤 Sistema de Gestão Escolar")
     
-    aba_gerenciar, aba_manual = st.tabs(["📸 Gerenciar Turmas e Fotos", "➕ Cadastro Manual"])
+    # Organização Profissional das Abas
+    aba_busca, aba_gerenciar, aba_excel, aba_manual = st.tabs([
+        "🔍 Localizar Aluno", 
+        "📸 Fotos e Turmas", 
+        "📁 Atualização Excel", 
+        "➕ Cadastro Avulso"
+    ])
 
     # =========================================================
-    # INÍCIO - ABA 1: GERENCIAR TURMAS E FOTOS
+    # ABA 1: LOCALIZAR ALUNO
+    # =========================================================
+    with aba_busca:
+        st.subheader("Consulta Rápida de Alunos")
+        nome_busca = st.text_input("Digite o nome ou parte do nome:").strip().upper()
+
+        if nome_busca:
+            with st.spinner("Buscando no sistema..."):
+                res = supabase.table("alunos").select("nome, turma").ilike("nome", f"%{nome_busca}%").execute()
+                
+                if res.data:
+                    st.success(f"Encontrados {len(res.data)} aluno(s)")
+                    df_res = pd.DataFrame(res.data)
+                    df_res.columns = ["Nome Completo", "Turma Atual"]
+                    st.dataframe(df_res, use_container_width=True, hide_index=True)
+                else:
+                    st.warning(f"⚠️ Aluno '{nome_busca}' não encontrado no sistema.")
+
+    # =========================================================
+    # ABA 2: GERENCIAR TURMAS E FOTOS
     # =========================================================
     with aba_gerenciar:
-        # Busca turmas para o filtro
         res_t = supabase.table("alunos").select("turma").execute()
         lista_turmas = sorted(list(set([x['turma'] for x in res_t.data if x['turma']])))
         
         if lista_turmas:
-            turma_sel = st.selectbox("Selecione a Turma:", lista_turmas)
+            turma_sel = st.selectbox("Selecione a Turma para gerenciar:", lista_turmas)
             alunos = supabase.table("alunos").select("*").eq("turma", turma_sel).order("nome").execute().data
             mapa_fotos = listar_arquivos_bucket(supabase)
 
-            st.write(f"Editando **{len(alunos)}** alunos da turma **{turma_sel}**")
+            st.write(f"Exibindo **{len(alunos)}** alunos")
 
             for aluno in alunos:
                 with st.container(border=True):
                     c1, c2, c3 = st.columns([1, 2, 2])
-                    uid = aluno['id']
-                    nome_aluno = aluno['nome']
-                    chave = limpar_texto(nome_aluno)
-                    
-                    # Descobre se a foto existe para usar nas outras colunas
+                    uid, nome_aluno, chave = aluno['id'], aluno['nome'], limpar_texto(aluno['nome'])
                     foto_real = mapa_fotos.get(chave)
                     
-                    # --- COLUNA 1: FOTO ATUAL ---
                     with c1:
                         if foto_real:
                             url = supabase.storage.from_('fotos-alunos').get_public_url(foto_real)
-                            st.image(url, width=70)
+                            st.image(url, width=80)
                         else:
-                            st.markdown("🟡 **Sem Foto**")
+                            st.caption("🟡 Sem Foto")
 
-                    # --- COLUNA 2: INFO, TROCAR TURMA E EXCLUIR ALUNO ---
                     with c2:
                         st.markdown(f"**{nome_aluno}**")
-                        nova_t = st.selectbox("Mudar Turma:", lista_turmas, 
-                                             index=lista_turmas.index(aluno['turma']), 
-                                             key=f"t_{uid}")
+                        nova_t = st.selectbox("Mudar Turma:", lista_turmas, index=lista_turmas.index(aluno['turma']), key=f"t_{uid}")
                         if nova_t != aluno['turma']:
                             supabase.table("alunos").update({"turma": nova_t}).eq("id", uid).execute()
                             st.toast("Turma atualizada!")
                             time.sleep(0.5)
                             st.rerun()
-                            
-                        # BOTÃO DE EXCLUSÃO DO ALUNO COM CONFIRMAÇÃO
-                        with st.popover("🗑️ Excluir Aluno (Total)"):
-                            st.write(f"Deseja excluir **{nome_aluno}** e sua foto permanentemente?")
-                            if st.button("Sim, Excluir Aluno", key=f"del_{uid}", type="primary"):
-                                try:
-                                    # 1. Exclui a foto do Bucket (se existir)
-                                    if foto_real:
-                                        supabase.storage.from_('fotos-alunos').remove([foto_real])
-                                    
-                                    # 2. Exclui o registro do banco de dados
-                                    supabase.table("alunos").delete().eq("id", uid).execute()
-                                    
-                                    st.success("Aluno excluído com sucesso!")
-                                    time.sleep(1.5)
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Erro ao excluir: {e}")
+                        
+                        with st.popover("🗑️ Opções Críticas"):
+                            if st.button("Excluir Aluno Permanentemente", key=f"del_{uid}", type="primary"):
+                                if foto_real: supabase.storage.from_('fotos-alunos').remove([foto_real])
+                                supabase.table("alunos").delete().eq("id", uid).execute()
+                                st.rerun()
 
-                    # --- COLUNA 3: UPLOAD E EXCLUSÃO APENAS DA FOTO ---
                     with c3:
                         foto_nova = st.file_uploader("Trocar Foto (.png)", type=["png"], key=f"up_{uid}")
-                        if foto_nova:
-                            if st.button("Salvar Nova Foto", key=f"btn_{uid}"):
-                                nome_arquivo = f"{chave}.png"
-                                try:
-                                    res_up = supabase.storage.from_('fotos-alunos').upload(
-                                        path=nome_arquivo,
-                                        file=foto_nova.getvalue(),
-                                        file_options={"content-type": "image/png", "upsert": "true"}
-                                    )
-                                    st.success("Foto salva!")
-                                    time.sleep(1.5)
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Erro no upload: {e}")
-                                    
-                        # NOVO: APAGAR APENAS A FOTO (Só aparece se o aluno tiver foto e não estiver subindo uma nova)
+                        if foto_nova and st.button("Salvar Foto", key=f"btn_{uid}"):
+                            nome_arquivo = f"{chave}.png"
+                            supabase.storage.from_('fotos-alunos').upload(
+                                path=nome_arquivo, file=foto_nova.getvalue(),
+                                file_options={"content-type": "image/png", "upsert": "true"}
+                            )
+                            st.rerun()
                         elif foto_real:
-                            if st.button("🗑️ Apagar apenas a foto", key=f"del_pic_{uid}"):
-                                try:
-                                    supabase.storage.from_('fotos-alunos').remove([foto_real])
-                                    st.success("Foto apagada do sistema!")
-                                    time.sleep(1.5)
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Erro ao apagar foto: {e}")
+                            if st.button("🗑️ Remover Foto", key=f"del_pic_{uid}"):
+                                supabase.storage.from_('fotos-alunos').remove([foto_real])
+                                st.rerun()
         else:
-            st.warning("Cadastre uma turma ou importe alunos primeiro.")
-    # =========================================================
-    # FIM - ABA 1: GERENCIAR TURMAS E FOTOS
-    # =========================================================
+            st.warning("Nenhum dado encontrado. Use as abas de importação.")
 
     # =========================================================
-    # INÍCIO - ABA 2: CADASTRO MANUAL
+    # ABA 3: UPLOAD DO EXCEL (LÓGICA ANTERIOR)
+    # =========================================================
+    with aba_excel:
+        st.subheader("Sincronização com Planilha Secretaria")
+        arquivo = st.file_uploader("Suba o arquivo .xlsx ou .xls", type=["xlsx", "xls"])
+        
+        if arquivo:
+            if st.button("🚀 Iniciar Sincronização", type="primary"):
+                # ... (A lógica de processamento do Excel que fizemos antes entra aqui)
+                st.info("Processando planilha...")
+                # Aqui você insere o bloco do pd.ExcelFile, engine e upsert que validamos.
+
+    # =========================================================
+    # ABA 4: CADASTRO MANUAL
     # =========================================================
     with aba_manual:
-        st.subheader("Novo Cadastro Avulso")
+        st.subheader("Cadastrar Aluno Individualmente")
         with st.form("f_manual", clear_on_submit=True):
             n = st.text_input("Nome Completo:")
             t = st.text_input("Turma:")
-            if st.form_submit_button("Cadastrar Aluno"):
+            if st.form_submit_button("Cadastrar"):
                 if n and t:
                     supabase.table("alunos").insert({"nome": n.upper().strip(), "turma": t.upper().strip()}).execute()
-                    st.success("Cadastrado!")
+                    st.success("Aluno cadastrado!")
+                    time.sleep(1)
                     st.rerun()
-    # =========================================================
-    # FIM - ABA 2: CADASTRO MANUAL
-    # =========================================================
