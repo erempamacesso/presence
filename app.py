@@ -4,13 +4,10 @@ from supabase import create_client, Client
 # ==========================================
 # 1. IMPORTAÇÃO DOS MÓDULOS (Onde as telas moram)
 # ==========================================
-# Se algum nome de função for diferente nos seus arquivos, é só ajustar aqui.
 from modulos.cenario_dia import exibir_cenario
 from modulos.fotograma_aba import exibir_fotograma
 from modulos.cadastro_aba import exibir_cadastro
 from modulos.reservas_aba import exibir_reservas
-
-# 👇 AQUI ESTÁ A IMPORTAÇÃO DA NOSSA NOVA TELA (O arquivo vermelho)
 from modulos.atualiza_alunos import exibir_importacao 
 
 
@@ -23,8 +20,6 @@ st.set_page_config(page_title="EREM PAM - Chamada Escolar", layout="wide", page_
 # ==========================================
 # 3. CONEXÃO COM O BANCO DE DADOS (SUPABASE)
 # ==========================================
-# ⚠️ IMPORTANTE: Substitua as linhas abaixo pelas suas chaves reais
-# ou pelo método que você já usa no seu app.py atual (st.secrets, etc.)
 URL_SUPABASE = st.secrets["SUPABASE_URL"]
 CHAVE_SUPABASE = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(URL_SUPABASE, CHAVE_SUPABASE)
@@ -77,7 +72,11 @@ elif st.session_state.pagina == 'cadastro':
     exibir_cadastro(supabase)
     
 elif st.session_state.pagina == 'reservas':
-    exibir_reservas(supabase)
+    # 👉 RESTAURAMOS AQUI OS PARÂMETROS QUE O SEU CÓDIGO ORIGINAL USAVA
+    LISTA_PROF = ["Prof. Silva", "Profa. Maria", "Prof. Ricardo"]
+    AULAS = ["1ª Aula", "2ª Aula", "3ª Aula", "4ª Aula", "5ª Aula", "6ª Aula"]
+    ESPACOS = ["Auditório", "Laboratório", "Biblioteca", "Quadra", "Multimídia"]
+    exibir_reservas(supabase, LISTA_PROF, AULAS, ESPACOS, 3, 2, 5)
     
 elif st.session_state.pagina == 'importacao':
     # Quando clicar no botão primário, ele carrega toda a mágica que fizemos no atualiza_alunos.py
