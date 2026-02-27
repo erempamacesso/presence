@@ -9,35 +9,44 @@ from datetime import datetime
 # ==========================================
 # FUNÇÕES AUXILIARES
 # ==========================================
+
 def calcular_idade(data_nascimento):
-    """Calcula idade a partir de uma string ou objeto de data"""
     if not data_nascimento: return ""
     try:
-        # Tenta converter se for string (ajuste o formato se necessário, ex: %Y-%m-%d)
+        # Tenta converter garantindo o formato dia/mes/ano se for string
         if isinstance(data_nascimento, str):
-            dt_nasc = pd.to_datetime(data_nascimento)
+            dt_nasc = pd.to_datetime(data_nascimento, dayfirst=True, errors='coerce')
         else:
-            dt_nasc = data_nascimento
+            dt_nasc = pd.to_datetime(data_nascimento)
             
+        if pd.isnat(dt_nasc): return "" # Se a conversão falhar, retorna vazio
+
         hoje = datetime.now()
         idade = hoje.year - dt_nasc.year - ((hoje.month, hoje.day) < (dt_nasc.month, dt_nasc.day))
         return f"{idade} anos"
     except:
         return ""
 
-def limpar_texto(texto):
-    if not texto: return ""
-    if "." in str(texto): texto = str(texto).rsplit('.', 1)[0]
-    nfkd = unicodedata.normalize('NFKD', str(texto))
-    texto_limpo = "".join([c for c in nfkd if not unicodedata.combining(c)]).lower()
-    return "".join(filter(str.isalnum, texto_limpo))
+# No loop de exibição (exibir_fotograma), altere a parte da data para esta:
 
-@st.cache_data(ttl=600)
-def listar_arquivos_bucket(_supabase):
-    try:
-        arquivos = _supabase.storage.from_('fotos-alunos').list(path=None, options={'limit': 5000})
-        return {limpar_texto(arq['name']): arq['name'] for arq in arquivos}
-    except: return {}
+                                # --- AREA DA DATA E IDADE ---
+                                # IMPORTANTE: Verifique se no Supabase o nome é 'Data de nascimento' ou 'data_nascimento'
+                                # Vou usar .get() para não dar erro se o nome estiver levemente diferente
+                                raw_date = aluno.get('data_nascimento') or aluno.get('Data de nascimento')
+                                
+                                if raw_date:
+                                    try:
+                                        dt_obj = pd.to_datetime(raw_date, dayfirst=True)
+                                        dt_formatada = dt_obj.strftime('%d/%m/%Y')
+                                        idade = calcular_idade(dt_obj)
+                                        legenda = f"{dt_formatada} • {idade}"
+                                    except:
+                                        legenda = "--/--/----"
+                                else:
+                                    legenda = "Sem data"
+
+                                st.markdown(f"<p style='text-align:center; font-size:9px; color:gray; margin-top:0px;'>{legenda}</p>", unsafe_allow_html=True)
+
 
 # ==========================================
 # GERADOR DE PDF ATUALIZADO
