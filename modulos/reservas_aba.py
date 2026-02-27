@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
 import datetime
-import re  
+import re
+import time
 from streamlit_calendar import calendar
 
 # --- GESTORES COM PRIVILÉGIO TOTAL ---
@@ -116,7 +117,7 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
             st.error(f"Erro ao carregar lista diária: {e}")
     
     # =========================================================
-    # INÍCIO - ABA 3: NOVA RESERVA (CORRIGIDA E ATUALIZADA)
+    # INÍCIO - ABA 3: NOVA RESERVA
     # =========================================================
     with aba_nova:
         st.subheader("Agendar Espaço / Equipamento")
@@ -140,7 +141,6 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
         )
         
         # --- LÓGICA DE ESTOQUE DINÂMICO ---
-        # Calcular os equipamentos disponíveis baseando-se no que já foi reservado no dia
         disp_data = ESTOQUE["Datashow"]
         disp_som = ESTOQUE["Som"]
         disp_mic = ESTOQUE["Microfone"]
@@ -185,7 +185,6 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                 
         st.write("**3. Equipamentos Necessários:**")
         
-        # Montar as marcações vermelhas (Multiselect) apenas com as quantidades que sobraram
         opcoes_eq = []
         for i in range(1, disp_data + 1): opcoes_eq.append(f"{i}x Datashow")
         for i in range(1, disp_som + 1): opcoes_eq.append(f"{i}x Som")
@@ -206,7 +205,6 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
         obs = st.text_input("Observações:", key="aba3_obs")
         
         if st.button("💾 Confirmar Reserva", type="primary"):
-            # Verifica se o usuário marcou "1x Datashow" e "2x Datashow" ao mesmo tempo por engano
             tipos_selecionados = []
             erro_multiplo_eq = False
             for eq in equipamentos_selecionados:
@@ -235,15 +233,12 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                 for aula in aulas_selecionadas:
                     pode_salvar = True
                     
-                    # 1. TRAVA DE DUPLICIDADE (Resolve o bug do duplo-clique / Print 1)
-                    # Verifica se ESTE professor já reservou ESTA aula NESTE mesmo dia.
                     duplicata = supabase.table("reservas").select("id").eq("data_reserva", str(data_res)).eq("periodo", aula).eq("professor", professor).eq("status", "Ativa").execute()
                     if duplicata.data:
                         aulas_com_duplicata_prof.append(aula)
                         pode_salvar = False
                         sucesso_total = False
 
-                    # 2. TRAVA DE ESPAÇO OCUPADO (Se não for sala de aula)
                     if pode_salvar and espaco != "Sala de Aula":
                         conflito_espaco = supabase.table("reservas").select("id").eq("data_reserva", str(data_res)).eq("periodo", aula).eq("espaco", espaco).eq("status", "Ativa").execute()
                         if conflito_espaco.data:
@@ -267,7 +262,6 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                             st.error(f"Erro ao salvar a {aula}: {e}")
                             sucesso_total = False
                 
-                # Avisos amigáveis para o usuário
                 if aulas_com_duplicata_prof:
                     st.error(f"🛡️ **Bloqueio de Duplicata:** {professor}, você já possui uma reserva ativa para a {', '.join(aulas_com_duplicata_prof)} neste dia.")
                 
@@ -277,7 +271,6 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                 if sucesso_total:
                     st.success("✅ Reserva(s) realizada(s) com sucesso!")
                     
-                    # Limpeza eficiente garantida para nova reserva (mantendo o professor)
                     chaves_para_limpar = [
                         "aba3_aulas", "aba3_usar_sala", "aba3_espaco", 
                         "aba3_equipamentos", "aba3_obs"
@@ -287,9 +280,7 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                         if chave in st.session_state:
                             del st.session_state[chave]
                             
-                    # --- A MÁGICA PARA A MENSAGEM NÃO SUMIR RÁPIDO DEMAIS ---
-                    import time
-                    time.sleep(1.5) # O sistema pausa por um segundo e meio para o professor ler a mensagem verde
+                    time.sleep(1.5) 
                     
                     st.rerun()
     
