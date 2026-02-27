@@ -1,136 +1,84 @@
 import streamlit as st
 from supabase import create_client, Client
-import os
-from dotenv import load_dotenv
 
-# 1. CONFIGURAÇÃO DA PÁGINA (Aba do Navegador)
-# Tenta carregar a logo oficial para a aba, senão usa o padrão
-try:
-    if os.path.exists("logo_erempam.png"):
-        st.set_page_config(
-            page_title="SIAGE - Sistema Auxiliar de Gestão Escolar", 
-            page_icon="logo_erempam.png", 
-            layout="wide"
-        )
-    else:
-        st.set_page_config(
-            page_title="SIAGE - Sistema Auxiliar de Gestão Escolar", 
-            page_icon="🏫", 
-            layout="wide"
-        )
-except:
-    st.set_page_config(page_title="SIAGE", page_icon="🏫", layout="wide")
-
-# 2. CONEXÃO SUPABASE
-load_dotenv()
-url: str = st.secrets["SUPABASE_URL"]
-key: str = st.secrets["SUPABASE_KEY"]
-supabase: Client = create_client(url, key)
-
-# 3. IMPORTAÇÃO DOS MÓDULOS
+# ==========================================
+# 1. IMPORTAÇÃO DOS MÓDULOS (Onde as telas moram)
+# ==========================================
+# Se algum nome de função for diferente nos seus arquivos, é só ajustar aqui.
 from modulos.cenario_dia import exibir_cenario
-from modulos.reservas_aba import exibir_reservas
 from modulos.fotograma_aba import exibir_fotograma
 from modulos.cadastro_aba import exibir_cadastro
-from modulos.importacao_aba import exibir_importacao
+from modulos.reservas_aba import exibir_reservas
 
-# 4. ESTILIZAÇÃO CSS (BOTOES E LAYOUT)
-st.markdown("""
-    <style>
-    div.stButton > button {
-        width: 100%;
-        height: 65px;
-        border-radius: 12px;
-        font-weight: bold;
-        font-size: 16px;
-        margin-bottom: 10px;
-    }
-    .block-container {
-        padding-top: 1.5rem;
-    }
-    /* Estilo para o título principal */
-    .titulo-siage {
-        font-size: 42px !important;
-        font-weight: 800;
-        margin-bottom: 0px;
-    }
-    .subtitulo-siage {
-        font-size: 18px !important;
-        color: #555;
-    }
-    </style>
-""", unsafe_allow_html=True)
+# 👇 AQUI ESTÁ A IMPORTAÇÃO DA NOSSA NOVA TELA (O arquivo vermelho)
+from modulos.atualiza_alunos import exibir_importacao 
 
-# 5. LÓGICA DE NAVEGAÇÃO
+
+# ==========================================
+# 2. CONFIGURAÇÃO GERAL DA PÁGINA
+# ==========================================
+st.set_page_config(page_title="EREM PAM - Chamada Escolar", layout="wide", page_icon="🏫")
+
+
+# ==========================================
+# 3. CONEXÃO COM O BANCO DE DADOS (SUPABASE)
+# ==========================================
+# ⚠️ IMPORTANTE: Substitua as linhas abaixo pelas suas chaves reais
+# ou pelo método que você já usa no seu app.py atual (st.secrets, etc.)
+URL_SUPABASE = st.secrets["SUPABASE_URL"]
+CHAVE_SUPABASE = st.secrets["SUPABASE_KEY"]
+supabase: Client = create_client(URL_SUPABASE, CHAVE_SUPABASE)
+
+
+# ==========================================
+# 4. GERENCIADOR DE ESTADO (Para lembrar em qual página estamos)
+# ==========================================
 if 'pagina' not in st.session_state:
-    st.session_state.pagina = 'home'
+    st.session_state.pagina = 'cenario' # Define a página inicial ao abrir o app
 
-def mudar_pagina(nome):
-    st.session_state.pagina = nome
-    st.rerun()
+def mudar_pagina(nome_pagina):
+    st.session_state.pagina = nome_pagina
 
-# --- INTERFACE ---
 
-# Botão de Voltar (Sempre disponível nas páginas internas)
-if st.session_state.pagina != 'home':
-    if st.button("⬅️ VOLTAR AO MENU PRINCIPAL"):
-        mudar_pagina('home')
+# ==========================================
+# 5. MENU LATERAL (SIDEBAR)
+# ==========================================
+with st.sidebar:
+    # Usa a logo que vi nos seus arquivos!
+    try:
+        st.image("logo_erempam.png", use_column_width=True)
+    except:
+        st.title("🏫 EREM PAM")
+        
     st.divider()
-
-# RENDERIZAÇÃO
-if st.session_state.pagina == 'home':
-    # --- CABEÇALHO COM LOGO E NOME COMPLETO ---
-    col_l, col_t = st.columns([1, 3])
     
-    with col_l:
-        if os.path.exists("logo_erempam.png"):
-            st.image("logo_erempam.png", width=150)
-        else:
-            st.title("🏫")
-            
-    with col_t:
-        st.write("") # Ajuste de altura
-        st.markdown('<p class="titulo-siage">SIAGE</p>', unsafe_allow_html=True)
-        st.markdown('<p class="subtitulo-siage">Sistema Auxiliar de Gestão Escolar</p>', unsafe_allow_html=True)
+    # Botões de Navegação
+    st.button("📊 Cenário do Dia", on_click=mudar_pagina, args=('cenario',), use_container_width=True)
+    st.button("📸 Fotograma", on_click=mudar_pagina, args=('fotograma',), use_container_width=True)
+    st.button("📝 Cadastro Manual", on_click=mudar_pagina, args=('cadastro',), use_container_width=True)
+    st.button("📅 Reservas", on_click=mudar_pagina, args=('reservas',), use_container_width=True)
     
-    st.write("---")
+    st.divider()
     
-    # Grid de Botões Principais
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if st.button("📊 CENÁRIO DO DIA"):
-            mudar_pagina('cenario_dia')
-            
-        if st.button("📸 FOTOGRAMA"):
-            mudar_pagina('fotograma')
+    # 👇 O NOVO BOTÃO QUE CHAMA A TELA DE ATUALIZAÇÃO COM RELATÓRIO
+    st.button("📤 Importar e Atualizar Alunos", on_click=mudar_pagina, args=('importacao',), type="primary", use_container_width=True)
 
-        if st.button("📅 RESERVAS"):
-            mudar_pagina('reservas')
 
-    with col2:
-        if st.button("👤 GESTÃO DE ALUNOS"):
-            mudar_pagina('cadastro')
-            
-        if st.button("📤 IMPORTAR DADOS"):
-            mudar_pagina('importacao')
-
-# Chamada dos módulos internos
-elif st.session_state.pagina == 'cenario_dia':
+# ==========================================
+# 6. ROTEAMENTO DE PÁGINAS (O MAESTRO EM AÇÃO)
+# ==========================================
+if st.session_state.pagina == 'cenario':
     exibir_cenario(supabase)
-
-elif st.session_state.pagina == 'reservas':
-    LISTA_PROF = ["Prof. Silva", "Profa. Maria", "Prof. Ricardo"]
-    AULAS = ["1ª Aula", "2ª Aula", "3ª Aula", "4ª Aula", "5ª Aula", "6ª Aula"]
-    ESPACOS = ["Auditório", "Laboratório", "Biblioteca", "Quadra", "Multimídia"]
-    exibir_reservas(supabase, LISTA_PROF, AULAS, ESPACOS, 3, 2, 5)
-
+    
 elif st.session_state.pagina == 'fotograma':
     exibir_fotograma(supabase)
-
+    
 elif st.session_state.pagina == 'cadastro':
     exibir_cadastro(supabase)
-
+    
+elif st.session_state.pagina == 'reservas':
+    exibir_reservas(supabase)
+    
 elif st.session_state.pagina == 'importacao':
+    # Quando clicar no botão primário, ele carrega toda a mágica que fizemos no atualiza_alunos.py
     exibir_importacao(supabase)
-
