@@ -3,7 +3,7 @@ import pandas as pd
 import datetime
 
 def exibir_cenario(supabase):
-    st.title("📊 Cenário do Dia (Nova Versão)") 
+    st.title("📊 Cenário do Dia") 
     
     # --- CALENDÁRIO PE 2026 ---
     TRIMESTRES = {
