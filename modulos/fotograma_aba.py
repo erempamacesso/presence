@@ -49,7 +49,7 @@ def listar_arquivos_bucket(_supabase):
         return {}
 
 # ==========================================
-# GERADORES DE PDF
+# GERADORES DE PDF (CORRIGIDOS)
 # ==========================================
 def gerar_pdf_mapa_sala_com_fotos(alunos, turma, mapa_fotos, supabase_url):
     pdf = FPDF(orientation='L', unit='mm', format='A4')
@@ -89,7 +89,7 @@ def gerar_pdf_mapa_sala_com_fotos(alunos, turma, mapa_fotos, supabase_url):
         
         pdf.set_font("Arial", style='B', size=8)
         pdf.set_xy(x, y + 28)
-        # Tratamento para evitar erro de codificação no PDF
+        # Ajuste para evitar caracteres inválidos no PDF
         nome_str = str(nome_completo).encode('latin-1', 'replace').decode('latin-1')
         partes = nome_str.split()
         nome_curto = " ".join(partes[:2]) if len(partes) > 1 else partes[0]
@@ -106,10 +106,10 @@ def gerar_pdf_mapa_sala_com_fotos(alunos, turma, mapa_fotos, supabase_url):
         else:
             x += largura_col
             
-    return bytes(pdf.output(dest='S'))
+    # --- CORREÇÃO AQUI: .encode('latin-1') ---
+    return pdf.output(dest='S').encode('latin-1')
 
 def gerar_pdf_pendencias_fotos(pendentes):
-    """Gera um relatório de alunos que ainda não possuem foto no sistema"""
     pdf = FPDF(orientation='P', unit='mm', format='A4')
     pdf.add_page()
     
@@ -120,7 +120,6 @@ def gerar_pdf_pendencias_fotos(pendentes):
     pdf.ln(10)
 
     df_p = pd.DataFrame(pendentes)
-    # Ordena por turma e depois por nome
     df_p = df_p.sort_values(by=['turma', COLUNA_NOME])
 
     for turma, grupo in df_p.groupby('turma'):
@@ -134,7 +133,8 @@ def gerar_pdf_pendencias_fotos(pendentes):
             pdf.cell(0, 8, txt=f" [  ] {nome_aluno}", ln=True)
         pdf.ln(5)
 
-    return bytes(pdf.output(dest='S'))
+    # --- CORREÇÃO AQUI: .encode('latin-1') ---
+    return pdf.output(dest='S').encode('latin-1')
 
 # ==========================================
 # TELA DO APP
