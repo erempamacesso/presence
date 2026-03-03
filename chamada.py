@@ -234,7 +234,7 @@ if token_url and token_url in MAPA_TURMAS:
                                 time.sleep(0.5)
                                 st.rerun()
                             except Exception as e:
-                                st.error("Erro ao registrar no banco.")
+                                st.error(f"Erro detalhado do banco: {e}")
         # ====================================================================
         # BLOCO FIM - ABA 2
         # ====================================================================
@@ -245,3 +245,4 @@ else:
     st.error("🚫 Use o QR Code da sala.")
     if token_url:
         st.warning(f"⚠️ Link não reconhecido: '{token_url}'")
+
