@@ -95,42 +95,63 @@ if token_url in MAPA_TURMAS:
         # Cria as abas para separar as funcionalidades
         tab1, tab2 = st.tabs(["📝 Chamada Manhã", "🏃 Registro de Evasão"])
 
-        # ---------------------------------------------------------
-        # BLOCO INÍCIO - ABA 1: CHAMADA MATINAL (ORIGINAL)
+# ---------------------------------------------------------
+        # BLOCO INÍCIO - ABA 1: CHAMADA MATINAL (ATUALIZADA)
         # ---------------------------------------------------------
         with tab1:
             st.write("Registre quem chegou na escola hoje:")
+            
             # Busca presenças já salvas para o dia de hoje
-            pres_salvas = {r['aluno_nome']: r['status'] for r in supabase.table("frequencia").select("aluno_nome, status").eq("turma", turma_real).eq("data_chamada", data_hoje).execute().data}
+            res_frequencia = supabase.table("frequencia").select("aluno_nome, status").eq("turma", turma_real).eq("data_chamada", data_hoje).execute()
+            pres_salvas = {r['aluno_nome']: r['status'] for r in res_frequencia.data} if res_frequencia.data else {}
             
             with st.form("form_chamada"):
                 presencas = {}
+                # Cache buster para evitar que o navegador mostre fotos antigas
+                cb = int(time.time())
+                
                 for i, aluno in enumerate(alunos):
                     c1, c2, c3 = st.columns([1, 3, 2])
+                    
+                    # Lógica de Busca de Foto com Proteção contra Erro
                     chave = limpar_texto_absoluto(aluno['nome'])
+                    nome_arq = mapa_fotos.get(chave)
+                    
                     with c1:
-                        img = f"{SUPABASE_URL}/storage/v1/object/public/fotos-alunos/{quote(mapa_fotos.get(chave, 'default.png'))}"
-                        st.image(img, width=55)
+                        if nome_arq:
+                            # URL Oficial codificada
+                            img_url = f"{SUPABASE_URL}/storage/v1/object/public/fotos-alunos/{quote(nome_arq)}?t={cb}"
+                        else:
+                            # Ícone de fallback caso a foto não exista
+                            img_url = "https://cdn-icons-png.flaticon.com/512/149/149071.png"
+                        
+                        st.image(img_url, width=55)
+                        
                     with c2: 
-                        st.markdown(f"<p style='margin-top:15px'>{aluno['nome']}</p>", unsafe_allow_html=True)
+                        st.markdown(f"<p style='margin-top:15px; font-weight: bold;'>{aluno['nome']}</p>", unsafe_allow_html=True)
+                        
                     with c3:
+                        st.write("") # Espaçador
+                        # Se não houver registro prévio, o padrão é True (Presente)
                         marcado = pres_salvas.get(aluno['nome']) != "F"
                         presencas[aluno['nome']] = st.checkbox("Presente", value=marcado, key=f"p_{i}")
                 
+                st.markdown("---")
                 if st.form_submit_button("🚀 SALVAR CHAMADA MATINAL", use_container_width=True):
                     dados = [{"turma": turma_real, "aluno_nome": n, "status": "P" if p else "F", "data_chamada": data_hoje} for n, p in presencas.items()]
-                    supabase.table("frequencia").delete().match({"turma": turma_real, "data_chamada": data_hoje}).execute()
-                    supabase.table("frequencia").insert(dados).execute()
-                    st.success("Chamada salva com sucesso!")
-                    time.sleep(1)
-                    st.rerun()
-        # ---------------------------------------------------------
-        # BLOCO FIM - ABA 1
-        # ---------------------------------------------------------
+                    try:
+                        # Deleta registros anteriores da turma no dia para evitar duplicatas
+                        supabase.table("frequencia").delete().match({"turma": turma_real, "data_chamada": data_hoje}).execute()
+                        # Insere novos dados
+                        supabase.table("frequencia").insert(dados).execute()
+                        st.success(f"Chamada da turma {turma_real} salva!")
+                        time.sleep(1)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao salvar: {e}")
 
-
-        # ---------------------------------------------------------
-        # BLOCO INÍCIO - ABA 2: REGISTRO DE EVASÃO (NOVA)
+# ---------------------------------------------------------
+        # BLOCO INÍCIO - ABA 2: REGISTRO DE EVASÃO (ATUALIZADA)
         # ---------------------------------------------------------
         with tab2:
             st.subheader("🕵️ Alunos fora de sala")
@@ -147,31 +168,52 @@ if token_url in MAPA_TURMAS:
             aula_sel = st.selectbox("Selecione a Aula em ocorrência:", lista_aulas, index=idx_aula)
             
             # Busca quem já foi marcado como evadido nesta aula hoje
-            fugoes = [r['aluno_nome'] for r in supabase.table("evasoes").select("aluno_nome").eq("data_registro", data_hoje).eq("aula_periodo", aula_sel).eq("turma", turma_real).execute().data]
+            res_evasoes = supabase.table("evasoes").select("aluno_nome").eq("data_registro", data_hoje).eq("aula_periodo", aula_sel).eq("turma", turma_real).execute()
+            fugoes = [r['aluno_nome'] for r in res_evasoes.data] if res_evasoes.data else []
+
+            # Cache buster para sincronizar com a Aba 1
+            cb_aba2 = int(time.time())
 
             for i, aluno in enumerate(alunos):
                 c1, c2, c3 = st.columns([1, 3, 2])
+                
+                # Lógica de Imagem Idêntica à Aba 1
+                chave_evasao = limpar_texto_absoluto(aluno['nome'])
+                nome_arq_evasao = mapa_fotos.get(chave_evasao)
+                
                 with c1: 
-                    st.image(f"{SUPABASE_URL}/storage/v1/object/public/fotos-alunos/{quote(mapa_fotos.get(limpar_texto_absoluto(aluno['nome']), 'default.png'))}", width=50)
+                    if nome_arq_evasao:
+                        url_evasao = f"{SUPABASE_URL}/storage/v1/object/public/fotos-alunos/{quote(nome_arq_evasao)}?t={cb_aba2}"
+                    else:
+                        url_evasao = "https://cdn-icons-png.flaticon.com/512/149/149071.png"
+                    
+                    st.image(url_evasao, width=50)
+
                 with c2: 
-                    st.markdown(f"<p style='margin-top:10px'>{aluno['nome']}</p>", unsafe_allow_html=True)
+                    st.markdown(f"<p style='margin-top:10px; font-weight: bold;'>{aluno['nome']}</p>", unsafe_allow_html=True)
+                
                 with c3:
                     if aluno['nome'] in fugoes:
                         st.error("🚨 Ausente")
                     else:
                         if st.button("🏃 Registrar", key=f"f_{i}", use_container_width=True):
-                            supabase.table("evasoes").insert({
-                                "data_registro": data_hoje, 
-                                "turma": turma_real, 
-                                "aluno_nome": aluno['nome'], 
-                                "aula_periodo": aula_sel
-                            }).execute()
-                            st.toast(f"{aluno['nome']} registrado como fora de sala!")
-                            time.sleep(1)
-                            st.rerun()
+                            try:
+                                supabase.table("evasoes").insert({
+                                    "data_registro": data_hoje, 
+                                    "turma": turma_real, 
+                                    "aluno_nome": aluno['nome'], 
+                                    "aula_periodo": aula_sel
+                                }).execute()
+                                st.toast(f"{aluno['nome']} registrado!")
+                                time.sleep(0.5)
+                                st.rerun()
+                            except Exception as e:
+                                st.error("Erro ao registrar")
         # ---------------------------------------------------------
         # BLOCO FIM - ABA 2
         # ---------------------------------------------------------
-
+       
+       
 else:
     st.error("🚫 Link inválido. Por favor, utilize o QR Code da sua sala.")
+
