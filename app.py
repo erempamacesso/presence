@@ -9,6 +9,8 @@ from modulos.fotograma_aba import exibir_fotograma
 from modulos.cadastro_aba import exibir_cadastro
 from modulos.reservas_aba import exibir_reservas
 from modulos.atualiza_alunos import exibir_importacao 
+# 👇 A PEÇA QUE FALTAVA
+from modulos.busca_ativa import exibir_busca_ativa 
 
 
 # ==========================================
@@ -49,13 +51,16 @@ with st.sidebar:
     
     # Botões de Navegação
     st.button("📊 Cenário do Dia", on_click=mudar_pagina, args=('cenario',), use_container_width=True)
+    
+    # 👇 O NOVO BOTÃO ESTRATÉGICO
+    st.button("🔎 Busca Ativa", on_click=mudar_pagina, args=('busca_ativa',), use_container_width=True)
+    
     st.button("📸 Fotograma", on_click=mudar_pagina, args=('fotograma',), use_container_width=True)
     st.button("📝 Gestão de Alunos", on_click=mudar_pagina, args=('cadastro',), use_container_width=True)
     st.button("📅 Reservas", on_click=mudar_pagina, args=('reservas',), use_container_width=True)
     
     st.divider()
     
-    # 👇 O NOVO BOTÃO QUE CHAMA A TELA DE ATUALIZAÇÃO COM RELATÓRIO
     st.button("📤 Importar e Atualizar Alunos", on_click=mudar_pagina, args=('importacao',), type="primary", use_container_width=True)
 
 
@@ -64,6 +69,10 @@ with st.sidebar:
 # ==========================================
 if st.session_state.pagina == 'cenario':
     exibir_cenario(supabase)
+
+# 👇 A ROTA QUE ACIONA A INTELIGÊNCIA DE DADOS
+elif st.session_state.pagina == 'busca_ativa':
+    exibir_busca_ativa(supabase)
     
 elif st.session_state.pagina == 'fotograma':
     exibir_fotograma(supabase)
@@ -72,13 +81,10 @@ elif st.session_state.pagina == 'cadastro':
     exibir_cadastro(supabase)
     
 elif st.session_state.pagina == 'reservas':
-    # 👉 RESTAURAMOS AQUI OS PARÂMETROS QUE O SEU CÓDIGO ORIGINAL USAVA
     LISTA_PROF = ["Prof. Silva", "Profa. Maria", "Prof. Ricardo"]
     AULAS = ["1ª Aula", "2ª Aula", "3ª Aula", "4ª Aula", "5ª Aula", "6ª Aula"]
     ESPACOS = ["Auditório", "Laboratório", "Biblioteca", "Quadra", "Multimídia"]
     exibir_reservas(supabase, LISTA_PROF, AULAS, ESPACOS, 3, 2, 5)
     
 elif st.session_state.pagina == 'importacao':
-    # Quando clicar no botão primário, ele carrega toda a mágica que fizemos no atualiza_alunos.py
     exibir_importacao(supabase)
-
