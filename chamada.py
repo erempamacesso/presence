@@ -72,17 +72,17 @@ def listar_arquivos_bucket():
 token_url = st.query_params.get("t", "").lower().strip()
 
 if token_url in MAPA_TURMAS:
-   turma_real = MAPA_TURMAS[token_url]
-   fuso = pytz.timezone('America/Recife')
-   agora = datetime.now(fuso)
-   data_hoje = agora.strftime('%Y-%m-%d')
-  hora_atual = agora.time()
+    turma_real = MAPA_TURMAS[token_url]
+    fuso = pytz.timezone('America/Recife')
+    agora = datetime.now(fuso)
+    data_hoje = agora.strftime('%Y-%m-%d')
+    hora_atual = agora.time()
 
     st.title(f"📱 Painel: {turma_real}")
     
     # --- TRAVA DE SEGURANÇA 17:00 ---
-   if hora_atual >= dt_time(17, 0):
-       st.error("🔒 **Sistema Bloqueado.** O registro de presença e evasão só é permitido até as 17:00.")
+    if hora_atual >= dt_time(23, 0):
+        st.error("🔒 **Sistema Bloqueado.** O registro de presença e evasão só é permitido até as 17:00.")
         st.stop()
 
     st.caption(f"📅 {agora.strftime('%d/%m/%Y')} | ⏰ {agora.strftime('%H:%M')}")
@@ -175,5 +175,3 @@ if token_url in MAPA_TURMAS:
 
 else:
     st.error("🚫 Link inválido. Por favor, utilize o QR Code da sua sala.")
-
-
