@@ -48,24 +48,31 @@ MAPA_TURMAS = {
 
 def limpar_texto_absoluto(texto):
     if not texto: return ""
-    texto = str(texto)
+    texto = str(texto).strip().lower()
     if "." in texto: texto = texto.rsplit(".", 1)[0]
     nfkd = unicodedata.normalize('NFKD', texto)
     sem_acento = "".join([c for c in nfkd if not unicodedata.combining(c)])
-    return sem_acento.lower().replace(" ", "").replace("_", "").replace("-", "").strip()
+    # Mantém apenas letras e números
+    return "".join(filter(str.isalnum, sem_acento))
 
 @st.cache_data(ttl=300)
 def listar_arquivos_bucket():
     try:
         arquivos = supabase.storage.from_('fotos-alunos').list(path=None, options={'limit': 5000})
-        return {limpar_texto_absoluto(arq.get('name')): arq.get('name') for arq in arquivos if arq.get('name')}
+        mapa = {}
+        for arq in arquivos:
+            nome_original = arq.get('name')
+            if nome_original:
+                nome_sem_ext = nome_original.rsplit('.', 1)[0] if '.' in nome_original else nome_original
+                mapa[limpar_texto_absoluto(nome_sem_ext)] = nome_original
+        return mapa
     except: return {}
 
 # ==========================================
-# 2. FUNÇÃO DE DETECÇÃO DE HORÁRIOS
+# 2. FUNÇÃO DE DETECÇÃO DE HORÁRIOS (OFICIAL)
 # ==========================================
 def descobrir_aula_atual(hora_agora):
-    """Lógica de horários com uma aula noturna para testes"""
+    """Lógica de horários oficiais da escola"""
     if hora_agora < dt_time(7, 30): return "Pré-aula"
     elif hora_agora < dt_time(8, 20): return "1º Aula"
     elif hora_agora < dt_time(9, 10): return "2º Aula"
@@ -79,8 +86,6 @@ def descobrir_aula_atual(hora_agora):
     elif hora_agora < dt_time(15, 20): return "Intervalo (Tarde)"
     elif hora_agora < dt_time(16, 00): return "8º Aula"
     elif hora_agora < dt_time(16, 40): return "9º Aula"
-    # --- HORÁRIO FAKE PARA TESTE AGORA (DAS 19H ÀS 23H) ---
-    elif hora_agora < dt_time(23, 00): return "Aula Noturna (Teste)" 
     else: return "Encerrado"
 
 # ==========================================
@@ -114,11 +119,16 @@ if token_url and token_url in MAPA_TURMAS:
     
     st.caption(f"📅 {agora.strftime('%d/%m/%Y')} | ⏰ {agora.strftime('%H:%M')}")
     
+    # --- TRAVA DE SEGURANÇA 17:00 OFICIAL ---
+    if hora_atual >= dt_time(17, 0):
+        st.error("🔒 **Sistema Bloqueado.** O expediente de hoje foi encerrado. O registro de presença e evasão só é permitido até as 17:00.")
+        st.stop()
+    
     try:
         response = supabase.table("alunos").select("nome").eq("turma", turma_real).order("nome").execute()
         alunos = response.data
-    except:
-        st.error("Erro no banco."); st.stop()
+    except Exception as e:
+        st.error(f"Erro ao conectar com o banco: {e}"); st.stop()
 
     if alunos:
         # CRIAÇÃO DAS ABAS
@@ -126,7 +136,7 @@ if token_url and token_url in MAPA_TURMAS:
         cache_buster = int(time.time())
 
         # ====================================================================
-        # BLOCO INÍCIO - ABA 1: CHAMADA MATINAL (SEU CÓDIGO ORIGINAL INTACTO)
+        # BLOCO INÍCIO - ABA 1: CHAMADA MATINAL
         # ====================================================================
         with tab1:
             presencas_salvas = {}
@@ -142,8 +152,9 @@ if token_url and token_url in MAPA_TURMAS:
                 for i, aluno in enumerate(alunos):
                     col_foto, col_nome, col_check = st.columns([1, 3, 2])
                     
-                    chave_aluno = limpar_texto_absoluto(aluno['nome'])
-                    nome_arq = mapa_fotos.get(chave_aluno)
+                    nome_limpo = limpar_texto_absoluto(aluno['nome'])
+                    prim_limpo = limpar_texto_absoluto(aluno['nome'].split()[0])
+                    nome_arq = mapa_fotos.get(nome_limpo) or mapa_fotos.get(prim_limpo)
                     
                     with col_foto:
                         if nome_arq:
@@ -171,7 +182,7 @@ if token_url and token_url in MAPA_TURMAS:
                         st.balloons()
                         time.sleep(1)
                         st.rerun()
-                    except Exception as e: st.error(f"Erro: {e}")
+                    except Exception as e: st.error(f"Erro detalhado: {e}")
         # ====================================================================
         # BLOCO FIM - ABA 1
         # ====================================================================
@@ -184,8 +195,7 @@ if token_url and token_url in MAPA_TURMAS:
             st.write("Registre os alunos que saíram de sala sem autorização.")
             aula_sug = descobrir_aula_atual(hora_atual)
             
-            # Adicionei a Aula Teste na lista para o Selectbox não dar erro
-            lista_aulas = ["1º Aula", "2º Aula", "3º Aula", "4º Aula", "5º Aula", "6º Aula", "7º Aula", "8º Aula", "9º Aula", "Aula Noturna (Teste)"]
+            lista_aulas = ["1º Aula", "2º Aula", "3º Aula", "4º Aula", "5º Aula", "6º Aula", "7º Aula", "8º Aula", "9º Aula"]
             
             if "Intervalo" in aula_sug or "Encerrado" in aula_sug:
                 st.warning(f"⏰ Status atual: {aula_sug}.")
@@ -204,9 +214,9 @@ if token_url and token_url in MAPA_TURMAS:
             for i, aluno in enumerate(alunos):
                 c1, c2, c3 = st.columns([1, 3, 2])
                 
-                # Mesma lógica exata de imagem da Aba 1
-                chave_aluno = limpar_texto_absoluto(aluno['nome'])
-                nome_arq = mapa_fotos.get(chave_aluno)
+                nome_limpo = limpar_texto_absoluto(aluno['nome'])
+                prim_limpo = limpar_texto_absoluto(aluno['nome'].split()[0])
+                nome_arq = mapa_fotos.get(nome_limpo) or mapa_fotos.get(prim_limpo)
                 
                 with c1: 
                     if nome_arq:
@@ -234,7 +244,7 @@ if token_url and token_url in MAPA_TURMAS:
                                 time.sleep(0.5)
                                 st.rerun()
                             except Exception as e:
-                                st.error(f"Erro detalhado do banco: {e}")
+                                st.error(f"Erro ao registrar no banco: {e}")
         # ====================================================================
         # BLOCO FIM - ABA 2
         # ====================================================================
@@ -245,4 +255,3 @@ else:
     st.error("🚫 Use o QR Code da sala.")
     if token_url:
         st.warning(f"⚠️ Link não reconhecido: '{token_url}'")
-
