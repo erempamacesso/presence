@@ -69,27 +69,27 @@ def listar_arquivos_bucket():
 # =========================================================
 # 4. CONTROLE DE TOKEN E SEGURANÇA (TRAVA 17H)
 # =========================================================
-# token_url = st.query_params.get("t", "").lower().strip()
+token_url = st.query_params.get("t", "").lower().strip()
 
-# if token_url in MAPA_TURMAS:
- #   turma_real = MAPA_TURMAS[token_url]
- #   fuso = pytz.timezone('America/Recife')
- #   agora = datetime.now(fuso)
- #   data_hoje = agora.strftime('%Y-%m-%d')
- #   hora_atual = agora.time()
+if token_url in MAPA_TURMAS:
+   turma_real = MAPA_TURMAS[token_url]
+   fuso = pytz.timezone('America/Recife')
+   agora = datetime.now(fuso)
+   data_hoje = agora.strftime('%Y-%m-%d')
+  hora_atual = agora.time()
 
-#    st.title(f"📱 Painel: {turma_real}")
+    st.title(f"📱 Painel: {turma_real}")
     
     # --- TRAVA DE SEGURANÇA 17:00 ---
-  #  if hora_atual >= dt_time(17, 0):
-  #      st.error("🔒 **Sistema Bloqueado.** O registro de presença e evasão só é permitido até as 17:00.")
-  #      st.stop()
+   if hora_atual >= dt_time(17, 0):
+       st.error("🔒 **Sistema Bloqueado.** O registro de presença e evasão só é permitido até as 17:00.")
+        st.stop()
 
- #   st.caption(f"📅 {agora.strftime('%d/%m/%Y')} | ⏰ {agora.strftime('%H:%M')}")
+    st.caption(f"📅 {agora.strftime('%d/%m/%Y')} | ⏰ {agora.strftime('%H:%M')}")
 
     # Busca lista de alunos e fotos
- #   alunos = supabase.table("alunos").select("nome").eq("turma", turma_real).order("nome").execute().data
-#    mapa_fotos = listar_arquivos_bucket()
+    alunos = supabase.table("alunos").select("nome").eq("turma", turma_real).order("nome").execute().data
+    mapa_fotos = listar_arquivos_bucket()
 
     if alunos:
         # Cria as abas para separar as funcionalidades
@@ -175,4 +175,5 @@ def listar_arquivos_bucket():
 
 else:
     st.error("🚫 Link inválido. Por favor, utilize o QR Code da sua sala.")
+
 
