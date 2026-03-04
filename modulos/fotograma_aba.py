@@ -98,16 +98,7 @@ def gerar_pdf_mapa_sala_com_fotos(alunos, turma, mapa_fotos, supabase_url):
         legenda_pdf = f"{dt_fmt} - {idade_str}" if (dt_fmt and idade_str) else (dt_fmt or idade_str)
 
         pdf.set_xy(x, y)
-        # Borda AEE no PDF (Opcional, mas deixei preparado se quiser no futuro)
-        r, g, b = 0, 0, 0
-        if aluno.get('status_aee') == "Em Investigação":
-            r, g, b = 255, 193, 7 # Amarelo
-        elif aluno.get('status_aee') == "Laudo Confirmado":
-            r, g, b = 0, 123, 255 # Azul
-            
-        pdf.set_draw_color(r, g, b)
         pdf.cell(largura_col, altura_linha, txt="", border=1)
-        pdf.set_draw_color(0, 0, 0) # Reseta pra preto
         
         chave_busca = limpar_texto(nome_completo)
         foto_nome_arquivo = mapa_fotos.get(chave_busca)
@@ -246,28 +237,18 @@ def exibir_fotograma(supabase):
                                 borda_cor = "#007BFF" # Azul
                                 espessura_borda = "3px"
                             
-                            # Container customizado com borda colorida
-                            st.markdown(
-                                f"""
-                                <div style="border: {espessura_borda} solid {borda_cor}; border-radius: 8px; padding: 10px; margin-bottom: 5px;">
-                                """, 
-                                unsafe_allow_html=True
-                            )
-                            
                             nome = aluno.get(COLUNA_NOME, "Sem Nome")
                             chave = limpar_texto(nome)
                             foto_arq = mapa_fotos.get(chave)
                             
-                            # 1. Renderiza a Foto
+                            # 1. Gera a URL da Foto e Renderiza (HTML unificado)
                             if foto_arq:
-                                st.image(f"{supabase_url}/storage/v1/object/public/fotos-alunos/{quote(foto_arq)}", use_container_width=True)
+                                url_img = f"{supabase_url}/storage/v1/object/public/fotos-alunos/{quote(foto_arq)}"
+                                html_img = f'<img src="{url_img}" style="width: 100%; height: auto; object-fit: cover; border-radius: 8px;">'
                             else:
-                                st.markdown("<div style='height:80px; background:#f0f0f0; border-radius:5px; display:flex; align-items:center; justify-content:center; font-size:24px;'>👤</div>", unsafe_allow_html=True)
+                                html_img = "<div style='width:100%; height:120px; background:#f0f0f0; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:48px; color:gray;'>👤</div>"
                             
-                            # 2. Renderiza o Nome Completo
-                            st.markdown(f"<p style='text-align:center; font-size:10px; font-weight:bold; margin-top:5px; margin-bottom:0px; line-height:1.2;'>{nome}</p>", unsafe_allow_html=True)
-                            
-                            # 3. Renderiza Data e Idade
+                            # 2. Prepara a Legenda (Data e Idade)
                             raw_date = aluno.get(COLUNA_DATA) or aluno.get('Data de nascimento')
                             idade = calcular_idade_completa(raw_date)
                             
@@ -278,9 +259,18 @@ def exibir_fotograma(supabase):
                                 dt_fmt = "--/--/----"
                             
                             texto_legenda = f"{dt_fmt} - {idade}" if idade else dt_fmt
-                            st.markdown(f"<p style='text-align:center; font-size:9px; color:gray; margin-top:2px;'>{texto_legenda}</p>", unsafe_allow_html=True)
+
+                            # 👇 NOVO CÓDIGO HTML UNIFICADO PARA O CARTÃO (Opção 3 - Premium Blindada)
+                            cartao_html = f"""
+                            <div style="border: {espessura_borda} solid {borda_cor}; border-radius: 8px; padding: 10px; margin-bottom: 10px; text-align: center; background-color: white; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
+                                {html_img}
+                                <p style="font-size: 11px; font-weight: bold; margin-top: 8px; margin-bottom: 2px; text-transform: uppercase;">{nome}</p>
+                                <p style="font-size: 10px; color: gray; margin: 0;">{texto_legenda}</p>
+                            </div>
+                            """
+                            st.markdown(cartao_html, unsafe_allow_html=True)
                             
-                            # 4. Botão do AEE (Só aparece se o aluno for do AEE)
+                            # 3. Botão do AEE (Só aparece se o aluno for do AEE, renderizado nativamente ABAIXO do cartão)
                             if status_aee in ["Em Investigação", "Laudo Confirmado"]:
                                 if st.button("🧩 Ver Ficha", key=f"btn_aee_{aluno.get('id', i)}_{j}", use_container_width=True):
                                     abrir_popup_aee(
@@ -290,9 +280,6 @@ def exibir_fotograma(supabase):
                                         aluno.get('relatorio_aee', '')
                                     )
                                     
-                            # Fecha a div customizada
-                            st.markdown("</div>", unsafe_allow_html=True)
-                            
         else:
             st.warning("Nenhuma turma encontrada.")
     except Exception as e:
