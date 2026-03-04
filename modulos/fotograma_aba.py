@@ -168,6 +168,16 @@ def exibir_fotograma(supabase):
         mapa_fotos = listar_arquivos_bucket(supabase)
         supabase_url = st.secrets['SUPABASE_URL']
 
+        # --- NOVO: VISÃO GERAL DA ESCOLA (TOTAL DE PENDÊNCIAS) ---
+        res_todos_alunos = supabase.table("alunos").select("nome").execute()
+        total_sem_foto_escola = sum(1 for a in res_todos_alunos.data if limpar_texto(a.get('nome')) not in mapa_fotos)
+        
+        if total_sem_foto_escola > 0:
+            st.info(f"🏫 **Visão Geral:** Faltam **{total_sem_foto_escola}** fotos para completar 100% do mapa da escola.")
+        else:
+            st.success("🏫 **Visão Geral:** Parabéns! 100% dos estudantes estão com foto cadastrada.")
+        # ---------------------------------------------------------
+
         if lista_turmas:
             turma_sel = st.pills("Selecione a Turma:", options=lista_turmas)
             
@@ -184,7 +194,7 @@ def exibir_fotograma(supabase):
                 
                 if alunos_sem_foto:
                     with col_btn2:
-                        with st.popover(f"🚩 {len(alunos_sem_foto)} Fotos Pendentes", use_container_width=True):
+                        with st.popover(f"🚩 {len(alunos_sem_foto)} Fotos Pendentes nesta Turma", use_container_width=True):
                             st.write("Estes alunos precisam de foto atualizada:")
                             st.dataframe(pd.DataFrame([{"Nome": a['nome']} for a in alunos_sem_foto]), hide_index=True)
                             pdf_pend = gerar_pdf_pendencias(turma_sel, alunos_sem_foto)
@@ -193,7 +203,6 @@ def exibir_fotograma(supabase):
                 st.divider()
                 
                 # --- GRID DE FOTOS (AUMENTADO PARA CELULAR) ---
-                # Mudamos para 4 colunas no Desktop, o que faz elas ficarem muito maiores. No celular o Streamlit empilha ou usa 2.
                 num_cols = 4 
                 for i in range(0, len(alunos), num_cols):
                     linha_alunos = alunos[i : i + num_cols]
@@ -208,7 +217,7 @@ def exibir_fotograma(supabase):
                             chave = limpar_texto(nome)
                             foto_arq = mapa_fotos.get(chave)
                             
-                            # Aumentei a altura da imagem para 200px (Era 130px)
+                            # Aumentei a altura da imagem para 200px
                             if foto_arq:
                                 url_img = f"{supabase_url}/storage/v1/object/public/fotos-alunos/{quote(foto_arq)}"
                                 img_html = f'<img src="{url_img}" style="width: 100%; height: 200px; object-fit: contain; background: #f8f9fa; border-radius: 6px;">'
