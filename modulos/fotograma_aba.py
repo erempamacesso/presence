@@ -6,6 +6,28 @@ from fpdf import FPDF
 from datetime import datetime
 
 # ==========================================
+# 🧩 A MÁGICA DO POPUP (AEE)
+# ==========================================
+@st.dialog("🧩 Ficha de Inclusão e AEE")
+def abrir_popup_aee(nome, status, cid, relatorio):
+    st.subheader(nome)
+    
+    if status == "Em Investigação":
+        st.warning("🟡 Estudante em fase de investigação pedagógica/médica.")
+    elif status == "Laudo Confirmado":
+        st.info("🔵 Estudante com laudo confirmado.")
+        
+    if cid:
+        st.markdown(f"**CID / Condição:** `{cid}`")
+        
+    if relatorio:
+        st.markdown("**Relatório / Observações:**")
+        st.write(relatorio)
+        
+    st.markdown("---")
+    st.success("🤖 *Em breve: Sugestões de abordagem geradas por Inteligência Artificial aparecerão aqui.*")
+
+# ==========================================
 # 🚩 CONFIGURAÇÃO DE COLUNAS (MARCADORES)
 # ==========================================
 COLUNA_NOME = "nome"
@@ -76,7 +98,16 @@ def gerar_pdf_mapa_sala_com_fotos(alunos, turma, mapa_fotos, supabase_url):
         legenda_pdf = f"{dt_fmt} - {idade_str}" if (dt_fmt and idade_str) else (dt_fmt or idade_str)
 
         pdf.set_xy(x, y)
+        # Borda AEE no PDF (Opcional, mas deixei preparado se quiser no futuro)
+        r, g, b = 0, 0, 0
+        if aluno.get('status_aee') == "Em Investigação":
+            r, g, b = 255, 193, 7 # Amarelo
+        elif aluno.get('status_aee') == "Laudo Confirmado":
+            r, g, b = 0, 123, 255 # Azul
+            
+        pdf.set_draw_color(r, g, b)
         pdf.cell(largura_col, altura_linha, txt="", border=1)
+        pdf.set_draw_color(0, 0, 0) # Reseta pra preto
         
         chave_busca = limpar_texto(nome_completo)
         foto_nome_arquivo = mapa_fotos.get(chave_busca)
@@ -201,33 +232,67 @@ def exibir_fotograma(supabase):
                     
                     for j, aluno in enumerate(linha_alunos):
                         with cols[j]:
-                            with st.container(border=True):
-                                nome = aluno.get(COLUNA_NOME, "Sem Nome")
-                                chave = limpar_texto(nome)
-                                foto_arq = mapa_fotos.get(chave)
-                                
-                                # 1. Renderiza a Foto
-                                if foto_arq:
-                                    st.image(f"{supabase_url}/storage/v1/object/public/fotos-alunos/{quote(foto_arq)}", use_container_width=True)
-                                else:
-                                    st.markdown("<div style='height:80px; background:#f0f0f0; border-radius:5px; display:flex; align-items:center; justify-content:center; font-size:24px;'>👤</div>", unsafe_allow_html=True)
-                                
-                                # 2. Renderiza o Nome Completo
-                                st.markdown(f"<p style='text-align:center; font-size:10px; font-weight:bold; margin-top:5px; margin-bottom:0px; line-height:1.2;'>{nome}</p>", unsafe_allow_html=True)
-                                
-                                # 3. Renderiza Data e Idade
-                                raw_date = aluno.get(COLUNA_DATA) or aluno.get('Data de nascimento')
-                                idade = calcular_idade_completa(raw_date)
-                                
-                                try:
-                                    dt_obj = pd.to_datetime(str(raw_date).split('T')[0], errors='coerce')
-                                    dt_fmt = dt_obj.strftime('%d/%m/%Y') if not pd.isnull(dt_obj) else "--/--/----"
-                                except:
-                                    dt_fmt = "--/--/----"
-                                
-                                texto_legenda = f"{dt_fmt} - {idade}" if idade else dt_fmt
-                                st.markdown(f"<p style='text-align:center; font-size:9px; color:gray; margin-top:2px;'>{texto_legenda}</p>", unsafe_allow_html=True)
-                                
+                            # 👇 AQUI COMEÇA A MÁGICA DAS CORES DO AEE
+                            status_aee = aluno.get('status_aee', 'Nenhum')
+                            
+                            # Define a cor da borda se for AEE
+                            borda_cor = "transparent"
+                            espessura_borda = "0px"
+                            
+                            if status_aee == "Em Investigação":
+                                borda_cor = "#FFC107" # Amarelo
+                                espessura_borda = "3px"
+                            elif status_aee == "Laudo Confirmado":
+                                borda_cor = "#007BFF" # Azul
+                                espessura_borda = "3px"
+                            
+                            # Container customizado com borda colorida
+                            st.markdown(
+                                f"""
+                                <div style="border: {espessura_borda} solid {borda_cor}; border-radius: 8px; padding: 10px; margin-bottom: 5px;">
+                                """, 
+                                unsafe_allow_html=True
+                            )
+                            
+                            nome = aluno.get(COLUNA_NOME, "Sem Nome")
+                            chave = limpar_texto(nome)
+                            foto_arq = mapa_fotos.get(chave)
+                            
+                            # 1. Renderiza a Foto
+                            if foto_arq:
+                                st.image(f"{supabase_url}/storage/v1/object/public/fotos-alunos/{quote(foto_arq)}", use_container_width=True)
+                            else:
+                                st.markdown("<div style='height:80px; background:#f0f0f0; border-radius:5px; display:flex; align-items:center; justify-content:center; font-size:24px;'>👤</div>", unsafe_allow_html=True)
+                            
+                            # 2. Renderiza o Nome Completo
+                            st.markdown(f"<p style='text-align:center; font-size:10px; font-weight:bold; margin-top:5px; margin-bottom:0px; line-height:1.2;'>{nome}</p>", unsafe_allow_html=True)
+                            
+                            # 3. Renderiza Data e Idade
+                            raw_date = aluno.get(COLUNA_DATA) or aluno.get('Data de nascimento')
+                            idade = calcular_idade_completa(raw_date)
+                            
+                            try:
+                                dt_obj = pd.to_datetime(str(raw_date).split('T')[0], errors='coerce')
+                                dt_fmt = dt_obj.strftime('%d/%m/%Y') if not pd.isnull(dt_obj) else "--/--/----"
+                            except:
+                                dt_fmt = "--/--/----"
+                            
+                            texto_legenda = f"{dt_fmt} - {idade}" if idade else dt_fmt
+                            st.markdown(f"<p style='text-align:center; font-size:9px; color:gray; margin-top:2px;'>{texto_legenda}</p>", unsafe_allow_html=True)
+                            
+                            # 4. Botão do AEE (Só aparece se o aluno for do AEE)
+                            if status_aee in ["Em Investigação", "Laudo Confirmado"]:
+                                if st.button("🧩 Ver Ficha", key=f"btn_aee_{aluno.get('id', i)}_{j}", use_container_width=True):
+                                    abrir_popup_aee(
+                                        aluno.get(COLUNA_NOME, "Sem Nome"),
+                                        status_aee,
+                                        aluno.get('cid', ''),
+                                        aluno.get('relatorio_aee', '')
+                                    )
+                                    
+                            # Fecha a div customizada
+                            st.markdown("</div>", unsafe_allow_html=True)
+                            
         else:
             st.warning("Nenhuma turma encontrada.")
     except Exception as e:
