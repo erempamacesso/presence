@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import simple_icd_10 as icd  # <--- Nova biblioteca!
 
 def exibir_painel_aee(supabase):
     st.title("🧩 Painel AEE & Inclusão")
@@ -9,19 +10,16 @@ def exibir_painel_aee(supabase):
     # 1. BUSCA DO ALUNO
     st.subheader("🔍 Localizar Estudante")
     
-    # Buscamos todos os alunos para o selectbox
     try:
         res = supabase.table("alunos").select("id, nome, turma, status_aee, cid, relatorio_aee").order("nome").execute()
         df_alunos = pd.DataFrame(res.data)
         
         if not df_alunos.empty:
-            # Criar uma label bonita para o select: "NOME - TURMA"
             df_alunos['label'] = df_alunos['nome'] + " (" + df_alunos['turma'] + ")"
             aluno_selecionado = st.selectbox("Selecione o aluno para atualizar prontuário:", 
                                              options=df_alunos['id'].tolist(),
                                              format_func=lambda x: df_alunos[df_alunos['id'] == x]['label'].values[0])
             
-            # Pegar dados atuais do aluno selecionado
             dados_atuais = df_alunos[df_alunos['id'] == aluno_selecionado].iloc[0]
             
             st.markdown("---")
@@ -36,7 +34,20 @@ def exibir_painel_aee(supabase):
                     index=["Nenhum", "Em Investigação", "Laudo Confirmado"].index(dados_atuais['status_aee']) if dados_atuais['status_aee'] in ["Nenhum", "Em Investigação", "Laudo Confirmado"] else 0
                 )
                 
+                # Campo de texto para o CID
                 novo_cid = st.text_input("🆔 Código CID (Ex: F84.0):", value=dados_atuais['cid'] if dados_atuais['cid'] else "")
+
+                # --- LÓGICA DO TRADUTOR AUTOMÁTICO ---
+                if novo_cid:
+                    # Remove pontos e espaços para facilitar a busca
+                    cid_limpo = novo_cid.strip().upper()
+                    
+                    if icd.is_valid_item(cid_limpo):
+                        descricao = icd.get_description(cid_limpo)
+                        st.success(f"**Descrição:** {descricao}")
+                    else:
+                        # Se não for um código único, tenta ver se é uma lista (ex: F84, F90)
+                        st.caption("💡 Dica: Digite o código exato (ex: F84.0) para ver a descrição.")
 
             with col2:
                 st.info(f"**Aluno:** {dados_atuais['nome']}\n\n**Turma:** {dados_atuais['turma']}")
@@ -68,7 +79,6 @@ def exibir_painel_aee(supabase):
     st.markdown("---")
     st.subheader("📋 Quadro Resumo de Inclusão")
     
-    # Mostrar quem já está marcado para facilitar a gestão
     df_resumo = df_alunos[df_alunos['status_aee'] != "Nenhum"].copy()
     if not df_resumo.empty:
         st.dataframe(df_resumo[['nome', 'turma', 'status_aee', 'cid']], 
