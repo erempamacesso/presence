@@ -30,8 +30,8 @@ def listar_arquivos_bucket(_supabase):
 
 
 def exibir_busca_ativa(supabase):
-    st.title("🔎 Painel de Busca Ativa")
-    st.caption("Inteligência de Dados para Prevenção ao Abandono Escolar")
+    st.title("🔎 Ativa")
+    st.caption("Inteligência de Dados para Prevenção Escolar")
     st.markdown("---")
 
     fuso = pytz.timezone('America/Recife')
