@@ -1,8 +1,14 @@
 import streamlit as st
+import streamlit.components.v1 as components
 from supabase import create_client, Client
 
 # ==========================================
-# 1. IMPORTAÇÃO DOS MÓDULOS (Onde as telas moram)
+# 1. CONFIGURAÇÃO GERAL DA PÁGINA
+# ==========================================
+st.set_page_config(page_title="EREM PAM - Chamada Escolar", layout="wide", page_icon="🏫")
+
+# ==========================================
+# 2. IMPORTAÇÃO DOS MÓDULOS (Onde as telas moram)
 # ==========================================
 from modulos.cenario_dia import exibir_cenario
 from modulos.fotograma_aba import exibir_fotograma
@@ -10,13 +16,7 @@ from modulos.cadastro_aba import exibir_cadastro
 from modulos.reservas_aba import exibir_reservas
 from modulos.atualiza_alunos import exibir_importacao
 from modulos.busca_ativa import exibir_busca_ativa
-# 👇 A NOVA PEÇA PARA O AEE
 from modulos.aee import exibir_painel_aee
-
-# ==========================================
-# 2. CONFIGURAÇÃO GERAL DA PÁGINA
-# ==========================================
-st.set_page_config(page_title="EREM PAM - Chamada Escolar", layout="wide", page_icon="🏫")
 
 # ==========================================
 # 3. CONEXÃO COM O BANCO DE DADOS (SUPABASE)
@@ -31,14 +31,17 @@ supabase: Client = create_client(URL_SUPABASE, CHAVE_SUPABASE)
 if 'pagina' not in st.session_state:
     st.session_state.pagina = 'cenario' # Define a página inicial ao abrir o app
 
+if 'fechar_menu' not in st.session_state:
+    st.session_state.fechar_menu = False
+
 def mudar_pagina(nome_pagina):
     st.session_state.pagina = nome_pagina
+    st.session_state.fechar_menu = True # Liga o gatilho para recolher o menu no celular
 
 # ==========================================
 # 5. MENU LATERAL (SIDEBAR)
 # ==========================================
 with st.sidebar:
-    # Usa a logo que vi nos seus arquivos!
     try:
         st.image("logo_erempam.png", use_column_width=True)
     except:
@@ -50,16 +53,15 @@ with st.sidebar:
     st.button("📊 Cenário do Dia", on_click=mudar_pagina, args=('cenario',), use_container_width=True)
     st.button("🔎 Busca Ativa", on_click=mudar_pagina, args=('busca_ativa',), use_container_width=True)
     st.button("📸 Fotograma", on_click=mudar_pagina, args=('fotograma',), use_container_width=True)
-    
-    # 👇 O NOVO BOTÃO DA INCLUSÃO
     st.button("🧩 AEE & Inclusão", on_click=mudar_pagina, args=('aee',), use_container_width=True)
-    
     st.button("📝 Gestão de Alunos", on_click=mudar_pagina, args=('cadastro',), use_container_width=True)
     st.button("📅 Reservas", on_click=mudar_pagina, args=('reservas',), use_container_width=True)
     
     st.divider()
     
-    st.button("📤 Importar e Atualizar Alunos", on_click=mudar_pagi# ==========================================
+    st.button("📤 Importar e Atualizar Alunos", on_click=mudar_pagina, args=('importacao',), type="primary", use_container_width=True)
+
+# ==========================================
 # 6. INJEÇÃO DE CÓDIGO PARA CELULAR (Fecha o Menu)
 # ==========================================
 if st.session_state.fechar_menu:
@@ -68,14 +70,16 @@ if st.session_state.fechar_menu:
         setTimeout(function() {
             var parentDoc = window.parent.document;
             
-            // Tenta achar o botão de recolher (X) do modo mobile e "clicar" nele
-            var botoesSidebar = parentDoc.querySelectorAll('section[data-testid="stSidebar"] button');
-            if (botoesSidebar && botoesSidebar.length > 0) {
-                // O botão de fechar geralmente é o primeiro botão renderizado no header do sidebar
-                botoesSidebar[0].click();
+            // Tenta achar o botão "X" invisível (Close sidebar) do Streamlit no modo mobile
+            var botoes = parentDoc.querySelectorAll('button');
+            for (var i = 0; i < botoes.length; i++) {
+                if (botoes[i].getAttribute('aria-label') === 'Close sidebar') {
+                    botoes[i].click();
+                    break;
+                }
             }
 
-            // Plano B: Dispara o ESC com todas as propriedades de evento real
+            // Plano B: Dispara o ESC 
             var escEvent = new KeyboardEvent('keydown', {
                 key: 'Escape',
                 code: 'Escape',
@@ -87,12 +91,37 @@ if st.session_state.fechar_menu:
             });
             parentDoc.dispatchEvent(escEvent);
             
-        }, 150); // Delay milissegundos para garantir que o React do Streamlit atualizou
+        }, 150); // Delay milissegundos para garantir a renderização
     </script>
     '''
     components.html(js_fechar_menu, width=0, height=0)
     
-    # Desliga o gatilho para não ficar rodando toda hora
-    st.session_state.fechar_menu = Falsena, args=('importacao',), type="primary", use_container_width=True)
+    # Desliga o gatilho
+    st.session_state.fechar_menu = False
 
+# ==========================================
+# 7. ROTEAMENTO DE PÁGINAS (O MAESTRO EM AÇÃO)
+# ==========================================
+if st.session_state.pagina == 'cenario':
+    exibir_cenario(supabase)
 
+elif st.session_state.pagina == 'busca_ativa':
+    exibir_busca_ativa(supabase)
+    
+elif st.session_state.pagina == 'fotograma':
+    exibir_fotograma(supabase)
+
+elif st.session_state.pagina == 'aee':
+    exibir_painel_aee(supabase)
+    
+elif st.session_state.pagina == 'cadastro':
+    exibir_cadastro(supabase)
+    
+elif st.session_state.pagina == 'reservas':
+    LISTA_PROF = ["Prof. Silva", "Profa. Maria", "Prof. Ricardo"]
+    AULAS = ["1ª Aula", "2ª Aula", "3ª Aula", "4ª Aula", "5ª Aula", "6ª Aula"]
+    ESPACOS = ["Auditório", "Laboratório", "Biblioteca", "Quadra", "Multimídia"]
+    exibir_reservas(supabase, LISTA_PROF, AULAS, ESPACOS, 3, 2, 5)
+    
+elif st.session_state.pagina == 'importacao':
+    exibir_importacao(supabase)
