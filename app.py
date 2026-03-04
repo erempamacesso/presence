@@ -59,32 +59,40 @@ with st.sidebar:
     
     st.divider()
     
-    st.button("📤 Importar e Atualizar Alunos", on_click=mudar_pagina, args=('importacao',), type="primary", use_container_width=True)
-
+    st.button("📤 Importar e Atualizar Alunos", on_click=mudar_pagi# ==========================================
+# 6. INJEÇÃO DE CÓDIGO PARA CELULAR (Fecha o Menu)
 # ==========================================
-# 6. ROTEAMENTO DE PÁGINAS (O MAESTRO EM AÇÃO)
-# ==========================================
-if st.session_state.pagina == 'cenario':
-    exibir_cenario(supabase)
+if st.session_state.fechar_menu:
+    js_fechar_menu = '''
+    <script>
+        setTimeout(function() {
+            var parentDoc = window.parent.document;
+            
+            // Tenta achar o botão de recolher (X) do modo mobile e "clicar" nele
+            var botoesSidebar = parentDoc.querySelectorAll('section[data-testid="stSidebar"] button');
+            if (botoesSidebar && botoesSidebar.length > 0) {
+                // O botão de fechar geralmente é o primeiro botão renderizado no header do sidebar
+                botoesSidebar[0].click();
+            }
 
-elif st.session_state.pagina == 'busca_ativa':
-    exibir_busca_ativa(supabase)
+            // Plano B: Dispara o ESC com todas as propriedades de evento real
+            var escEvent = new KeyboardEvent('keydown', {
+                key: 'Escape',
+                code: 'Escape',
+                keyCode: 27,
+                which: 27,
+                bubbles: true,
+                cancelable: true,
+                composed: true
+            });
+            parentDoc.dispatchEvent(escEvent);
+            
+        }, 150); // Delay milissegundos para garantir que o React do Streamlit atualizou
+    </script>
+    '''
+    components.html(js_fechar_menu, width=0, height=0)
     
-elif st.session_state.pagina == 'fotograma':
-    exibir_fotograma(supabase)
+    # Desliga o gatilho para não ficar rodando toda hora
+    st.session_state.fechar_menu = Falsena, args=('importacao',), type="primary", use_container_width=True)
 
-# 👇 A NOVA ROTA DO AEE
-elif st.session_state.pagina == 'aee':
-    exibir_painel_aee(supabase)
-    
-elif st.session_state.pagina == 'cadastro':
-    exibir_cadastro(supabase)
-    
-elif st.session_state.pagina == 'reservas':
-    LISTA_PROF = ["Prof. Silva", "Profa. Maria", "Prof. Ricardo"]
-    AULAS = ["1ª Aula", "2ª Aula", "3ª Aula", "4ª Aula", "5ª Aula", "6ª Aula"]
-    ESPACOS = ["Auditório", "Laboratório", "Biblioteca", "Quadra", "Multimídia"]
-    exibir_reservas(supabase, LISTA_PROF, AULAS, ESPACOS, 3, 2, 5)
-    
-elif st.session_state.pagina == 'importacao':
-    exibir_importacao(supabase)
+
