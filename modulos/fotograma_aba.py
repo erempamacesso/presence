@@ -7,41 +7,91 @@ from datetime import datetime
 import simple_icd_10 as icd
 
 # ==========================================
-# 🧠 MOTOR DE INTELIGÊNCIA (MANTIDO)
+# 🧠 MOTOR DE INTELIGÊNCIA (TRADUÇÃO REAL)
 # ==========================================
 def buscar_descricao_cid_hardcore(cid_input):
     if not cid_input: return ""
+    # Limpa o código para garantir que a biblioteca encontre (ex: F84.0)
     codigo = str(cid_input).strip().upper().split('/')[0].split(' ')[0].replace("CID", "").replace(":", "").strip()
     try:
         if icd.is_valid_item(codigo):
             desc_en = icd.get_description(codigo)
-            termos = {"Autism": "Autismo", "Disorders": "Transtornos", "Attention deficit": "TDAH", "Mental retardation": "Def. Intelectual", "Epilepsy": "Epilepsia"}
-            for en, pt in termos.items(): desc_en = desc_en.replace(en, pt)
-            return f" - {desc_en}"
+            # Dicionário de tradução técnica para os termos da biblioteca
+            termos = {
+                "Autism": "Autismo", "Disorders": "Transtornos", 
+                "Attention deficit": "TDAH", "Mental retardation": "Def. Intelectual", 
+                "Epilepsy": "Epilepsia", "Specific": "Específicos",
+                "Developmental": "do Desenvolvimento", "Hyperkinetic": "Hipercinéticos"
+            }
+            desc_pt = desc_en
+            for en, pt in termos.items(): 
+                desc_pt = desc_pt.replace(en, pt)
+            return f" - {desc_pt}"
         return ""
     except: return ""
 
 # ==========================================
-# 🧩 POPUP DE INCLUSÃO (MANTIDO)
+# 🤖 IA DE PROPOSTAS PEDAGÓGICAS
+# ==========================================
+def gerar_sugestoes_ia(relatorio):
+    """Mapeia o relatório para as 4 áreas do conhecimento"""
+    rel = str(relatorio).lower()
+    # Estratégia base
+    dicas = {
+        "Linguagens": "Priorizar multiletramentos e suporte visual (pictogramas).",
+        "Matemática": "Uso de materiais concretos e situações-problema curtas.",
+        "Natureza": "Atividades experimentais e observação prática.",
+                "Humanas": "Mapas conceituais e debates com mediação visual."
+    }
+    # Personalização baseada em palavras-chave
+    if "leitura" in rel or "alfabetiza" in rel:
+        dicas["Linguagens"] = "⚠️ Foco em consciência fonológica e pareamento de imagem/palavra."
+    if "foco" in rel or "concentra" in rel or "agitação" in rel:
+        dicas["Matemática"] = "Dividir tarefas em blocos de 10 min com comandos únicos."
+    
+    return dicas
+
+# ==========================================
+# 🧩 POPUP DE INCLUSÃO (RESTAURADO)
 # ==========================================
 @st.dialog("🧩 Ficha de Inclusão e AEE")
 def abrir_popup_aee(nome, status, cid, relatorio):
     st.subheader(nome)
+    
+    # Agora a tradução vai aparecer aqui!
     desc = buscar_descricao_cid_hardcore(cid)
-    st.info(f"🔵 **Status:** {status}")
+    
+    if status == "Em Investigação":
+        st.warning(f"🟡 **Status:** {status}")
+    else:
+        st.info(f"🔵 **Status:** {status}")
+        
     st.markdown(f"**CID:** `{cid}` {desc}")
+    
     if relatorio:
-        with st.expander("📝 Relatório", expanded=True): st.write(relatorio)
-    if st.button("✨ Gerar Estratégias por Área", use_container_width=True):
-        st.success("Sugestões geradas abaixo (Exemplo: Priorizar recursos visuais).")
+        with st.expander("📝 Relatório Original", expanded=True):
+            st.write(relatorio)
+            
+    st.divider()
+    st.subheader("🤖 Estratégias por Área")
+    
+    if st.button("✨ Gerar Propostas de Atividades", use_container_width=True):
+        with st.spinner("IA Analisando..."):
+            sugestoes = gerar_sugestoes_ia(relatorio)
+            
+            c1, c2 = st.columns(2)
+            with c1:
+                st.info(f"**📚 Linguagens**\n{sugestoes['Linguagens']}")
+                st.info(f"**🌍 Humanas**\n{sugestoes['Humanas']}")
+            with c2:
+                st.success(f"**🔢 Matemática**\n{sugestoes['Matemática']}")
+                st.success(f"**🔬 Natureza**\n{sugestoes['Natureza']}")
 
 # ==========================================
-# 🛠️ FUNÇÕES DE TRATAMENTO (RESTAURADAS)
+# 🛠️ FUNÇÕES DE TRATAMENTO (PADRONIZADAS)
 # ==========================================
 def limpar_texto(texto):
-    """Restaurada a lógica original para não quebrar o link das fotos"""
     if not texto: return ""
-    # Remove extensão se houver
     if "." in str(texto): texto = str(texto).rsplit('.', 1)[0]
     nfkd = unicodedata.normalize('NFKD', str(texto))
     texto_limpo = "".join([c for c in nfkd if not unicodedata.combining(c)]).lower()
@@ -61,12 +111,11 @@ def calcular_idade_completa(data_nascimento):
 def listar_arquivos_bucket(_supabase):
     try:
         arquivos = _supabase.storage.from_('fotos-alunos').list(path=None, options={'limit': 5000})
-        # Dicionário vinculando nome limpo ao nome real do arquivo
         return {limpar_texto(arq['name']): arq['name'] for arq in arquivos}
     except: return {}
 
 # ==========================================
-# 📸 EXIBIÇÃO DO FOTOGRAMA (CORRIGIDO)
+# 📸 EXIBIÇÃO DO FOTOGRAMA
 # ==========================================
 def exibir_fotograma(supabase):
     st.title("📸 Fotograma (Mapa de Sala)")
@@ -74,7 +123,7 @@ def exibir_fotograma(supabase):
     try:
         res_turmas = supabase.table("alunos").select("turma").execute()
         lista_turmas = sorted(list(set([r['turma'] for r in res_turmas.data if r.get('turma')])))
-        mapa_fotos = listar_arquivos_bucket(supabase) # Pega o dicionário de fotos
+        mapa_fotos = listar_arquivos_bucket(supabase)
         supabase_url = st.secrets['SUPABASE_URL']
 
         if lista_turmas:
@@ -95,7 +144,6 @@ def exibir_fotograma(supabase):
                             espessura = "4px" if status_aee != "Nenhum" else "0px"
                             
                             nome = aluno.get("nome", "Sem Nome")
-                            # Busca a foto usando a chave limpa (AQUI ESTAVA O ERRO)
                             chave = limpar_texto(nome)
                             foto_arq = mapa_fotos.get(chave)
                             
@@ -105,7 +153,6 @@ def exibir_fotograma(supabase):
                             else:
                                 img_html = "<div style='width:100%; height:130px; background:#f0f0f0; border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:40px;'>👤</div>"
                             
-                            # RECOLOCANDO A DATA DE NASCIMENTO (AQUI ESTAVA O OUTRO ERRO)
                             raw_date = aluno.get('data_nascimento') or aluno.get('Data de nascimento')
                             idade = calcular_idade_completa(raw_date)
                             try:
@@ -113,7 +160,6 @@ def exibir_fotograma(supabase):
                             except:
                                 dt_fmt = "--/--/----"
                             
-                            # Card Visual com Data + Idade
                             st.markdown(f"""
                             <div style="border: {espessura} solid {borda_cor}; border-radius: 10px; padding: 8px; text-align: center; background: white; min-height: 230px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 1px 1px 3px rgba(0,0,0,0.1);">
                                 {img_html}
