@@ -11,24 +11,33 @@ import simple_icd_10 as icd
 # ==========================================
 def buscar_descricao_cid_hardcore(cid_input):
     if not cid_input: return ""
-    # Limpa o código para garantir que a biblioteca encontre (ex: F84.0)
-    codigo = str(cid_input).strip().upper().split('/')[0].split(' ')[0].replace("CID", "").replace(":", "").strip()
-    try:
-        if icd.is_valid_item(codigo):
-            desc_en = icd.get_description(codigo)
-            # Dicionário de tradução técnica para os termos da biblioteca
-            termos = {
-                "Autism": "Autismo", "Disorders": "Transtornos", 
-                "Attention deficit": "TDAH", "Mental retardation": "Def. Intelectual", 
-                "Epilepsy": "Epilepsia", "Specific": "Específicos",
-                "Developmental": "do Desenvolvimento", "Hyperkinetic": "Hipercinéticos"
-            }
-            desc_pt = desc_en
-            for en, pt in termos.items(): 
-                desc_pt = desc_pt.replace(en, pt)
-            return f" - {desc_pt}"
-        return ""
-    except: return ""
+    
+    # Divide a string se houver +, / ou vírgula para processar cada CID individualmente
+    partes = str(cid_input).replace('+', ' ').replace('/', ' ').replace(',', ' ').split()
+    resultados = []
+
+    for item in partes:
+        # Limpa o código (remove pontos extras ou espaços)
+        codigo = item.strip().upper()
+        try:
+            if icd.is_valid_item(codigo):
+                desc_en = icd.get_description(codigo)
+                # Tradutor rápido para os termos mais comuns
+                termos = {
+                    "Autism": "Autismo", "Disorders": "Transtornos", 
+                    "Attention deficit": "TDAH", "Mental retardation": "Def. Intelectual", 
+                    "Epilepsy": "Epilepsia", "Bipolar": "Bipolar"
+                }
+                for en, pt in termos.items():
+                    desc_en = desc_en.replace(en, pt)
+                resultados.append(f"{codigo} ({desc_en})")
+            else:
+                resultados.append(codigo) # Mantém o código original se não achar a tradução
+        except:
+            resultados.append(codigo)
+
+    # Junta tudo de volta com uma vírgula para exibir no popup
+    return " - " + ", ".join(resultados) if resultados else ""
 
 # ==========================================
 # 🤖 IA DE PROPOSTAS PEDAGÓGICAS
