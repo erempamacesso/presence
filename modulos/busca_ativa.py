@@ -30,7 +30,7 @@ def listar_arquivos_bucket(_supabase):
 
 
 def exibir_busca_ativa(supabase):
-    st.title("🔎 Ativa")
+    st.title("🔎 BUSCA Ativa")
     st.caption("Inteligência de Dados para Prevenção Escolar")
     st.markdown("---")
 
