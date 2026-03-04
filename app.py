@@ -68,35 +68,25 @@ if st.session_state.fechar_menu:
     js_fechar_menu = '''
     <script>
         setTimeout(function() {
-            var parentDoc = window.parent.document;
+            var doc = window.parent.document;
             
-            // Tenta achar o botão "X" invisível (Close sidebar) do Streamlit no modo mobile
-            var botoes = parentDoc.querySelectorAll('button');
-            for (var i = 0; i < botoes.length; i++) {
-                if (botoes[i].getAttribute('aria-label') === 'Close sidebar') {
-                    botoes[i].click();
-                    break;
+            // Estratégia 1: Procura exatamente a tag oficial do botão de fechar do Streamlit
+            var btn_fechar = doc.querySelector('[data-testid="stSidebarCollapseButton"]');
+            
+            if (btn_fechar) {
+                btn_fechar.click();
+            } else {
+                // Estratégia 2: Se a versão for um pouco mais antiga, clica no primeiro botão do cabeçalho
+                var botoes_header = doc.querySelectorAll('header button');
+                if (botoes_header.length > 0) {
+                    botoes_header[0].click();
                 }
             }
-
-            // Plano B: Dispara o ESC 
-            var escEvent = new KeyboardEvent('keydown', {
-                key: 'Escape',
-                code: 'Escape',
-                keyCode: 27,
-                which: 27,
-                bubbles: true,
-                cancelable: true,
-                composed: true
-            });
-            parentDoc.dispatchEvent(escEvent);
-            
-        }, 150); // Delay milissegundos para garantir a renderização
+        }, 300); // Aumentei o delay para 300ms para ter certeza absoluta que a tela carregou
     </script>
     '''
     components.html(js_fechar_menu, width=0, height=0)
     
-    # Desliga o gatilho
     st.session_state.fechar_menu = False
 
 # ==========================================
@@ -125,3 +115,4 @@ elif st.session_state.pagina == 'reservas':
     
 elif st.session_state.pagina == 'importacao':
     exibir_importacao(supabase)
+
