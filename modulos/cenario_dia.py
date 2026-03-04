@@ -29,21 +29,26 @@ def exibir_cenario(supabase):
     n_presentes, total_alunos, n_faltas, perc = 0, 0, 0, 0
 
     try:
+        # Pega total de alunos
         res_total = supabase.table("alunos").select("id", count="exact").execute()
         total_alunos = res_total.count if res_total.count else 0
         
+        # Pega presentes do dia
         res_freq = supabase.table("frequencia").select("*").eq("data_chamada", hoje_iso).eq("status", "P").execute()
         
         if res_freq.data:
             df_presentes_hoje = pd.DataFrame(res_freq.data)
             col_nome = next((c for c in ['aluno_nome', 'nome_aluno'] if c in df_presentes_hoje.columns), None)
+            
             if col_nome:
                 n_presentes = len(df_presentes_hoje[col_nome].unique())
             else:
                 n_presentes = len(df_presentes_hoje)
                 
+        # Cálculos de faltas e percentual
         n_faltas = total_alunos - n_presentes
         perc = (n_presentes / total_alunos * 100) if total_alunos > 0 else 0
+        
     except Exception as e:
         st.error(f"⚠️ Erro na conexão: {e}")
 
@@ -54,7 +59,7 @@ def exibir_cenario(supabase):
         st.divider()
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Presentes", n_presentes)
-        c2.metric("Ausentes", n_faltas, delta=f"{n_faltas}", delta_color="inverse")
+        c2.metric("Ausentes do Dia", n_faltas, delta=f"{n_faltas}", delta_color="inverse")
         c3.metric("% Freq", f"{perc:.1f}%")
         c4.metric("Matrícula", total_alunos)
 
@@ -63,16 +68,20 @@ def exibir_cenario(supabase):
 
         st.divider()
 
+        # Gráfico esticado para mostrar todas as turmas
         try:
             if not df_presentes_hoje.empty and 'turma' in df_presentes_hoje.columns:
-                st.subheader("🏫 Presença por Turma (Hoje)")
+                st.subheader("🏫 Presença por Turma")
                 df_turmas = df_presentes_hoje.groupby('turma').size().reset_index(name='Presentes')
                 
+                # O parâmetro height=400 estica o gráfico para baixo, dando espaço para o Eixo X
                 st.bar_chart(
                     data=df_turmas,
                     x="turma",
                     y="Presentes",
-                    color="turma" 
+                    color="turma",
+                    height=450, 
+                    use_container_width=True
                 )
             else:
                 st.info("Aguardando registros de chamada para gerar o gráfico.")
@@ -83,7 +92,7 @@ def exibir_cenario(supabase):
     # 4. LADO DIREITO (Tabela de Presentes)
     # ==========================================
     with col_dir:
-        st.subheader("📋 Presentes por Sala")
+        st.subheader("📋 Resumo por Sala")
         
         if not df_presentes_hoje.empty and 'turma' in df_presentes_hoje.columns:
             df_resumo = df_presentes_hoje.groupby('turma').size().reset_index(name='Qtd')
@@ -95,62 +104,59 @@ def exibir_cenario(supabase):
                 hide_index=True,
                 column_config={
                     "turma": st.column_config.TextColumn("Turma"),
-                    "Qtd": st.column_config.NumberColumn("Qtd")
+                    "Qtd": st.column_config.NumberColumn("Presentes")
                 }
             )
         else:
-            st.info("Nenhuma presença registrada hoje.")
+            st.info("Nenhuma presença registrada.")
 
     # ==========================================
-    # 5. ÁREA INFERIOR (Ranking Full-Width igual ao Raio-X)
+    # 5. ÁREA INFERIOR (Alunos Ausentes no Dia)
     # ==========================================
-    st.divider() # Adiciona uma linha separadora para organizar
-    st.subheader("🚨 Ranking de Faltas")
-    st.caption("Acumulado de ausências por estudante")
+    st.divider() 
+    st.subheader(f"🚨 Estudantes Ausentes ({data_hoje.strftime('%d/%m/%Y')})")
+    st.caption("Selecione uma turma para ver quem faltou hoje")
 
     try:
+        # Busca todas as turmas para montar os botões (pills)
         res_t_raw = supabase.table("alunos").select("turma").execute().data
         lista_turmas = []
         if res_t_raw:
             lista_turmas = sorted(list(set([t['turma'] for t in res_t_raw if t.get('turma')])))
         
-        # Como está fora das colunas, ele vai usar a tela inteira e ficar na horizontal!
-        turma_rank = st.pills("Selecione a Turma:", options=lista_turmas)
-        
-        if turma_rank:
-            res_a = supabase.table("alunos").select("nome").eq("turma", turma_rank).execute().data
-            df_alunos = pd.DataFrame(res_a)
+        if lista_turmas:
+            # O st.pills substitui o selectbox e fica ótimo no celular e no PC!
+            turma_selecionada = st.pills("Turmas disponíveis:", options=lista_turmas)
             
-            res_f = supabase.table("frequencia").select("aluno_nome").eq("turma", turma_rank).eq("status", "F").execute().data
-            
-            if not df_alunos.empty:
-                df_alunos = df_alunos.rename(columns={'nome': 'aluno_nome'})
+            if turma_selecionada:
+                # Busca na tabela de frequência apenas quem tirou falta (F) hoje, na turma escolhida
+                res_f = supabase.table("frequencia") \
+                    .select("aluno_nome") \
+                    .eq("data_chamada", hoje_iso) \
+                    .eq("turma", turma_selecionada) \
+                    .eq("status", "F") \
+                    .execute().data
                 
                 if res_f:
-                    df_faltas = pd.DataFrame(res_f)
-                    contagem_faltas = df_faltas.groupby('aluno_nome').size().reset_index(name='Faltas')
-                    df_ranking = pd.merge(df_alunos, contagem_faltas, on='aluno_nome', how='left').fillna(0)
+                    df_faltosos = pd.DataFrame(res_f)
+                    df_faltosos = df_faltosos.sort_values(by="aluno_nome")
+                    df_faltosos['Ícone'] = "❌"
+                    df_faltosos = df_faltosos[['Ícone', 'aluno_nome']] 
+                    
+                    # Centraliza a tabela para manter a elegância visual
+                    col_vazia1, col_tabela, col_vazia2 = st.columns([1, 2, 1])
+                    with col_tabela:
+                        st.dataframe(
+                            df_faltosos,
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "Ícone": st.column_config.TextColumn("", width="small"),
+                                "aluno_nome": st.column_config.TextColumn("Nome do Estudante")
+                            }
+                        )
                 else:
-                    df_ranking = df_alunos.copy()
-                    df_ranking['Faltas'] = 0
-
-                df_ranking = df_ranking.sort_values(by=['Faltas', 'aluno_nome'], ascending=[False, True])
-                df_ranking['Ícone'] = "👤"
-                df_ranking = df_ranking[['Ícone', 'aluno_nome', 'Faltas']] 
-                
-                # Centraliza a tabela na tela usando colunas vazias nas laterais para ficar elegante
-                col_vazia1, col_tabela, col_vazia2 = st.columns([1, 2, 1])
-                with col_tabela:
-                    st.dataframe(
-                        df_ranking,
-                        use_container_width=True,
-                        hide_index=True,
-                        height=400,
-                        column_config={
-                            "Ícone": st.column_config.TextColumn("", width="small"),
-                            "aluno_nome": st.column_config.TextColumn("Estudante"),
-                            "Faltas": st.column_config.NumberColumn("Faltas Acumuladas", format="%d")
-                        }
-                    )
+                    st.success(f"🎉 Excelente! Nenhuma falta registrada para a turma {turma_selecionada} hoje.")
+                    
     except Exception as e:
-        st.error(f"Erro ao gerar ranking: {e}")
+        st.error(f"Erro ao carregar lista de ausentes: {e}")
