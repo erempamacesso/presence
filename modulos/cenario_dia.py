@@ -102,6 +102,7 @@ def exibir_cenario(supabase):
                 df_resumo,
                 use_container_width=True,
                 hide_index=True,
+                height=530, # 👇 A mágica está aqui! Altura travada para caber as 13 turmas sem scroll
                 column_config={
                     "turma": st.column_config.TextColumn("Turma"),
                     "Qtd": st.column_config.NumberColumn("Presentes")
