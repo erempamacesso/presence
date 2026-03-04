@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import simple_icd_10 as icd  # <--- Nova biblioteca!
 
 def exibir_painel_aee(supabase):
     st.title("🧩 Painel AEE & Inclusão")
@@ -34,20 +33,40 @@ def exibir_painel_aee(supabase):
                     index=["Nenhum", "Em Investigação", "Laudo Confirmado"].index(dados_atuais['status_aee']) if dados_atuais['status_aee'] in ["Nenhum", "Em Investigação", "Laudo Confirmado"] else 0
                 )
                 
-                # Campo de texto para o CID
                 novo_cid = st.text_input("🆔 Código CID (Ex: F84.0):", value=dados_atuais['cid'] if dados_atuais['cid'] else "")
 
-                # --- LÓGICA DO TRADUTOR AUTOMÁTICO ---
+                # --- 🟢 TRADUTOR DE CID EM PORTUGUÊS (LOGO ABAIXO DO INPUT) ---
                 if novo_cid:
-                    # Remove pontos e espaços para facilitar a busca
-                    cid_limpo = novo_cid.strip().upper()
+                    dic_cid_pt = {
+                        "F84.0": "Autismo Infantil",
+                        "F84": "Transtornos Globais do Desenvolvimento",
+                        "F90.0": "TDAH (Distúrbio da Atividade e Atenção)",
+                        "F90": "TDAH (Transtornos Hipercinéticos)",
+                        "F91.2": "Transtorno de Conduta Socializado",
+                        "F91": "Distúrbios de Conduta",
+                        "F70": "Retardo Mental Leve",
+                        "F71": "Retardo Mental Moderado",
+                        "F79": "Retardo Mental Não Especificado",
+                        "G40": "Epilepsia",
+                        "F30": "Episódio Maníaco / Hipomania",
+                        "F41": "Transtorno de Ansiedade",
+                        "F89": "Atraso no Desenvolvimento Psicológico",
+                    }
                     
-                    if icd.is_valid_item(cid_limpo):
-                        descricao = icd.get_description(cid_limpo)
-                        st.success(f"**Descrição:** {descricao}")
+                    # Limpeza simples para busca
+                    busca = novo_cid.upper().strip().replace(".", "")
+                    resultado = None
+                    
+                    for cod, desc in dic_cid_pt.items():
+                        if cod.replace(".", "") in busca:
+                            resultado = desc
+                            break
+                    
+                    if resultado:
+                        st.success(f"✅ **Diagnóstico:** {resultado}")
                     else:
-                        # Se não for um código único, tenta ver se é uma lista (ex: F84, F90)
-                        st.caption("💡 Dica: Digite o código exato (ex: F84.0) para ver a descrição.")
+                        st.info("🔍 Código não mapeado no dicionário rápido.")
+                # --- ---------------------------------------------------- ---
 
             with col2:
                 st.info(f"**Aluno:** {dados_atuais['nome']}\n\n**Turma:** {dados_atuais['turma']}")
@@ -79,10 +98,11 @@ def exibir_painel_aee(supabase):
     st.markdown("---")
     st.subheader("📋 Quadro Resumo de Inclusão")
     
-    df_resumo = df_alunos[df_alunos['status_aee'] != "Nenhum"].copy()
-    if not df_resumo.empty:
-        st.dataframe(df_resumo[['nome', 'turma', 'status_aee', 'cid']], 
-                     use_container_width=True, 
-                     hide_index=True)
-    else:
-        st.info("Nenhum aluno em acompanhamento especial no momento.")
+    if 'df_alunos' in locals() and not df_alunos.empty:
+        df_resumo = df_alunos[df_alunos['status_aee'] != "Nenhum"].copy()
+        if not df_resumo.empty:
+            st.dataframe(df_resumo[['nome', 'turma', 'status_aee', 'cid']], 
+                         use_container_width=True, 
+                         hide_index=True)
+        else:
+            st.info("Nenhum aluno em acompanhamento especial no momento.")
