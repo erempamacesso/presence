@@ -157,3 +157,42 @@ def exibir_busca_ativa(supabase):
             st.info("Ainda não há histórico de faltas acumulado.")
     except Exception as e:
         st.error(f"Erro ao gerar ranking visual: {e}")
+
+    st.markdown("---")
+
+    # ==========================================
+    # 4. MAPA DE COMPORTAMENTO DE EVASÕES (PASSO 1)
+    # ==========================================
+    st.subheader("🗺️ Mapa de Evasões por Turma")
+    st.write("Analise o padrão de fuga: quais alunos gazeiam mais e de quais aulas eles fogem.")
+
+    # Criamos colunas para organizar os filtros lado a lado
+    col_f1, col_f2 = st.columns([1, 2])
+
+    with col_f1:
+        # Pega a data de hoje para usar como padrão
+        hoje_data = datetime.now(fuso).date()
+        
+        # Filtro de Período (padrão: últimos 7 dias até hoje)
+        data_inicio = st.date_input("Data Inicial", hoje_data - pd.Timedelta(days=7))
+        data_fim = st.date_input("Data Final", hoje_data)
+
+    with col_f2:
+        # Vamos buscar as turmas direto do banco para o usuário selecionar
+        try:
+            res_turmas = supabase.table("evasoes").select("turma").execute()
+            if res_turmas.data:
+                # Extrai apenas os nomes das turmas e remove as duplicatas (ignorando vazios)
+                lista_turmas = sorted(list(set([t['turma'] for t in res_turmas.data if t.get('turma')])))
+                
+                # Usamos um Selectbox (Lista suspensa)
+                turma_selecionada = st.selectbox("Selecione a Turma para analisar:", ["Todas as Turmas"] + lista_turmas)
+            else:
+                turma_selecionada = "Todas as Turmas"
+                st.info("Nenhuma evasão registrada ainda para listar turmas.")
+        except Exception as e:
+            turma_selecionada = "Todas as Turmas"
+            st.error(f"Erro ao buscar turmas: {e}")
+
+    # Apenas para confirmar visualmente o que foi filtrado
+    st.caption(f"📍 Analisando o período de **{data_inicio.strftime('%d/%m/%Y')}** a **{data_fim.strftime('%d/%m/%Y')}** | Turma: **{turma_selecionada}**")
