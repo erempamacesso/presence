@@ -5,7 +5,7 @@ import pytz
 import unicodedata
 from urllib.parse import quote
 import streamlit.components.v1 as components  
-from fpdf import FPDF # Importação do PDF de volta!
+from fpdf import FPDF 
 
 # --- FUNÇÕES DE APOIO PARA AS FOTOS ---
 def limpar_texto_absoluto(texto):
@@ -49,7 +49,6 @@ def exibir_busca_ativa(supabase):
         res_evasoes = supabase.table("evasoes").select("id", count="exact").eq("data_registro", hoje).execute()
         total_evasoes = res_evasoes.count if res_evasoes.count else 0
 
-        # Pegando presenças (selecionando tudo para usar na lista de fotos pendentes)
         res_pres = supabase.table("frequencia").select("*").eq("data_chamada", hoje).eq("status", "P").execute()
         total_presentes = len(res_pres.data) if res_pres.data else 0
 
@@ -57,7 +56,7 @@ def exibir_busca_ativa(supabase):
         col2.metric("Evasões (Em aula)", total_evasoes)
         col3.metric("Presentes Agora", total_presentes)
         
-        # --- NOVO BLOCO: ALUNOS PRESENTES SEM FOTO + GERADOR DE PDF ---
+        # --- ALUNOS PRESENTES SEM FOTO + GERADOR DE PDF ---
         if res_pres.data:
             df_presentes = pd.DataFrame(res_pres.data)
             coluna_nome = 'aluno_nome' if 'aluno_nome' in df_presentes.columns else 'nome'
@@ -88,7 +87,6 @@ def exibir_busca_ativa(supabase):
                         pdf.cell(60, 10, " Turma", 1, 1, "C", True)
                         pdf.set_font("Arial", "", 11)
                         for s in sem_foto:
-                            # Limpando caracteres especiais para o PDF
                             nome_pdf = s['Estudante'].encode('latin-1', 'replace').decode('latin-1')
                             turma_pdf = s['Turma'].encode('latin-1', 'replace').decode('latin-1')
                             pdf.cell(130, 10, f" {nome_pdf}", 1)
@@ -112,7 +110,7 @@ def exibir_busca_ativa(supabase):
     # ==========================================
     # CRIANDO AS ABAS
     # ==========================================
-    aba_ranking, aba_mapa, aba_registros = st.tabs(["🚨 Alertas & Ranking de Faltas", "🗺️ Mapa de Evasões", "📝 Registrar Ação"])
+    aba_ranking, aba_mapa, aba_registros = st.tabs(["🚨 Alertas & Ranking", "🗺️ Mapa de Evasões 2.0", "📝 Registrar Ação"])
 
     # ==========================================
     # ABA 1: ALERTA INTERNO E RANKING DE FALTAS
@@ -150,25 +148,20 @@ def exibir_busca_ativa(supabase):
                 df_hist = pd.DataFrame(res_hist.data)
                 lista_turmas = sorted(df_hist['turma'].dropna().unique().tolist())
                 
-                # --- NOVO BLOCO: COLUNAS PARA TURMA E SLIDER DE FALTAS ---
                 col_turma, col_slider = st.columns([1, 2])
                 with col_turma:
                     turma_selecionada = st.selectbox("📍 Filtrar por Turma:", ["Todas as Turmas"] + lista_turmas)
                 with col_slider:
                     min_faltas = st.slider("Filtrar a partir de quantas faltas?", min_value=1, max_value=20, value=2)
                 
-                # Filtrar os dados caso uma turma específica seja escolhida
                 if turma_selecionada != "Todas as Turmas":
                     df_hist = df_hist[df_hist['turma'] == turma_selecionada]
 
                 if df_hist.empty:
                     st.success(f"Nenhuma falta registrada para a turma selecionada! 🎉")
                 else:
-                    # Contabilizar faltas por aluno
                     ranking = df_hist['aluno_nome'].value_counts().reset_index()
                     ranking.columns = ['Aluno', 'Faltas']
-                    
-                    # --- APLICANDO O FILTRO DO SLIDER ---
                     ranking = ranking[ranking['Faltas'] >= min_faltas]
 
                     if ranking.empty:
@@ -176,8 +169,6 @@ def exibir_busca_ativa(supabase):
                     else:
                         df_turmas = df_hist.drop_duplicates('aluno_nome')[['aluno_nome', 'turma']]
                         ranking = ranking.merge(df_turmas, left_on='Aluno', right_on='aluno_nome').drop('aluno_nome', axis=1)
-
-                        # Ordenar por Ordem Alfabética do nome do aluno
                         ranking = ranking.sort_values(by='Aluno', ascending=True)
 
                         mapa_fotos = listar_arquivos_bucket(supabase)
@@ -214,10 +205,8 @@ def exibir_busca_ativa(supabase):
                         """
                         
                         for _, row in ranking.iterrows():
-                            # Ajustando a barra para representar de forma ilustrativa (max 10 faltas pra encher a barra, por ex)
                             pct = (row['Faltas'] / 10) * 100 
                             pct = min(pct, 100) 
-                            
                             html_table += f"""
                             <tr>
                                 <td><img src="{row['Foto']}" class="foto-aluno"></td>
@@ -230,7 +219,6 @@ def exibir_busca_ativa(supabase):
                             </tr>
                             """
                         html_table += "</table>"
-                        
                         altura_tabela = min(len(ranking) * 90 + 50, 600)
                         components.html(html_table, height=altura_tabela, scrolling=True)
 
@@ -240,61 +228,77 @@ def exibir_busca_ativa(supabase):
             st.error(f"Erro ao gerar tabela visual: {e}")
 
     # ==========================================
-    # ABA 2: MAPA DE COMPORTAMENTO DE EVASÕES
+    # ABA 2: MAPA DE COMPORTAMENTO DE EVASÕES 2.0 (NOVO)
     # ==========================================
     with aba_mapa:
-        st.subheader("🗺️ Mapa de Evasões por Turma")
-        st.write("Analise o padrão de fuga: quais alunos gazeiam mais e de quais aulas eles fogem.")
+        st.subheader("🗺️ Inteligência e Mapa de Evasões")
+        st.write("Analise o padrão de fuga visualmente para tomar decisões estratégicas.")
 
-        col_f1, col_f2 = st.columns([1, 2])
-
+        # Filtros de Data
+        col_f1, col_f2 = st.columns(2)
         with col_f1:
             hoje_data = datetime.now(fuso).date()
-            data_inicio = st.date_input("Data Inicial", hoje_data - pd.Timedelta(days=7), format="DD/MM/YYYY")
+            data_inicio = st.date_input("Data Inicial", hoje_data - pd.Timedelta(days=15), format="DD/MM/YYYY")
+        with col_f2:
             data_fim = st.date_input("Data Final", hoje_data, format="DD/MM/YYYY")
 
-        with col_f2:
-            try:
-                res_turmas = supabase.table("evasoes").select("turma").execute()
-                if res_turmas.data:
-                    lista_turmas = sorted(list(set([t['turma'] for t in res_turmas.data if t.get('turma')])))
-                    turma_selecionada = st.selectbox("Selecione a Turma para analisar:", ["Todas as Turmas"] + lista_turmas)
-                else:
-                    turma_selecionada = "Todas as Turmas"
-                    st.info("Nenhuma evasão registrada ainda para listar turmas.")
-            except Exception as e:
-                turma_selecionada = "Todas as Turmas"
-                st.error(f"Erro ao buscar turmas: {e}")
-
-        st.caption(f"📍 Analisando o período de **{data_inicio.strftime('%d/%m/%Y')}** a **{data_fim.strftime('%d/%m/%Y')}** | Turma: **{turma_selecionada}**")
+        st.caption(f"📍 Analisando período: **{data_inicio.strftime('%d/%m/%Y')}** a **{data_fim.strftime('%d/%m/%Y')}**")
 
         try:
+            # Puxando as evasões do banco no período
             query = supabase.table("evasoes").select("aluno_nome, turma, aula_periodo, data_registro")\
                 .gte("data_registro", data_inicio.strftime('%Y-%m-%d'))\
                 .lte("data_registro", data_fim.strftime('%Y-%m-%d'))
             
-            if turma_selecionada != "Todas as Turmas":
-                query = query.eq("turma", turma_selecionada)
-                
-            res_evas_mapa = query.execute()
+            res_evas = query.execute()
 
-            if res_evas_mapa.data:
-                df_mapa = pd.DataFrame(res_evas_mapa.data)
+            if res_evas.data:
+                df_mapa = pd.DataFrame(res_evas.data)
                 
-                resumo_evas = df_mapa.groupby(['turma', 'aluno_nome']).agg(
-                    Total_Evasoes=('aula_periodo', 'count'),
-                    Aulas_Evadidas=('aula_periodo', lambda x: ', '.join(x.unique()))
-                ).reset_index()
+                # --- GRÁFICOS VISUAIS ---
+                col_graf1, col_graf2 = st.columns(2)
                 
-                resumo_evas = resumo_evas.sort_values(by=['turma', 'aluno_nome'], ascending=[True, True])
-                resumo_evas.columns = ['Turma', 'Nome do Aluno', 'Total de Fugas', 'Aulas Gazeáveis (Histórico)']
+                with col_graf1:
+                    st.write("**⏰ Horários Mais Críticos**")
+                    # Contagem por período de aula
+                    graf_aulas = df_mapa['aula_periodo'].value_counts().reset_index()
+                    graf_aulas.columns = ['Período/Aula', 'Fugas']
+                    st.bar_chart(graf_aulas.set_index('Período/Aula'), color="#ff4b4b")
 
-                st.dataframe(resumo_evas, use_container_width=True, hide_index=True)
+                with col_graf2:
+                    st.write("**📈 Evolução nos Últimos Dias**")
+                    # Contagem por dia
+                    graf_dias = df_mapa['data_registro'].value_counts().reset_index()
+                    graf_dias.columns = ['Data', 'Fugas']
+                    graf_dias = graf_dias.sort_values('Data')
+                    st.line_chart(graf_dias.set_index('Data'), color="#4b8bff")
+
+                st.markdown("---")
+                
+                col_graf3, col_graf4 = st.columns([1, 2])
+                
+                with col_graf3:
+                    st.write("**🏆 Top Turmas com Mais Evasões**")
+                    graf_turmas = df_mapa['turma'].value_counts().reset_index()
+                    graf_turmas.columns = ['Turma', 'Total Fugas']
+                    st.dataframe(graf_turmas, use_container_width=True, hide_index=True)
+
+                with col_graf4:
+                    st.write("**🕵️ Tabela de Alunos Fujões**")
+                    # Agrupando por aluno como era no mapa original
+                    resumo_evas = df_mapa.groupby(['turma', 'aluno_nome']).agg(
+                        Total_Evasoes=('aula_periodo', 'count'),
+                        Aulas_Evadidas=('aula_periodo', lambda x: ', '.join(x.unique()))
+                    ).reset_index()
+                    resumo_evas = resumo_evas.sort_values(by=['Total_Evasoes'], ascending=False)
+                    resumo_evas.columns = ['Turma', 'Nome do Aluno', 'Qtd de Fugas', 'Aulas Gazeadas']
+                    st.dataframe(resumo_evas, use_container_width=True, hide_index=True)
+
             else:
-                st.success("Tudo certo por aqui! Nenhuma evasão encontrada para os filtros selecionados. 🎉")
+                st.success("🎉 Tudo tranquilo por aqui! Nenhuma evasão registrada nesse período.")
                 
         except Exception as e:
-            st.error(f"Erro ao gerar tabela de evasões: {e}")
+            st.error(f"Erro ao processar dados de evasão: {e}")
 
     # ==========================================
     # ABA 3: REGISTRO DE AÇÃO (BUSCA ATIVA)
