@@ -6,6 +6,13 @@ def exibir_painel_aee(supabase):
     st.caption("Gestão de Estudantes com Especificidades e Investigação Pedagógica")
     st.markdown("---")
 
+    # --- NOVO: BUSCA QUEM ESTÁ NA MIRA DA BUSCA ATIVA ---
+    try:
+        res_busca = supabase.table("historico_busca_ativa").select("aluno_id").in_("status_atual", ["Em acompanhamento", "Alerta"]).execute()
+        alunos_em_busca = {r['aluno_id'] for r in res_busca.data} if res_busca.data else set()
+    except:
+        alunos_em_busca = set()
+
     # 1. BUSCA E FILTRO POR TURMA
     try:
         # Buscamos os dados base
@@ -34,6 +41,10 @@ def exibir_painel_aee(supabase):
                 dados_atuais = df_filtrado[df_filtrado['id'] == aluno_selecionado].iloc[0]
                 
                 st.markdown("---")
+                
+                # 👇 NOVO: ALERTA CRUZADO DE BUSCA ATIVA 👇
+                if aluno_selecionado in alunos_em_busca:
+                    st.error("🚨 **ALERTA DE BUSCA ATIVA:** Atenção equipe pedagógica! Este estudante está sinalizado com alto risco de evasão ou faltas recorrentes. Reforçar vínculos afetivos e suporte imediato.")
                 
                 # 2. FORMULÁRIO DE ATUALIZAÇÃO
                 col1, col2 = st.columns(2)
@@ -113,8 +124,11 @@ def exibir_painel_aee(supabase):
         df_resumo = df_alunos[df_alunos['status_aee'] != "Nenhum"].copy()
         df_resumo = df_resumo.sort_values(by=['turma', 'nome'])
         
+        # 👇 NOVO: Adicionando indicador visual no Dataframe
+        df_resumo['Risco Evasão'] = df_resumo['id'].apply(lambda x: "🚨 Sim" if x in alunos_em_busca else "-")
+        
         if not df_resumo.empty:
-            st.dataframe(df_resumo[['turma', 'nome', 'status_aee', 'cid']], 
+            st.dataframe(df_resumo[['turma', 'nome', 'status_aee', 'cid', 'Risco Evasão']], 
                          use_container_width=True, 
                          hide_index=True)
         else:
