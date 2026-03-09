@@ -42,29 +42,41 @@ def exibir_busca_ativa(supabase):
     col1, col2, col3 = st.columns(3)
 
     try:
+        # Puxamos as faltas
         res_faltas = supabase.table("frequencia").select("id", count="exact").eq("data_chamada", hoje).eq("status", "F").execute()
         total_faltas = res_faltas.count if res_faltas.count else 0
         
+        # Puxamos as evasões
         res_evasoes = supabase.table("evasoes").select("id", count="exact").eq("data_registro", hoje).execute()
         total_evasoes = res_evasoes.count if res_evasoes.count else 0
 
-        res_pres = supabase.table("frequencia").select("id", count="exact").eq("data_chamada", hoje).eq("status", "P").execute()
-        total_presentes = res_pres.count if res_pres.count else 0
+        # Puxamos as presenças (Ajustado o select para garantir as colunas)
+        res_pres = supabase.table("frequencia").select("*").eq("data_chamada", hoje).eq("status", "P").execute()
+        total_presentes = len(res_pres.data) if res_pres.data else 0
 
         col1.metric("Faltas (Entrada)", total_faltas)
         col2.metric("Evasões (Em aula)", total_evasoes)
         col3.metric("Presentes Agora", total_presentes)
         
-        # --- NOVO BLOCO: ALUNOS PRESENTES SEM FOTO (Logo abaixo das métricas) ---
+        # --- BLOCO CORRIGIDO: ALUNOS PRESENTES SEM FOTO ---
         if res_pres.data:
             df_presentes = pd.DataFrame(res_pres.data)
+            
+            # Verificamos se a coluna é 'aluno_nome' ou 'nome'
+            coluna_nome = 'aluno_nome' if 'aluno_nome' in df_presentes.columns else 'nome'
+            
             mapa_fotos = listar_arquivos_bucket(supabase)
             
             sem_foto = []
             for _, aluno in df_presentes.iterrows():
-                nome_limpo = limpar_texto_absoluto(aluno['aluno_nome'])
+                nome_aluno = aluno[coluna_nome]
+                nome_limpo = limpar_texto_absoluto(nome_aluno)
+                
                 if nome_limpo not in mapa_fotos:
-                    sem_foto.append({"Estudante": aluno['aluno_nome'], "Turma": aluno['turma']})
+                    sem_foto.append({
+                        "Estudante": nome_aluno, 
+                        "Turma": aluno.get('turma', 'N/A')
+                    })
             
             if sem_foto:
                 with st.expander(f"⚠️ {len(sem_foto)} Alunos presentes hoje não possuem foto"):
@@ -73,8 +85,6 @@ def exibir_busca_ativa(supabase):
 
     except Exception as e:
         st.error(f"Erro ao carregar métricas ou fotos pendentes: {e}")
-
-    st.markdown("---")
 
     # ==========================================
     # CRIANDO AS ABAS
