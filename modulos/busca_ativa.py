@@ -5,7 +5,7 @@ import pytz
 import unicodedata
 from urllib.parse import quote
 import streamlit.components.v1 as components  
-from fpdf import FPDF # Importação necessária para o PDF
+from fpdf import FPDF 
 
 # --- FUNÇÕES DE APOIO PARA AS FOTOS ---
 def limpar_texto_absoluto(texto):
@@ -43,15 +43,12 @@ def exibir_busca_ativa(supabase):
     col1, col2, col3 = st.columns(3)
 
     try:
-        # Puxamos as faltas
         res_faltas = supabase.table("frequencia").select("id", count="exact").eq("data_chamada", hoje).eq("status", "F").execute()
         total_faltas = res_faltas.count if res_faltas.count else 0
         
-        # Puxamos as evasões
         res_evasoes = supabase.table("evasoes").select("id", count="exact").eq("data_registro", hoje).execute()
         total_evasoes = res_evasoes.count if res_evasoes.count else 0
 
-        # Puxamos as presenças
         res_pres = supabase.table("frequencia").select("*").eq("data_chamada", hoje).eq("status", "P").execute()
         total_presentes = len(res_pres.data) if res_pres.data else 0
 
@@ -76,7 +73,6 @@ def exibir_busca_ativa(supabase):
                     st.info("Estes alunos estão na escola. Ótima oportunidade para atualizar o sistema!")
                     st.dataframe(pd.DataFrame(sem_foto), use_container_width=True, hide_index=True)
                     
-                    # Gerar PDF em memória
                     try:
                         pdf = FPDF()
                         pdf.add_page()
@@ -132,36 +128,89 @@ def exibir_busca_ativa(supabase):
         except: pass
 
         st.markdown("---")
-        st.subheader("🏆 Histórico de Faltas por Turma")
+        st.subheader("🏆 Ranking de Alunos Faltosos")
         try:
             res_hist = supabase.table("frequencia").select("aluno_nome, turma").eq("status", "F").execute()
             if res_hist.data:
                 df_hist = pd.DataFrame(res_hist.data)
                 lista_turmas = sorted(df_hist['turma'].dropna().unique().tolist())
-                turma_sel = st.selectbox("📍 Selecione a Turma:", ["Todas as Turmas"] + lista_turmas)
+                
+                col_turma, col_slider = st.columns([1, 2])
+                with col_turma:
+                    turma_sel = st.selectbox("📍 Selecione a Turma:", ["Todas as Turmas"] + lista_turmas)
+                with col_slider:
+                    # SLIDER RECONSTRUÍDO AQUI!
+                    min_faltas = st.slider("Filtrar a partir de quantas faltas?", min_value=1, max_value=10, value=2)
+
                 if turma_sel != "Todas as Turmas":
                     df_hist = df_hist[df_hist['turma'] == turma_sel]
                 
                 ranking = df_hist['aluno_nome'].value_counts().reset_index()
                 ranking.columns = ['Aluno', 'Faltas']
-                df_turmas = df_hist.drop_duplicates('aluno_nome')[['aluno_nome', 'turma']]
-                ranking = ranking.merge(df_turmas, left_on='Aluno', right_on='aluno_nome').drop('aluno_nome', axis=1).sort_values(by='Aluno')
-
-                mapa_f = listar_arquivos_bucket(supabase)
-                url_b = f"{st.secrets['SUPABASE_URL']}/storage/v1/object/public/fotos-alunos/"
                 
-                html_table = "<style>.foto{width:60px;height:60px;border-radius:50%;object-fit:cover;}.tab{width:100%;border-collapse:collapse;} .tab td, .tab th{padding:10px;border-bottom:1px solid #ddd;}</style><table class='tab'><tr><th>Foto</th><th>Nome</th><th>Turma</th><th>Faltas</th></tr>"
-                for _, r in ranking.iterrows():
-                    n_limpo = limpar_texto_absoluto(r['Aluno'])
-                    arq = mapa_f.get(n_limpo)
-                    f_url = f"{url_b}{quote(arq)}" if arq else "https://cdn-icons-png.flaticon.com/512/149/149071.png"
-                    html_table += f"<tr><td><img src='{f_url}' class='foto'></td><td>{r['Aluno']}</td><td>{r['turma']}</td><td>{r['Faltas']}</td></tr>"
-                html_table += "</table>"
-                components.html(html_table, height=400, scrolling=True)
+                # APLICANDO O FILTRO DO SLIDER
+                ranking = ranking[ranking['Faltas'] >= min_faltas]
+
+                df_turmas = df_hist.drop_duplicates('aluno_nome')[['aluno_nome', 'turma']]
+                ranking = ranking.merge(df_turmas, left_on='Aluno', right_on='aluno_nome').drop('aluno_nome', axis=1).sort_values(by='Faltas', ascending=False)
+
+                if not ranking.empty:
+                    mapa_f = listar_arquivos_bucket(supabase)
+                    url_b = f"{st.secrets['SUPABASE_URL']}/storage/v1/object/public/fotos-alunos/"
+                    
+                    html_table = "<style>.foto{width:60px;height:60px;border-radius:50%;object-fit:cover;}.tab{width:100%;border-collapse:collapse;} .tab td, .tab th{padding:10px;border-bottom:1px solid #ddd;}</style><table class='tab'><tr><th>Foto</th><th>Nome</th><th>Turma</th><th>Faltas</th></tr>"
+                    for _, r in ranking.iterrows():
+                        n_limpo = limpar_texto_absoluto(r['Aluno'])
+                        arq = mapa_f.get(n_limpo)
+                        f_url = f"{url_b}{quote(arq)}" if arq else "https://cdn-icons-png.flaticon.com/512/149/149071.png"
+                        html_table += f"<tr><td><img src='{f_url}' class='foto'></td><td>{r['Aluno']}</td><td>{r['turma']}</td><td><strong>{r['Faltas']}</strong></td></tr>"
+                    html_table += "</table>"
+                    components.html(html_table, height=400, scrolling=True)
+                else:
+                    st.info("Nenhum aluno com essa quantidade de faltas no filtro selecionado.")
         except: pass
 
-    # Aba de Mapa e Registros permanecem com a lógica que você já tem
     with aba_mapa:
         st.info("Mapa de comportamento de evasões em desenvolvimento.")
+        
+    # ==========================================
+    # ÁREA DE REGISTROS RECONSTRUÍDA
+    # ==========================================
     with aba_registros:
-        st.info("Área de registro de ações da equipe.")
+        st.subheader("📝 Registrar Ação da Equipe")
+        st.write("Preencha as informações abaixo para documentar a ação de Busca Ativa.")
+        
+        with st.form("form_registro_acao"):
+            col_aluno, col_data = st.columns([2, 1])
+            with col_aluno:
+                aluno_alvo = st.text_input("Nome do Estudante")
+            with col_data:
+                data_acao = st.date_input("Data da Ação", datetime.now(fuso))
+                
+            tipo_acao = st.selectbox(
+                "Tipo de Intervenção", 
+                ["Contato Telefônico com a Família", "Reunião Presencial na Escola", "Visita Domiciliar", "Encaminhamento ao Conselho Tutelar", "Conversa Direta com o Aluno", "Outros"]
+            )
+            
+            observacoes = st.text_area("Observações e Acordos Firmados")
+            
+            submit_registro = st.form_submit_button("💾 Salvar Registro de Busca Ativa", use_container_width=True)
+            
+            if submit_registro:
+                if not aluno_alvo:
+                    st.error("Por favor, preencha o nome do estudante.")
+                else:
+                    # Aqui você pode ativar o código do Supabase quando souber o nome exato da sua tabela
+                    # try:
+                    #     dados_inserir = {
+                    #         "aluno_nome": aluno_alvo,
+                    #         "tipo_acao": tipo_acao,
+                    #         "observacoes": observacoes,
+                    #         "data_registro": str(data_acao)
+                    #     }
+                    #     supabase.table("sua_tabela_de_acoes").insert(dados_inserir).execute()
+                    #     st.success(f"Ação para {aluno_alvo} salva com sucesso!")
+                    # except Exception as e:
+                    #     st.error(f"Erro ao salvar no banco: {e}")
+                    
+                    st.success(f"✅ Ação para o aluno **{aluno_alvo}** pronta para ser salva! (Ajuste o código do Supabase na linha 216 para gravar no banco).")
