@@ -60,7 +60,7 @@ def exibir_busca_ativa(supabase):
     st.markdown("---")
 
     # ==========================================
-    # CRIANDO AS ABAS (AGORA COM 3 ABAS)
+    # CRIANDO AS ABAS
     # ==========================================
     aba_ranking, aba_mapa, aba_registros = st.tabs(["🚨 Alertas & Ranking de Faltas", "🗺️ Mapa de Evasões", "📝 Registrar Ação"])
 
@@ -92,31 +92,35 @@ def exibir_busca_ativa(supabase):
 
         st.markdown("---")
 
-        st.subheader("🏆 Ranking de Alunos Faltosos (Últimos 5 dias)")
+        # 👇 NOVO: Título atualizado e Selectbox por Turma 👇
+        st.subheader("🏆 Histórico de Faltas por Turma")
         
-        min_faltas = st.slider(
-            "Filtrar a partir de quantas faltas?", 
-            min_value=1, 
-            max_value=5, 
-            value=3, 
-            help="Deslize para ver apenas os alunos que atingiram este número de faltas."
-        )
-
         try:
             res_hist = supabase.table("frequencia").select("aluno_nome, turma").eq("status", "F").execute()
             
             if res_hist.data:
                 df_hist = pd.DataFrame(res_hist.data)
-                ranking = df_hist['aluno_nome'].value_counts().reset_index()
-                ranking.columns = ['Aluno', 'Faltas']
                 
-                ranking = ranking[ranking['Faltas'] >= min_faltas]
+                # Coletar turmas únicas para o filtro
+                lista_turmas = sorted(df_hist['turma'].dropna().unique().tolist())
+                turma_selecionada = st.selectbox("📍 Filtrar por Turma:", ["Todas as Turmas"] + lista_turmas)
                 
-                if ranking.empty:
-                    st.success(f"Nenhum aluno com {min_faltas} ou mais faltas! 🎉")
+                # Filtrar os dados caso uma turma específica seja escolhida
+                if turma_selecionada != "Todas as Turmas":
+                    df_hist = df_hist[df_hist['turma'] == turma_selecionada]
+
+                if df_hist.empty:
+                    st.success(f"Nenhuma falta registrada para a turma selecionada! 🎉")
                 else:
+                    # Contabilizar faltas por aluno
+                    ranking = df_hist['aluno_nome'].value_counts().reset_index()
+                    ranking.columns = ['Aluno', 'Faltas']
+                    
                     df_turmas = df_hist.drop_duplicates('aluno_nome')[['aluno_nome', 'turma']]
                     ranking = ranking.merge(df_turmas, left_on='Aluno', right_on='aluno_nome').drop('aluno_nome', axis=1)
+
+                    # 👇 NOVO: Ordenar por Ordem Alfabética do nome do aluno 👇
+                    ranking = ranking.sort_values(by='Aluno', ascending=True)
 
                     mapa_fotos = listar_arquivos_bucket(supabase)
                     url_base = f"{st.secrets['SUPABASE_URL']}/storage/v1/object/public/fotos-alunos/"
@@ -131,7 +135,6 @@ def exibir_busca_ativa(supabase):
                         return foto_fallback
 
                     ranking['Foto'] = ranking['Aluno'].apply(buscar_url_foto)
-                    ranking = ranking.sort_values(by=['Faltas', 'turma'], ascending=[False, True])
 
                     html_table = """
                     <style>
@@ -148,12 +151,13 @@ def exibir_busca_ativa(supabase):
                             <th style="width: 80px;">📸 Foto</th>
                             <th>Nome do Estudante</th>
                             <th>Turma</th>
-                            <th>🔥 Nível de Alerta</th>
+                            <th>🔥 Histórico de Faltas</th>
                         </tr>
                     """
                     
                     for _, row in ranking.iterrows():
-                        pct = (row['Faltas'] / 5) * 100 
+                        # Ajustando a barra para representar de forma ilustrativa (max 10 faltas pra encher a barra, por ex)
+                        pct = (row['Faltas'] / 10) * 100 
                         pct = min(pct, 100) 
                         
                         html_table += f"""
@@ -162,7 +166,7 @@ def exibir_busca_ativa(supabase):
                             <td style="font-weight: 600;">{row['Aluno']}</td>
                             <td>{row['turma']}</td>
                             <td>
-                                <div style="font-size: 14px; font-weight: bold;">{row['Faltas']} faltas</div>
+                                <div style="font-size: 14px; font-weight: bold;">{row['Faltas']} faltas acumuladas</div>
                                 <div class="alerta-bar-bg"><div class="alerta-bar-fg" style="width: {pct}%;"></div></div>
                             </td>
                         </tr>
@@ -175,7 +179,7 @@ def exibir_busca_ativa(supabase):
             else:
                 st.info("Ainda não há histórico de faltas acumulado.")
         except Exception as e:
-            st.error(f"Erro ao gerar ranking visual: {e}")
+            st.error(f"Erro ao gerar tabela visual: {e}")
 
     # ==========================================
     # ABA 2: MAPA DE COMPORTAMENTO DE EVASÕES
@@ -235,18 +239,16 @@ def exibir_busca_ativa(supabase):
             st.error(f"Erro ao gerar tabela de evasões: {e}")
 
     # ==========================================
-    # 👇 ABA 3: NOVO REGISTRO DE AÇÃO (BUSCA ATIVA)
+    # ABA 3: REGISTRO DE AÇÃO (BUSCA ATIVA)
     # ==========================================
     with aba_registros:
         st.subheader("📝 Registrar Ação da Equipe")
         st.write("Adicione um novo registro no histórico do estudante para ativar o alerta no Fotograma.")
 
         try:
-            # Puxa a lista de alunos para o selectbox
             res_alunos = supabase.table("alunos").select("id, nome, turma").order("nome").execute()
             if res_alunos.data:
                 
-                # Função para formatar como o nome aparece na caixa de seleção
                 def formatar_aluno(aluno):
                     return f"{aluno['nome']} (Turma: {aluno['turma']})"
 
