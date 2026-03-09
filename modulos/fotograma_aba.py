@@ -48,7 +48,7 @@ def gerar_sugestoes_ia(relatorio):
     return dicas
 
 # ==========================================
-# 🧩 POPUP DE INCLUSÃO
+# 🧩 POPUPS (AEE e BUSCA ATIVA)
 # ==========================================
 @st.dialog("🧩 Ficha de Inclusão e AEE")
 def abrir_popup_aee(nome, status, cid, relatorio):
@@ -78,6 +78,31 @@ def abrir_popup_aee(nome, status, cid, relatorio):
                 st.success(f"**🔢 Matemática**\n\n{sugestoes['Matemática']}")
                 st.success(f"**🔬 Natureza**\n\n{sugestoes['Natureza']}")
 
+# 👇 NOVO POPUP DE HISTÓRICO DA BUSCA ATIVA
+@st.dialog("🔎 Histórico de Busca Ativa")
+def abrir_popup_busca_ativa(aluno_id, nome, supabase):
+    st.subheader(nome)
+    st.write("Histórico de ações realizadas pela equipe:")
+    
+    try:
+        res = supabase.table("historico_busca_ativa").select("*").eq("aluno_id", aluno_id).order("data_registro", desc=True).execute()
+        
+        if res.data:
+            df = pd.DataFrame(res.data)
+            df['data'] = pd.to_datetime(df['data_registro']).dt.strftime('%d/%m/%Y às %H:%M')
+            
+            for _, row in df.iterrows():
+                with st.container(border=True):
+                    st.caption(f"📅 {row['data']} | 👤 Registro por: {row.get('quem_registrou', 'Equipe')}")
+                    st.markdown(f"**Ação Tomada:** {row['acao_realizada']}")
+                    
+                    status_cor = "red" if "Evasão" in row['status_atual'] else "orange" if "acompanhamento" in row['status_atual'] else "green"
+                    st.markdown(f"**Status Atual:** :{status_cor}[{row['status_atual']}]")
+        else:
+            st.warning("Nenhum histórico registrado ainda, mas o aluno está no radar de alerta.")
+    except Exception as e:
+        st.error(f"Erro ao buscar histórico: {e}")
+
 # ==========================================
 # 🛠️ FUNÇÕES DE TRATAMENTO E CACHE
 # ==========================================
@@ -106,7 +131,7 @@ def listar_arquivos_bucket(_supabase):
     except: return {}
 
 # ==========================================
-# 🖨️ GERADORES DE PDF
+# 🖨️ GERADORES DE PDF (Mantidos iguais)
 # ==========================================
 def gerar_pdf_pendencias(turma, alunos_pendentes):
     pdf = FPDF()
@@ -132,7 +157,6 @@ def gerar_pdf_fotograma_impresso(turma, alunos):
     pdf.cell(190, 10, f"Gerado em: {datetime.now().strftime('%d/%m/%Y')}", ln=True, align='C')
     pdf.ln(5)
     
-    # Grid de 2 colunas para o PDF
     pdf.set_font("Arial", "", 9)
     col_width = 90
     row_height = 8
@@ -141,12 +165,10 @@ def gerar_pdf_fotograma_impresso(turma, alunos):
         a1 = alunos[i]
         a2 = alunos[i+1] if i+1 < len(alunos) else None
         
-        # Formata aluno 1
         stat1 = "[AEE]" if a1.get('status_aee', 'Nenhum') != 'Nenhum' else ""
         txt1 = f"{stat1} {str(a1.get('nome', ''))[:40]}"
         pdf.cell(col_width, row_height, txt1, border=1)
         
-        # Formata aluno 2
         if a2:
             stat2 = "[AEE]" if a2.get('status_aee', 'Nenhum') != 'Nenhum' else ""
             txt2 = f"{stat2} {str(a2.get('nome', ''))[:40]}"
@@ -168,7 +190,10 @@ def exibir_fotograma(supabase):
         mapa_fotos = listar_arquivos_bucket(supabase)
         supabase_url = st.secrets['SUPABASE_URL']
 
-        # --- NOVO: VISÃO GERAL DA ESCOLA (TOTAL DE PENDÊNCIAS) ---
+        # 👇 NOVO: Buscar alunos atualmente "Em acompanhamento" na Busca Ativa
+        res_busca = supabase.table("historico_busca_ativa").select("aluno_id").in_("status_atual", ["Em acompanhamento", "Alerta"]).execute()
+        alunos_em_busca = {r['aluno_id'] for r in res_busca.data} if res_busca.data else set()
+
         res_todos_alunos = supabase.table("alunos").select("nome").execute()
         total_sem_foto_escola = sum(1 for a in res_todos_alunos.data if limpar_texto(a.get('nome')) not in mapa_fotos)
         
@@ -176,15 +201,12 @@ def exibir_fotograma(supabase):
             st.info(f"🏫 **Visão Geral:** Faltam **{total_sem_foto_escola}** fotos para completar 100% do mapa da escola.")
         else:
             st.success("🏫 **Visão Geral:** Parabéns! 100% dos estudantes estão com foto cadastrada.")
-        # ---------------------------------------------------------
 
         if lista_turmas:
             turma_sel = st.pills("Selecione a Turma:", options=lista_turmas)
             
             if turma_sel:
                 alunos = supabase.table("alunos").select("*").eq("turma", turma_sel).order("nome").execute().data
-                
-                # --- PAINEL DE AUDITORIA E PDF ---
                 alunos_sem_foto = [a for a in alunos if limpar_texto(a.get('nome')) not in mapa_fotos]
                 
                 col_btn1, col_btn2 = st.columns(2)
@@ -202,22 +224,36 @@ def exibir_fotograma(supabase):
 
                 st.divider()
                 
-                # --- GRID DE FOTOS (AUMENTADO PARA CELULAR) ---
+                # --- GRID DE FOTOS COM A LÓGICA DE CORES ---
                 num_cols = 4 
                 for i in range(0, len(alunos), num_cols):
                     linha_alunos = alunos[i : i + num_cols]
                     cols = st.columns(num_cols)
+                    
                     for j, aluno in enumerate(linha_alunos):
                         with cols[j]:
+                            # Lógica das Cores
                             status_aee = aluno.get('status_aee', 'Nenhum')
-                            borda_cor = "#007BFF" if status_aee == "Laudo Confirmado" else "#FFC107" if status_aee == "Em Investigação" else "transparent"
-                            espessura = "4px" if status_aee != "Nenhum" else "0px"
+                            is_aee = status_aee != "Nenhum"
+                            is_busca = aluno['id'] in alunos_em_busca
+                            
+                            cor_aee = "#007BFF" if status_aee == "Laudo Confirmado" else "#FFC107"
+                            cor_busca = "#E53935" # Vermelho Busca Ativa
+                            
+                            # Magia do CSS para Borda Dupla/Gradiente
+                            if is_aee and is_busca:
+                                estilo_borda = f"border: 4px solid transparent; background-image: linear-gradient(white, white), linear-gradient(135deg, {cor_aee}, {cor_busca}); background-origin: border-box; background-clip: padding-box, border-box;"
+                            elif is_aee:
+                                estilo_borda = f"border: 4px solid {cor_aee}; background: white;"
+                            elif is_busca:
+                                estilo_borda = f"border: 4px solid {cor_busca}; background: white;"
+                            else:
+                                estilo_borda = "border: 1px solid #ddd; background: white;"
                             
                             nome = aluno.get("nome", "Sem Nome")
                             chave = limpar_texto(nome)
                             foto_arq = mapa_fotos.get(chave)
                             
-                            # Aumentei a altura da imagem para 200px
                             if foto_arq:
                                 url_img = f"{supabase_url}/storage/v1/object/public/fotos-alunos/{quote(foto_arq)}"
                                 img_html = f'<img src="{url_img}" style="width: 100%; height: 200px; object-fit: contain; background: #f8f9fa; border-radius: 6px;">'
@@ -231,9 +267,9 @@ def exibir_fotograma(supabase):
                             except:
                                 dt_fmt = "--/--/----"
                             
-                            # Aumentei a altura mínima do cartão para 300px
+                            # Aplicação do Estilo Dinâmico
                             st.markdown(f"""
-                            <div style="border: {espessura} solid {borda_cor}; border-radius: 12px; padding: 10px; text-align: center; background: white; min-height: 300px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 2px 2px 5px rgba(0,0,0,0.1); margin-bottom: 10px;">
+                            <div style="{estilo_borda} border-radius: 12px; padding: 10px; text-align: center; min-height: 300px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 2px 2px 5px rgba(0,0,0,0.1); margin-bottom: 5px;">
                                 {img_html}
                                 <div style="margin-top: 10px;">
                                     <p style="font-size: 12px; font-weight: bold; margin: 0; text-transform: uppercase; color: #222;">{nome[:25]}</p>
@@ -242,8 +278,23 @@ def exibir_fotograma(supabase):
                             </div>
                             """, unsafe_allow_html=True)
                             
-                            if status_aee != "Nenhum":
-                                if st.button("🧩 Ficha", key=f"f_{aluno['id']}", use_container_width=True):
-                                    abrir_popup_aee(nome, status_aee, aluno.get('cid',''), aluno.get('relatorio_aee',''))
+                            # Renderização dos Botões de Ação
+                            if is_aee or is_busca:
+                                cols_btn = st.columns(sum([1 if is_aee else 0, 1 if is_busca else 0]))
+                                idx_btn = 0
+                                
+                                if is_aee:
+                                    with cols_btn[idx_btn]:
+                                        if st.button("🧩 AEE", key=f"aee_{aluno['id']}", use_container_width=True):
+                                            abrir_popup_aee(nome, status_aee, aluno.get('cid',''), aluno.get('relatorio_aee',''))
+                                    idx_btn += 1
+                                    
+                                if is_busca:
+                                    with cols_btn[idx_btn]:
+                                        if st.button("🔎 Busca", key=f"ba_{aluno['id']}", type="primary", use_container_width=True):
+                                            abrir_popup_busca_ativa(aluno['id'], nome, supabase)
+                            else:
+                                st.write("") # Espaçador invisível para alinhar o grid
+
     except Exception as e:
         st.error(f"Erro ao carregar fotograma: {e}")
