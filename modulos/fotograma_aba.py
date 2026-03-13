@@ -48,7 +48,7 @@ def gerar_sugestoes_ia(relatorio):
     return dicas
 
 # ==========================================
-# 🧩 POPUPS (AEE e BUSCA ATIVA)
+# 🧩 POPUPS (AEE, BUSCA ATIVA E ZOOM)
 # ==========================================
 @st.dialog("🧩 Ficha de Inclusão e AEE")
 def abrir_popup_aee(nome, status, cid, relatorio):
@@ -78,7 +78,6 @@ def abrir_popup_aee(nome, status, cid, relatorio):
                 st.success(f"**🔢 Matemática**\n\n{sugestoes['Matemática']}")
                 st.success(f"**🔬 Natureza**\n\n{sugestoes['Natureza']}")
 
-# 👇 NOVO POPUP DE HISTÓRICO DA BUSCA ATIVA
 @st.dialog("🔎 Histórico de Busca Ativa")
 def abrir_popup_busca_ativa(aluno_id, nome, supabase):
     st.subheader(nome)
@@ -102,6 +101,12 @@ def abrir_popup_busca_ativa(aluno_id, nome, supabase):
             st.warning("Nenhum histórico registrado ainda, mas o aluno está no radar de alerta.")
     except Exception as e:
         st.error(f"Erro ao buscar histórico: {e}")
+
+# 👇 NOVO POPUP DE FOTO AMPLIADA
+@st.dialog("📸 Foto Ampliada")
+def abrir_popup_foto(nome, url_img):
+    st.subheader(nome)
+    st.image(url_img, use_container_width=True)
 
 # ==========================================
 # 🛠️ FUNÇÕES DE TRATAMENTO E CACHE
@@ -131,7 +136,7 @@ def listar_arquivos_bucket(_supabase):
     except: return {}
 
 # ==========================================
-# 🖨️ GERADORES DE PDF (Mantidos iguais)
+# 🖨️ GERADORES DE PDF 
 # ==========================================
 def gerar_pdf_pendencias(turma, alunos_pendentes):
     pdf = FPDF()
@@ -190,7 +195,6 @@ def exibir_fotograma(supabase):
         mapa_fotos = listar_arquivos_bucket(supabase)
         supabase_url = st.secrets['SUPABASE_URL']
 
-        # 👇 NOVO: Buscar alunos atualmente "Em acompanhamento" na Busca Ativa
         res_busca = supabase.table("historico_busca_ativa").select("aluno_id").in_("status_atual", ["Em acompanhamento", "Alerta"]).execute()
         alunos_em_busca = {r['aluno_id'] for r in res_busca.data} if res_busca.data else set()
 
@@ -258,6 +262,7 @@ def exibir_fotograma(supabase):
                                 url_img = f"{supabase_url}/storage/v1/object/public/fotos-alunos/{quote(foto_arq)}"
                                 img_html = f'<img src="{url_img}" style="width: 100%; height: 200px; object-fit: contain; background: #f8f9fa; border-radius: 6px;">'
                             else:
+                                url_img = None
                                 img_html = "<div style='width:100%; height:200px; background:#f0f0f0; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:50px;'>👤</div>"
                             
                             raw_date = aluno.get('data_nascimento') or aluno.get('Data de nascimento')
@@ -278,21 +283,34 @@ def exibir_fotograma(supabase):
                             </div>
                             """, unsafe_allow_html=True)
                             
-                            # Renderização dos Botões de Ação
-                            if is_aee or is_busca:
-                                cols_btn = st.columns(sum([1 if is_aee else 0, 1 if is_busca else 0]))
+                            # Renderização Dinâmica dos Botões de Ação
+                            tem_foto = bool(url_img)
+                            num_botoes = sum([1 if tem_foto else 0, 1 if is_aee else 0, 1 if is_busca else 0])
+                            
+                            if num_botoes > 0:
+                                cols_btn = st.columns(num_botoes)
                                 idx_btn = 0
                                 
+                                # Botão de Zoom
+                                if tem_foto:
+                                    with cols_btn[idx_btn]:
+                                        if st.button("🔍 Zoom", key=f"zoom_{aluno['id']}", use_container_width=True):
+                                            abrir_popup_foto(nome, url_img)
+                                    idx_btn += 1
+                                
+                                # Botão do AEE
                                 if is_aee:
                                     with cols_btn[idx_btn]:
                                         if st.button("🧩 AEE", key=f"aee_{aluno['id']}", use_container_width=True):
                                             abrir_popup_aee(nome, status_aee, aluno.get('cid',''), aluno.get('relatorio_aee',''))
                                     idx_btn += 1
-                                    
+                                
+                                # Botão da Busca Ativa
                                 if is_busca:
                                     with cols_btn[idx_btn]:
                                         if st.button("🔎 Busca", key=f"ba_{aluno['id']}", type="primary", use_container_width=True):
                                             abrir_popup_busca_ativa(aluno['id'], nome, supabase)
+                                    idx_btn += 1
                             else:
                                 st.write("") # Espaçador invisível para alinhar o grid
 
