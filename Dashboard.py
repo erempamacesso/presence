@@ -202,57 +202,88 @@ elif menu == "📚 Biblioteca de Questões":
     else:
         st.info("Nenhuma questão encontrada com esses filtros.")
 
-# --- 8. GERADOR DE MODELOS (COM CHECKBOXES E CARDS) ---
+# --- 8. GERADOR DE MODELOS (ESTILO CARDS PROFISSIONAIS) ---
 elif menu == "📜 Gerar Modelo de Prova":
     st.title("📜 Publicar Prova para Alunos")
     
-    # Buscamos o enunciado também para criar o resumo
+    # Import para limpar HTML da prévia
     import re
-    res_q = supabase.table("questoes").select("id, assunto, serie, dificuldade, enunciado").execute()
+
+    # Buscamos as questões
+    res_q = supabase.table("questoes").select("id, assunto, serie, dificuldade, enunciado, resposta_correta").execute()
     df_q = pd.DataFrame(res_q.data)
     
     if not df_q.empty:
-        tit = st.text_input("Título da Prova")
-        ser = st.selectbox("Série alvo", ["1º Ano", "2º Ano", "3º Ano"])
+        # Área de Configuração da Prova
+        col_t1, col_t2 = st.columns([2, 1])
+        with col_t1:
+            tit = st.text_input("Título da Prova", placeholder="Ex: 1º Simulado Bimestral")
+        with col_t2:
+            ser = st.selectbox("Filtrar questões da Série:", ["1º Ano", "2º Ano", "3º Ano"])
+        
+        st.divider()
+        st.subheader("📋 Selecione as Questões para a Prova")
+        
+        # Filtragem por série selecionada
         qs_disp = df_q[df_q['serie'] == ser]
         
-        st.write("### Selecione as questões:")
-        st.caption("Marque a caixa ao lado de cada questão para incluí-la na prova.")
-        
-        questoes_selecionadas = []
-        
-        # Criação dos "cards" interativos em vez do multiselect
-        for _, row in qs_disp.iterrows():
-            with st.container(border=True): # Cria a bordinha do card
-                
-                # Limpamos as tags HTML do Quill para gerar a prévia de leitura
-                texto_puro = re.sub('<[^<]+>', '', str(row['enunciado']))
-                previa = texto_puro[:110] + "..." if len(texto_puro) > 110 else texto_puro
-                
-                # Dividimos em 2 colunas: uma fininha para o checkbox, o resto para o texto
-                c_chk, c_text = st.columns([0.5, 9.5])
-                
-                with c_chk:
-                    is_checked = st.checkbox("", key=f"chk_{row['id']}")
-                    if is_checked:
-                        questoes_selecionadas.append(row['id'])
-                        
-                with c_text:
-                    st.markdown(f"**{row['assunto']}** | Nível: `{row['dificuldade']}`")
-                    st.write(f"*{previa}*")
-                    with st.expander("Expandir questão completa"):
-                        st.markdown(row['enunciado'], unsafe_allow_html=True)
+        # Cabeçalho da "Tabela" de Cards
+        h_col1, h_col2, h_col3, h_col4, h_col5 = st.columns([0.8, 1.2, 5, 0.5, 0.5])
+        h_col1.caption("STATUS")
+        h_col2.caption("CLASSIFICAÇÃO")
+        h_col3.caption("ENUNCIADO (PRÉVIA)")
+        h_col4.caption("GAB.")
+        h_col5.caption("SEL.")
 
+        questoes_selecionadas = []
+
+        # Renderização dos Cards conforme o print
+        for _, row in qs_disp.iterrows():
+            # Limpeza do enunciado para prévia (remove tags HTML do Quill)
+            texto_puro = re.sub('<[^<]+>', '', str(row['enunciado']))
+            previa = texto_puro[:120] + "..." if len(texto_puro) > 120 else texto_puro
+            
+            # Container do Card
+            with st.container(border=True):
+                c1, c2, c3, c4, c5 = st.columns([0.8, 1.2, 5, 0.5, 0.5])
+                
+                # Coluna 1: Status (Estilizado)
+                c1.markdown('<span style="color: #28a745; background-color: #d4edda; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">✅ Pronta</span>', unsafe_allow_html=True)
+                
+                # Coluna 2: Classificação
+                c2.markdown(f"**{row['serie']}**\n\n<span style='color: #28a745; font-size: 11px; font-weight: bold;'>{row['assunto'].upper()}</span>", unsafe_allow_html=True)
+                
+                # Coluna 3: Enunciado
+                c3.write(previa)
+                with c3.expander("🔍 Ver questão completa"):
+                    st.markdown(row['enunciado'], unsafe_allow_html=True)
+                
+                # Coluna 4: Gabarito
+                c4.markdown(f"### {row['resposta_correta']}")
+                
+                # Coluna 5: Checkbox de Seleção
+                # Usamos o ID no key para garantir que seja único
+                escolhida = c5.checkbox("", key=f"sel_{row['id']}")
+                if escolhida:
+                    questoes_selecionadas.append(row['id'])
+
+        # Rodapé fixo para publicar
         st.divider()
+        col_fim1, col_fim2 = st.columns([4, 1])
+        col_fim1.write(f"📂 **{len(questoes_selecionadas)}** questões selecionadas para esta prova.")
         
-        if st.button("🚀 Colocar Prova Online", type="primary"):
+        if col_fim2.button("🚀 Publicar Prova", type="primary", use_container_width=True):
             if questoes_selecionadas and tit:
-                supabase.table("modelos_prova").insert({
-                    "titulo": tit, 
-                    "serie": ser, 
-                    "questoes_ids": questoes_selecionadas, 
-                    "ativa": True
-                }).execute()
-                st.success(f"Prova '{tit}' publicada com {len(questoes_selecionadas)} questões selecionadas!")
+                with st.spinner("Publicando..."):
+                    supabase.table("modelos_prova").insert({
+                        "titulo": tit, 
+                        "serie": ser, 
+                        "questoes_ids": questoes_selecionadas, 
+                        "ativa": True
+                    }).execute()
+                st.success(f"Prova '{tit}' publicada com sucesso!")
+                st.balloons()
             else:
-                st.error("Por favor, digite um título e selecione pelo menos uma questão.")
+                st.error("Erro: Defina um título e selecione ao menos uma questão.")
+    else:
+        st.warning("Nenhuma questão cadastrada para gerar provas.")
