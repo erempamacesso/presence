@@ -59,7 +59,7 @@ if menu == "📊 Dashboard Diagnóstico":
 
 # --- 2. CADASTRO DE QUESTÕES (COM DIAGNÓSTICO) ---
 elif menu == "📝 Cadastrar Questões":
-    st.title("🖋️ Elaborador de Questões Profissional")
+    st.title("Criador de Atv. online do Prof. Lardião")
     
     with st.form("nova_questao", clear_on_submit=True):
         col1, col2, col3 = st.columns(3)
@@ -67,7 +67,7 @@ elif menu == "📝 Cadastrar Questões":
         with col2: assunto = st.text_input("Assunto (ex: Funções)")
         with col3: dificuldade = st.select_slider("Dificuldade", options=["Fácil", "Média", "Difícil"])
         
-        st.write("### Enunciado (ReactQuill)")
+        st.write("### Enunciado")
         enunciado_html = st_quill(placeholder="Cole aqui o texto da questão...", html=True, key="quill_editor")
         
         st.divider()
@@ -136,3 +136,43 @@ elif menu == "📜 Gerar Modelo de Prova":
                 st.success(f"Prova '{titulo}' está ONLINE para o {serie_prova}!")
             else:
                 st.error("Dê um título e selecione ao menos uma questão.")
+# --- 4. BIBLIOTECA DE QUESTÕES (FILTRO E REAPROVEITAMENTO) ---
+elif menu == "📚 Biblioteca de Questões":
+    st.title("📚 Sua Biblioteca de Questões")
+    st.write("Consulte e gerencie seu acervo de questões salvas.")
+
+    # Filtros na Barra Superior
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        f_serie = st.multiselect("Filtrar por Série", ["1º Ano", "2º Ano", "3º Ano"])
+    with col2:
+        # Busca assuntos únicos no banco para o filtro
+        res_assuntos = supabase.table("questoes").select("assunto").execute()
+        lista_assuntos = sorted(list(set([q['assunto'] for q in res_assuntos.data if q['assunto']])))
+        f_assunto = st.multiselect("Filtrar por Assunto", lista_assuntos)
+    with col3:
+        f_diff = st.multiselect("Filtrar por Dificuldade", ["Fácil", "Média", "Difícil"])
+
+    # Construindo a Query de busca
+    query = supabase.table("questoes").select("*")
+    
+    # Aplicando os filtros se o usuário selecionar algo
+    if f_serie: query = query.in_("serie", f_serie)
+    if f_assunto: query = query.in_("assunto", f_assunto)
+    if f_diff: query = query.in_("dificuldade", f_diff)
+    
+    questoes_filtradas = query.execute().data
+
+    if questoes_filtradas:
+        st.write(f"🔍 Foram encontradas **{len(questoes_filtradas)}** questões.")
+        for q in questoes_filtradas:
+            with st.expander(f"[{q['serie']}] {q['assunto']} - Nível: {q['dificuldade']}"):
+                st.markdown(q['enunciado'], unsafe_allow_html=True)
+                st.write(f"**Resposta Correta:** {q['resposta_correta']}")
+                
+                # Botão para excluir (caso queira limpar o banco)
+                if st.button("🗑️ Excluir Questão", key=f"del_{q['id']}"):
+                    supabase.table("questoes").delete().eq("id", q['id']).execute()
+                    st.success("Questão removida! Atualize a página.")
+    else:
+        st.info("Nenhuma questão encontrada com esses filtros.")
