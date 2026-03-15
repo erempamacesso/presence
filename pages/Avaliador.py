@@ -42,7 +42,6 @@ if prova_selecionada_id:
     st.caption(f"Série: {prova_atual['serie']} | Total de questões: {len(ids_questoes)}")
     
     # Busca as questões no banco usando a lista de IDs
-    # O comando in_ busca todos os IDs de uma vez só!
     res_questoes = supabase.table("questoes").select("*").in_("id", ids_questoes).execute()
     questoes = res_questoes.data
     
@@ -53,6 +52,12 @@ if prova_selecionada_id:
     respostas_aluno = {}
     
     with st.form("form_prova"):
+        # Campo para o nome do aluno
+        st.markdown("### Seus Dados")
+        nome_aluno = st.text_input("👤 Digite seu nome completo (Obrigatório):")
+        st.divider()
+
+        # Renderização das questões
         for i, q in enumerate(questoes_ordenadas):
             st.markdown(f"### Questão {i + 1}")
             # Mostra o enunciado (renderiza o HTML do Quill)
@@ -78,9 +83,39 @@ if prova_selecionada_id:
         # Botão de Envio
         enviado = st.form_submit_button("✅ Finalizar e Enviar Prova", type="primary", use_container_width=True)
         
+        # --- LÓGICA DE CORREÇÃO E SALVAMENTO ---
         if enviado:
-            if len(respostas_aluno) < len(questoes_ordenadas):
+            if not nome_aluno.strip():
+                st.warning("⚠️ Por favor, preencha o seu nome completo antes de enviar!")
+            elif len(respostas_aluno) < len(questoes_ordenadas):
                 st.warning("⚠️ Você precisa responder todas as questões antes de enviar!")
             else:
-                st.success("🎉 Prova enviada com sucesso! (A lógica de salvar a nota entra aqui)")
-                st.balloons()
+                # 1. CÁLCULO DA NOTA
+                acertos = 0
+                for q in questoes_ordenadas:
+                    # Compara a resposta do aluno com o gabarito oficial
+                    resp_correta = q.get('resposta_correta')
+                    resp_aluno = respostas_aluno.get(q['id'])
+                    if resp_aluno == resp_correta:
+                        acertos += 1
+                
+                # Calcula a nota de 0 a 10
+                nota = (acertos / len(questoes_ordenadas)) * 10
+                
+                # 2. PREPARAÇÃO DOS DADOS PARA O BANCO
+                dados_envio = {
+                    "aluno_nome": nome_aluno.strip(),
+                    "prova_id": prova_selecionada_id,
+                    "questoes_ids": ids_questoes,
+                    "respostas_aluno": respostas_aluno,
+                    "nota_final": nota,
+                    "serie": prova_atual['serie']
+                }
+                
+                # 3. SALVAR NO SUPABASE
+                try:
+                    supabase.table("respostas_alunos").insert(dados_envio).execute()
+                    st.success(f"🎉 Prova enviada com sucesso! Sua nota foi: **{nota:.1f}**")
+                    st.balloons()
+                except Exception as e:
+                    st.error(f"Erro ao enviar as respostas: {e}")
