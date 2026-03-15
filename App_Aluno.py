@@ -1,95 +1,105 @@
 import streamlit as st
-import os
-from dotenv import load_dotenv
 from supabase import create_client
 
-# Configurações Visuais Estilo Mobile
-st.set_page_config(page_title="Prova EREMPAM", layout="centered")
+# --- 1. CONFIGURAÇÃO E ESTILO (O visual que você gostou) ---
+st.set_page_config(page_title="Portal do Aluno - EREMPAM", layout="wide")
 
 st.markdown("""
     <style>
-    .main { background-color: #f8f9fa; }
-    .card-login {
-        background: white;
-        padding: 40px;
-        border-radius: 20px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        text-align: center;
+    .stApp {
+        background: linear-gradient(135deg, #e0eafc 0%, #cfdef3 100%);
     }
-    .stTextInput>div>div>input {
+    .card-aluno {
+        background: rgba(255, 255, 255, 0.8);
+        padding: 30px;
+        border-radius: 20px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        backdrop-filter: blur(10px);
+        border: 1px solid white;
         text-align: center;
-        font-size: 20px;
-        border-radius: 10px;
+        margin-bottom: 20px;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# Conexões (Base 1 para Alunos, Base 2 para Provas)
-load_dotenv()
-supabase_alunos = create_client(os.getenv("SUPABASE_URL_ALUNOS"), os.getenv("SUPABASE_KEY_ALUNOS"))
-supabase_provas = create_client(os.getenv("SUPABASE_URL_PROVAS"), os.getenv("SUPABASE_KEY_PROVAS"))
+# --- 2. CONEXÃO ---
+def init_db():
+    return create_client(st.secrets["SUPABASE_URL_ALUNOS"], st.secrets["SUPABASE_KEY_ALUNOS"]), \
+           create_client(st.secrets["SUPABASE_URL_PROVAS"], st.secrets["SUPABASE_KEY_PROVAS"])
 
-# --- LÓGICA DE NAVEGAÇÃO ---
-if 'aluno_logado' not in st.session_state:
-    st.markdown("<div class='card-login'>", unsafe_allow_html=True)
-    st.image("logo_erempam.png", width=150)
-    st.header("Login do Estudante")
+db_alunos, db_provas = init_db()
+
+# --- 3. LÓGICA DE NAVEGAÇÃO ---
+if 'aluno' not in st.session_state:
+    st.markdown('<div class="card-aluno"><h1>🎓 Bem-vindo ao EREMPAM</h1><p>Identifique-se para começar sua prova</p></div>', unsafe_allow_html=True)
     
-    matricula = st.text_input("Digite sua Matrícula", placeholder="Ex: 2024001")
-    
-    if st.button("ACESSAR PROVA", use_container_width=True):
-        # 1. TESTE COM MATRÍCULA FICTÍCIA
-        if matricula == "9999":
-            st.session_state.aluno_logado = {
-                "nome": "ALUNO TESTE",
-                "turma": "Turma de Demonstração",
-                "id": "9999"
-            }
-            st.rerun()
-            
-        # 2. BUSCA REAL NO BANCO (Para quando você atualizar amanhã)
-        else:
-            try:
-                # Aqui ele busca na Base 1 (SIGEREMPAM)
-                res = supabase_alunos.table("alunos").select("*").eq("id", matricula).execute()
-                if res.data:
-                    st.session_state.aluno_logado = res.data[0]
-                    st.rerun()
-                else:
-                    st.error("Matrícula não encontrada no sistema.")
-            except:
-                st.error("O sistema de matrículas está em manutenção. Tente a matrícula 9999.")
-    
-    st.markdown("</div>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1,2,1])
+    with col2:
+        matricula = st.text_input("Sua Matrícula:", placeholder="Digite aqui...")
+        if st.button("🚀 Acessar Avaliação", use_container_width=True):
+            res = db_alunos.table("alunos").select("*").eq("matricula", matricula).execute()
+            if res.data:
+                st.session_state.aluno = res.data[0]
+                st.rerun()
+            else:
+                st.error("Matrícula não encontrada!")
 
 else:
-    # --- ÁREA DA PROVA ---
-    aluno = st.session_state.aluno_logado
-    
-    st.success(f"📖 Aluno: {aluno['nome']} | {aluno['turma']}")
-    
-    st.subheader("📝 Avaliações do Dia")
-    
-    # Busca questões na BASE 2 (AVALIADOR)
-    try:
-        questoes = supabase_provas.table("questoes_prova").select("*").execute()
-        if questoes.data:
-            # Mostra a prova de forma bonita
-            for q in questoes.data:
-                with st.container(border=True):
-                    st.write(f"**{q['pergunta']}**")
-                    st.radio("Escolha a opção correta:", 
-                             [q['opt_a'], q['opt_b'], q['opt_c'], q['opt_d']], 
-                             key=f"q_{q['id']}")
-            
-            if st.button("Finalizar e Enviar Prova"):
-                st.balloons()
-                st.success("Prova enviada com sucesso!")
-        else:
-            st.info("Nenhuma questão cadastrada para esta turma ainda.")
-    except:
-        st.warning("Conectado ao banco, mas a tabela de questões ainda não existe.")
+    aluno = st.session_state.aluno
+    st.sidebar.title(f"👋 Olá, {aluno['nome'].split()[0]}")
+    st.sidebar.info(f"📍 {aluno['turma']}")
 
-    if st.button("Sair"):
-        del st.session_state.aluno_logado
-        st.rerun()
+    if 'prova_feita' not in st.session_state:
+        st.markdown(f'<div class="card-aluno"><h2>📚 Prova de Hoje</h2><p>Boa sorte, {aluno["nome"]}!</p></div>', unsafe_allow_html=True)
+        
+        # Filtro automático pela série (1º, 2º ou 3º)
+        serie = "1º Ano" if "1º" in aluno['turma'] else "2º Ano" if "2º" in aluno['turma'] else "3º Ano"
+        questoes = db_provas.table("questoes").select("*").eq("serie", serie).execute().data
+
+        if not questoes:
+            st.warning("Nenhuma prova disponível para sua série no momento.")
+        else:
+            respostas = {}
+            for i, q in enumerate(questoes):
+                with st.container():
+                    st.markdown(f"### Questão {i+1}")
+                    st.markdown(q['enunciado'], unsafe_allow_html=True)
+                    opts = q['alternativas']
+                    respostas[q['id']] = st.radio("Escolha:", list(opts.keys()), 
+                                                 format_func=lambda x: f"{x}) {opts[x]}", 
+                                                 key=f"q_{q['id']}")
+                    st.divider()
+
+            if st.button("✅ Finalizar e Ver Diagnóstico", type="primary"):
+                st.session_state.prova_feita = True
+                st.session_state.questoes_prova = questoes
+                st.session_state.respostas_aluno = respostas
+                st.rerun()
+    
+    # --- FEEDBACK DIAGNÓSTICO ---
+    else:
+        st.markdown('<div class="card-aluno"><h1>🎯 Seu Resultado</h1></div>', unsafe_allow_html=True)
+        acertos = 0
+        qs = st.session_state.questoes_prova
+        resps = st.session_state.respostas_aluno
+
+        for q in qs:
+            r = resps[q['id']]
+            correta = q['resposta_correta']
+            justs = q.get('justificativas', {})
+            
+            with st.expander(f"{'✅' if r == correta else '❌'} {q['assunto']}"):
+                if r == correta:
+                    st.success("Você acertou!")
+                    acertos += 1
+                else:
+                    st.error(f"Você marcou {r}, mas a correta era {correta}")
+                
+                feedback = justs.get(r, "Analise sua resposta com calma.")
+                st.info(f"💡 **Diagnóstico:** {feedback}")
+
+        st.metric("Nota Final", f"{(acertos/len(qs))*10:.1f}")
+        if st.button("Sair"):
+            del st.session_state.aluno
+            del st.session_state.prova_feita
+            st.rerun()

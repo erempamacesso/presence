@@ -57,38 +57,54 @@ if menu == "📊 Dashboard Diagnóstico":
     except:
         st.warning("Aguardando respostas dos alunos ou criação da View no SQL.")
 
-# --- 2. CADASTRO DE QUESTÕES (ESTILO ENEM) ---
+# --- 2. CADASTRO DE QUESTÕES (COM DIAGNÓSTICO) ---
 elif menu == "📝 Cadastrar Questões":
     st.title("🖋️ Elaborador de Questões Profissional")
     
     with st.form("nova_questao", clear_on_submit=True):
-        serie = st.selectbox("Série/Ano", ["1º Ano", "2º Ano", "3º Ano"])
-        assunto = st.text_input("Assunto (ex: Radioatividade, Ligações Químicas)")
-        dificuldade = st.select_slider("Dificuldade", options=["Fácil", "Média", "Difícil"])
+        col1, col2, col3 = st.columns(3)
+        with col1: serie = st.selectbox("Série/Ano", ["1º Ano", "2º Ano", "3º Ano"])
+        with col2: assunto = st.text_input("Assunto (ex: Funções)")
+        with col3: dificuldade = st.select_slider("Dificuldade", options=["Fácil", "Média", "Difícil"])
         
         st.write("### Enunciado (ReactQuill)")
-        # Este editor permite imagens, tabelas e formatação rica
         enunciado_html = st_quill(placeholder="Cole aqui o texto da questão...", html=True, key="quill_editor")
         
         st.divider()
-        st.write("### Alternativas")
-        a = st.text_input("Alternativa A")
-        b = st.text_input("Alternativa B")
-        c = st.text_input("Alternativa C")
-        d = st.text_input("Alternativa D")
+        st.write("### Alternativas e Diagnósticos 🧠")
+        st.caption("Escreva a alternativa e, ao lado, o feedback que o aluno receberá se marcar esta opção.")
+        
+        # Usando colunas para organizar o layout (Texto da Letra | Diagnóstico)
+        col_A_txt, col_A_fb = st.columns([1, 2])
+        with col_A_txt: a = st.text_input("Letra A")
+        with col_A_fb: fb_a = st.text_input("Diagnóstico A", placeholder="Ex: Esqueceu o sinal negativo...", key="fb_a")
+
+        col_B_txt, col_B_fb = st.columns([1, 2])
+        with col_B_txt: b = st.text_input("Letra B")
+        with col_B_fb: fb_b = st.text_input("Diagnóstico B", placeholder="Ex: Faltou converter a unidade...", key="fb_b")
+
+        col_C_txt, col_C_fb = st.columns([1, 2])
+        with col_C_txt: c = st.text_input("Letra C")
+        with col_C_fb: fb_c = st.text_input("Diagnóstico C", placeholder="Ex: Correto! Aplicou a fórmula certa.", key="fb_c")
+
+        col_D_txt, col_D_fb = st.columns([1, 2])
+        with col_D_txt: d = st.text_input("Letra D")
+        with col_D_fb: fb_d = st.text_input("Diagnóstico D", placeholder="Ex: Confundiu velocidade com aceleração...", key="fb_d")
+        
         correta = st.selectbox("Qual é a Correta?", ["A", "B", "C", "D"])
         
         if st.form_submit_button("💾 Salvar no Banco de Dados"):
             dados = {
                 "enunciado": enunciado_html,
                 "alternativas": {"A": a, "B": b, "C": c, "D": d},
+                "justificativas": {"A": fb_a, "B": fb_b, "C": fb_c, "D": fb_d}, # <-- O PULO DO GATO AQUI
                 "resposta_correta": correta,
                 "serie": serie,
                 "assunto": assunto,
                 "dificuldade": dificuldade
             }
             supabase.table("questoes").insert(dados).execute()
-            st.success("Questão cadastrada com sucesso!")
+            st.success("Questão com inteligência diagnóstica cadastrada com sucesso!")
 
 # --- 3. GERADOR DE PROVAS ---
 elif menu == "📜 Gerar Modelo de Prova":
