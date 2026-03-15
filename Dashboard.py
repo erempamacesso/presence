@@ -3,51 +3,52 @@ from supabase import create_client
 from streamlit_quill import st_quill
 import plotly.express as px
 import pandas as pd
-import uuid
+import json
 
-# --- CONFIGURAÇÃO DA PÁGINA ---
+# --- 1. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Gestão EREMPAM - Provas", layout="wide")
 
-# --- CONEXÃO COM SUPABASE (SECRETS) ---
-# Use as chaves do seu banco de PROVAS aqui
+# --- 2. CONEXÃO COM SUPABASE ---
 URL = st.secrets["SUPABASE_URL_PROVAS"]
 KEY = st.secrets["SUPABASE_KEY_PROVAS"]
 supabase = create_client(URL, KEY)
 
-# --- SISTEMA DE LOGIN SIMPLES ---
+# --- 3. SISTEMA DE LOGIN ---
 if 'autenticado' not in st.session_state:
     st.session_state.autenticado = False
 
 if not st.session_state.autenticado:
-    st.title("🔐 Acesso Administrativo")
+    st.title("🔐 Acesso Administrativo - EREMPAM")
     senha = st.text_input("Digite a senha de gestão:", type="password")
     if st.button("Entrar"):
-        if senha == "erempam2024": # Altere para sua senha de preferência
+        if senha == "erempam2024": # Sua senha
             st.session_state.autenticado = True
             st.rerun()
         else:
             st.error("Senha incorreta.")
     st.stop()
 
-# --- MENU LATERAL ---
-menu = st.sidebar.radio("Navegação", ["📊 Dashboard Diagnóstico", "📝 Cadastrar Questões", "📜 Gerar Modelo de Prova"])
+# --- 4. MENU LATERAL ---
+st.sidebar.title("🎮 Painel do Professor")
+menu = st.sidebar.radio("Navegação", [
+    "📊 Dashboard Diagnóstico", 
+    "📝 Cadastrar Questões", 
+    "📚 Biblioteca de Questões", 
+    "📜 Gerar Modelo de Prova"
+])
 
-# --- 1. DASHBOARD DIAGNÓSTICO ---
+# --- 5. LOGICA DO DASHBOARD DIAGNÓSTICO ---
 if menu == "📊 Dashboard Diagnóstico":
     st.title("📊 Diagnóstico em Tempo Real")
-    
     try:
-        # Busca dados da View que criamos via SQL
         res = supabase.table("dashboard_diagnostico").select("*").execute()
         df = pd.DataFrame(res.data)
-        
         if not df.empty:
             col1, col2 = st.columns(2)
             with col1:
                 st.subheader("Acertos por Assunto")
                 fig = px.bar(df, x="assunto", y="perc_acerto", color="serie", barmode="group", text_auto='.1f')
                 st.plotly_chart(fig, use_container_width=True)
-            
             with col2:
                 st.subheader("Engajamento por Turma")
                 fig2 = px.pie(df, values='total_respostas', names='serie', hole=.4)
@@ -55,124 +56,120 @@ if menu == "📊 Dashboard Diagnóstico":
         else:
             st.info("Nenhum dado de resposta encontrado ainda.")
     except:
-        st.warning("Aguardando respostas dos alunos ou criação da View no SQL.")
+        st.warning("Aguardando dados ou View SQL...")
 
-# --- 2. CADASTRO DE QUESTÕES (COM DIAGNÓSTICO) ---
+# --- 6. CADASTRO DE QUESTÕES (MANUAL + IA) ---
 elif menu == "📝 Cadastrar Questões":
-    st.title("Criador de Atv. online do Prof. Lardião")
+    st.title("🖊️ Criador de Atv. online do Prof. Lardião")
     
-    with st.form("nova_questao", clear_on_submit=True):
-        col1, col2, col3 = st.columns(3)
-        with col1: serie = st.selectbox("Série/Ano", ["1º Ano", "2º Ano", "3º Ano"])
-        with col2: assunto = st.text_input("Assunto (ex: Funções)")
-        with col3: dificuldade = st.select_slider("Dificuldade", options=["Fácil", "Média", "Difícil"])
-        
-        st.write("### Enunciado")
-        enunciado_html = st_quill(placeholder="Cole aqui o texto da questão...", html=True, key="quill_editor")
-        
-        st.divider()
-        st.write("### Alternativas e Diagnósticos 🧠")
-        st.caption("Escreva a alternativa e, ao lado, o feedback que o aluno receberá se marcar esta opção.")
-        
-        # Usando colunas para organizar o layout (Texto da Letra | Diagnóstico)
-        col_A_txt, col_A_fb = st.columns([1, 2])
-        with col_A_txt: a = st.text_input("Letra A")
-        with col_A_fb: fb_a = st.text_input("Diagnóstico A", placeholder="Ex: Esqueceu o sinal negativo...", key="fb_a")
+    # SELETOR DE CONTEXTO (Serve para o manual e para o Importador)
+    col_c1, col_c2, col_c3 = st.columns(3)
+    with col_c1: serie_ctx = st.selectbox("Série/Ano", ["1º Ano", "2º Ano", "3º Ano"])
+    with col_c2: assunto_ctx = st.text_input("Assunto (ex: Química Orgânica)")
+    with col_c3: diff_ctx = st.select_slider("Dificuldade Padrão", options=["Fácil", "Média", "Difícil"])
 
-        col_B_txt, col_B_fb = st.columns([1, 2])
-        with col_B_txt: b = st.text_input("Letra B")
-        with col_B_fb: fb_b = st.text_input("Diagnóstico B", placeholder="Ex: Faltou converter a unidade...", key="fb_b")
-
-        col_C_txt, col_C_fb = st.columns([1, 2])
-        with col_C_txt: c = st.text_input("Letra C")
-        with col_C_fb: fb_c = st.text_input("Diagnóstico C", placeholder="Ex: Correto! Aplicou a fórmula certa.", key="fb_c")
-
-        col_D_txt, col_D_fb = st.columns([1, 2])
-        with col_D_txt: d = st.text_input("Letra D")
-        with col_D_fb: fb_d = st.text_input("Diagnóstico D", placeholder="Ex: Confundiu velocidade com aceleração...", key="fb_d")
+    # --- SUB-ABA: IMPORTADOR IA ---
+    with st.expander("🚀 IMPORTADOR FLASH (COLE O JSON DA IA AQUI)", expanded=True):
+        st.write("Gere as questões na IA, copie o JSON e cole abaixo:")
+        json_input = st.text_area("Área do JSON:", height=250, placeholder='[ { "enunciado": "...", ... } ]')
         
-        correta = st.selectbox("Qual é a Correta?", ["A", "B", "C", "D"])
-        
-        if st.form_submit_button("💾 Salvar no Banco de Dados"):
-            dados = {
-                "enunciado": enunciado_html,
-                "alternativas": {"A": a, "B": b, "C": c, "D": d},
-                "justificativas": {"A": fb_a, "B": fb_b, "C": fb_c, "D": fb_d}, # <-- O PULO DO GATO AQUI
-                "resposta_correta": correta,
-                "serie": serie,
-                "assunto": assunto,
-                "dificuldade": dificuldade
-            }
-            supabase.table("questoes").insert(dados).execute()
-            st.success("Questão com inteligência diagnóstica cadastrada com sucesso!")
-
-# --- 3. GERADOR DE PROVAS ---
-elif menu == "📜 Gerar Modelo de Prova":
-    st.title("🎲 Gerar Novo Modelo de Prova")
-    st.write("Agrupe questões existentes para criar uma prova ativa.")
-    
-    res_q = supabase.table("questoes").select("id, assunto, serie").execute()
-    df_q = pd.DataFrame(res_q.data)
-    
-    if not df_q.empty:
-        titulo = st.text_input("Título da Prova (ex: 1º Simulado Bimestral)")
-        serie_prova = st.selectbox("Série alvo", ["1º Ano", "2º Ano", "3º Ano"])
-        
-        # Filtra questões da série selecionada
-        questoes_disponiveis = df_q[df_q['serie'] == serie_prova]
-        selecionadas = st.multiselect("Selecione as questões:", 
-                                      options=questoes_disponiveis['id'].tolist(),
-                                      format_func=lambda x: f"ID: {x} | Assunto: {questoes_disponiveis[questoes_disponiveis['id']==x]['assunto'].values[0]}")
-        
-        if st.button("🚀 Publicar Prova para Alunos"):
-            if selecionadas and titulo:
-                # Criamos o modelo de prova que o App_Aluno vai ler
-                supabase.table("modelos_prova").insert({
-                    "titulo": titulo,
-                    "serie": serie_prova,
-                    "questoes_ids": selecionadas, # JSONB no banco
-                    "ativa": True
-                }).execute()
-                st.success(f"Prova '{titulo}' está ONLINE para o {serie_prova}!")
+        if st.button("📥 Importar Todas as Questões em Lote"):
+            if json_input:
+                try:
+                    lista_q = json.loads(json_input)
+                    for q in lista_q:
+                        # Lógica para achar a correta baseada no feedback positivo
+                        letra_correta = "B" # Padrão
+                        for letra, fb in q["justificativas"].items():
+                            if any(word in fb.lower() for word in ["parabéns", "correto", "excelente", "muito bem"]):
+                                letra_correta = letra
+                        
+                        dados_ia = {
+                            "enunciado": q["enunciado"],
+                            "alternativas": q["alternativas"],
+                            "justificativas": q["justificativas"],
+                            "resposta_correta": q.get("resposta_correta", letra_correta),
+                            "serie": serie_ctx,
+                            "assunto": assunto_ctx if assunto_ctx else "Geral",
+                            "dificuldade": q.get("nivel_dificuldade", diff_ctx)
+                        }
+                        supabase.table("questoes").insert(dados_ia).execute()
+                    st.success(f"🔥 {len(lista_q)} questões importadas com sucesso!")
+                except Exception as e:
+                    st.error(f"Erro no JSON: {e}")
             else:
-                st.error("Dê um título e selecione ao menos uma questão.")
-# --- 4. BIBLIOTECA DE QUESTÕES (FILTRO E REAPROVEITAMENTO) ---
+                st.warning("Cole o código primeiro!")
+
+    st.divider()
+
+    # --- SUB-ABA: CADASTRO MANUAL ---
+    with st.expander("📝 Cadastro Manual Individual"):
+        with st.form("manual_q", clear_on_submit=True):
+            st.write("### Enunciado")
+            enun_html = st_quill(html=True, key="manual_quill")
+            
+            alt_txt = {}
+            just_txt = {}
+            for l in ["A", "B", "C", "D"]:
+                c1, c2 = st.columns([1, 2])
+                with c1: alt_txt[l] = st.text_input(f"Texto {l}", key=f"t{l}")
+                with c2: just_txt[l] = st.text_input(f"Diagnóstico {l}", key=f"j{l}")
+            
+            correta_m = st.selectbox("Correta", ["A", "B", "C", "D"])
+            
+            if st.form_submit_button("💾 Salvar Questão Única"):
+                dados_m = {
+                    "enunciado": enun_html, "alternativas": alt_txt, "justificativas": just_txt,
+                    "resposta_correta": correta_m, "serie": serie_ctx, 
+                    "assunto": assunto_ctx, "dificuldade": diff_ctx
+                }
+                supabase.table("questoes").insert(dados_m).execute()
+                st.success("Questão salva!")
+
+# --- 7. BIBLIOTECA DE QUESTÕES ---
 elif menu == "📚 Biblioteca de Questões":
-    st.title("📚 Sua Biblioteca de Questões")
-    st.write("Consulte e gerencie seu acervo de questões salvas.")
-
-    # Filtros na Barra Superior
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        f_serie = st.multiselect("Filtrar por Série", ["1º Ano", "2º Ano", "3º Ano"])
-    with col2:
-        # Busca assuntos únicos no banco para o filtro
-        res_assuntos = supabase.table("questoes").select("assunto").execute()
-        lista_assuntos = sorted(list(set([q['assunto'] for q in res_assuntos.data if q['assunto']])))
-        f_assunto = st.multiselect("Filtrar por Assunto", lista_assuntos)
-    with col3:
-        f_diff = st.multiselect("Filtrar por Dificuldade", ["Fácil", "Média", "Difícil"])
-
-    # Construindo a Query de busca
-    query = supabase.table("questoes").select("*")
+    st.title("📚 Biblioteca de Questões")
     
-    # Aplicando os filtros se o usuário selecionar algo
+    col1, col2, col3 = st.columns(3)
+    with col1: f_serie = st.multiselect("Série", ["1º Ano", "2º Ano", "3º Ano"])
+    with col2:
+        res_a = supabase.table("questoes").select("assunto").execute()
+        assuntos = sorted(list(set([x['assunto'] for x in res_a.data if x['assunto']])))
+        f_assunto = st.multiselect("Assunto", assuntos)
+    with col3: f_diff = st.multiselect("Dificuldade", ["Fácil", "Média", "Difícil"])
+
+    query = supabase.table("questoes").select("*")
     if f_serie: query = query.in_("serie", f_serie)
     if f_assunto: query = query.in_("assunto", f_assunto)
     if f_diff: query = query.in_("dificuldade", f_diff)
     
-    questoes_filtradas = query.execute().data
-
-    if questoes_filtradas:
-        st.write(f"🔍 Foram encontradas **{len(questoes_filtradas)}** questões.")
-        for q in questoes_filtradas:
-            with st.expander(f"[{q['serie']}] {q['assunto']} - Nível: {q['dificuldade']}"):
+    data = query.execute().data
+    if data:
+        st.write(f"Encontradas: {len(data)}")
+        for q in data:
+            with st.expander(f"[{q['serie']}] {q['assunto']} ({q['dificuldade']})"):
                 st.markdown(q['enunciado'], unsafe_allow_html=True)
-                st.write(f"**Resposta Correta:** {q['resposta_correta']}")
-                
-                # Botão para excluir (caso queira limpar o banco)
-                if st.button("🗑️ Excluir Questão", key=f"del_{q['id']}"):
+                st.write(f"**Correta:** {q['resposta_correta']}")
+                if st.button("🗑️ Excluir", key=f"del_{q['id']}"):
                     supabase.table("questoes").delete().eq("id", q['id']).execute()
-                    st.success("Questão removida! Atualize a página.")
+                    st.rerun()
     else:
-        st.info("Nenhuma questão encontrada com esses filtros.")
+        st.info("Nada encontrado.")
+
+# --- 8. GERADOR DE MODELOS ---
+elif menu == "📜 Gerar Modelo de Prova":
+    st.title("📜 Publicar Prova para Alunos")
+    res_q = supabase.table("questoes").select("id, assunto, serie").execute()
+    df_q = pd.DataFrame(res_q.data)
+    
+    if not df_q.empty:
+        tit = st.text_input("Título da Prova")
+        ser = st.selectbox("Série alvo", ["1º Ano", "2º Ano", "3º Ano"])
+        qs_disp = df_q[df_q['serie'] == ser]
+        selec = st.multiselect("Selecione as questões:", options=qs_disp['id'].tolist(),
+                               format_func=lambda x: f"ID:{x} - {qs_disp[qs_disp['id']==x]['assunto'].values[0]}")
+        
+        if st.button("🚀 Colocar Prova Online"):
+            if selec and tit:
+                supabase.table("modelos_prova").insert({"titulo": tit, "serie": ser, "questoes_ids": selec, "ativa": True}).execute()
+                st.success(f"Prova '{tit}' publicada!")
