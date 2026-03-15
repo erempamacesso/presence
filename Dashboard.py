@@ -126,81 +126,151 @@ elif menu == "📝 Cadastrar Questões":
                 supabase.table("questoes").insert(dados_m).execute()
                 st.success("Questão salva!")
 
-# --- 7. BIBLIOTECA DE QUESTÕES (COM EDIÇÃO EM LOTE) ---
+# --- 7. BIBLIOTECA DE QUESTÕES (SISTEMA COM TELA DE EDIÇÃO FOCADA) ---
 elif menu == "📚 Biblioteca de Questões":
-    st.title("📚 Biblioteca de Questões")
     
-    # Filtros superiores
-    col1, col2, col3 = st.columns(3)
-    with col1: f_serie = st.multiselect("Série", ["1º Ano", "2º Ano", "3º Ano"])
-    with col2:
-        res_a = supabase.table("questoes").select("assunto").execute()
-        assuntos = sorted(list(set([x['assunto'] for x in res_a.data if x['assunto']])))
-        f_assunto = st.multiselect("Assunto", assuntos)
-    with col3: f_diff = st.multiselect("Dificuldade", ["Fácil", "Média", "Difícil"])
+    # 1. Variável de controle de estado (saber se estamos na Lista ou na Edição)
+    if 'editando_id' not in st.session_state:
+        st.session_state.editando_id = None
 
-    query = supabase.table("questoes").select("*")
-    if f_serie: query = query.in_("serie", f_serie)
-    if f_assunto: query = query.in_("assunto", f_assunto)
-    if f_diff: query = query.in_("dificuldade", f_diff)
-    
-    data = query.execute().data
-    
-    if data:
-        # Criando abas para separar a visualização da edição em massa
-        tab_view, tab_edit = st.tabs(["👀 Visualização Padrão", "✏️ Edição Geral (Planilha)"])
+    # ==========================================
+    # 🟢 MODO 1: TELA DE EDIÇÃO DA QUESTÃO
+    # ==========================================
+    if st.session_state.editando_id is not None:
+        st.title("✏️ Editar Questão")
         
-        with tab_view:
-            st.write(f"Encontradas: {len(data)}")
+        # Botão para cancelar e voltar
+        if st.button("⬅️ Voltar para a Biblioteca", type="secondary"):
+            st.session_state.editando_id = None
+            st.rerun()
+            
+        # Buscar a questão selecionada no banco
+        res_q = supabase.table("questoes").select("*").eq("id", st.session_state.editando_id).execute()
+        
+        if res_q.data:
+            q = res_q.data[0]
+            
+            with st.form(key=f"form_edita_{q['id']}"):
+                st.markdown("### Configurações Gerais")
+                c1, c2, c3, c4 = st.columns(4)
+                
+                idx_serie = ["1º Ano", "2º Ano", "3º Ano"].index(q.get('serie', "1º Ano")) if q.get('serie') in ["1º Ano", "2º Ano", "3º Ano"] else 0
+                idx_gab = ["A", "B", "C", "D"].index(q.get('resposta_correta', "B")) if q.get('resposta_correta') in ["A", "B", "C", "D"] else 1
+                idx_diff = ["Fácil", "Média", "Difícil"].index(q.get('dificuldade', "Média")) if q.get('dificuldade') in ["Fácil", "Média", "Difícil"] else 1
+                
+                with c1: edit_serie = st.selectbox("Série", ["1º Ano", "2º Ano", "3º Ano"], index=idx_serie)
+                with c2: edit_assunto = st.text_input("Assunto", value=q.get('assunto', ''))
+                with c3: edit_gabarito = st.selectbox("Gabarito", ["A", "B", "C", "D"], index=idx_gab)
+                with c4: edit_diff = st.selectbox("Dificuldade", ["Fácil", "Média", "Difícil"], index=idx_diff)
+                
+                st.markdown("---")
+                st.markdown("📝 **Enunciado da Questão** (Cole textos ou imagens aqui)")
+                edit_enunciado = st_quill(value=q.get('enunciado', ''), html=True, key=f"q_editor_{q['id']}")
+                
+                st.markdown("---")
+                st.markdown("🧠 **Alternativas e Diagnósticos**")
+                alts = q.get('alternativas', {})
+                justs = q.get('justificativas', {})
+                
+                edit_alts = {}
+                edit_justs = {}
+                for letra in ["A", "B", "C", "D"]:
+                    ca, cj = st.columns([1, 2])
+                    with ca: edit_alts[letra] = st.text_input(f"Texto {letra}", value=alts.get(letra, ""))
+                    with cj: edit_justs[letra] = st.text_input(f"Diagnóstico {letra}", value=justs.get(letra, ""))
+                    
+                st.markdown("---")
+                btn_salvar = st.form_submit_button("💾 Salvar Alterações e Voltar", type="primary", use_container_width=True)
+                
+                if btn_salvar:
+                    dados_upd = {
+                        "serie": edit_serie,
+                        "assunto": edit_assunto,
+                        "resposta_correta": edit_gabarito,
+                        "dificuldade": edit_diff,
+                        "enunciado": edit_enunciado,
+                        "alternativas": edit_alts,
+                        "justificativas": edit_justs
+                    }
+                    supabase.table("questoes").update(dados_upd).eq("id", q['id']).execute()
+                    # Zera o estado para voltar à lista
+                    st.session_state.editando_id = None
+                    st.success("Alterações salvas com sucesso!")
+                    st.rerun()
+
+    # ==========================================
+    # 🔵 MODO 2: TELA DE LISTAGEM (BIBLIOTECA)
+    # ==========================================
+    else:
+        st.title("📚 Biblioteca de Questões")
+        
+        # Filtros
+        col1, col2, col3 = st.columns(3)
+        with col1: f_serie = st.multiselect("Série", ["1º Ano", "2º Ano", "3º Ano"])
+        with col2:
+            res_a = supabase.table("questoes").select("assunto").execute()
+            assuntos = sorted(list(set([x['assunto'] for x in res_a.data if x['assunto']])))
+            f_assunto = st.multiselect("Assunto", assuntos)
+        with col3: f_diff = st.multiselect("Dificuldade", ["Fácil", "Média", "Difícil"])
+
+        query = supabase.table("questoes").select("id, serie, assunto, dificuldade, enunciado, resposta_correta")
+        if f_serie: query = query.in_("serie", f_serie)
+        if f_assunto: query = query.in_("assunto", f_assunto)
+        if f_diff: query = query.in_("dificuldade", f_diff)
+        
+        data = query.execute().data
+        
+        if data:
+            import re
+            st.write(f"🔍 Encontradas: **{len(data)}** questões")
+            st.divider()
+            
+            # Cabeçalho da Lista
+            h_c1, h_c2, h_c3, h_c4, h_c5, h_c6 = st.columns([0.6, 0.8, 1.2, 4, 0.5, 0.8])
+            h_c1.caption("ID")
+            h_c2.caption("STATUS")
+            h_c3.caption("CLASSIFICAÇÃO")
+            h_c4.caption("ENUNCIADO (PRÉVIA)")
+            h_c5.caption("GAB.")
+            h_c6.caption("AÇÕES")
+            
             for q in data:
-                with st.expander(f"[{q['serie']}] {q['assunto']} ({q['dificuldade']})"):
-                    st.markdown(q['enunciado'], unsafe_allow_html=True)
-                    st.write(f"**Correta:** {q['resposta_correta']}")
-                    if st.button("🗑️ Excluir", key=f"del_{q['id']}"):
-                        supabase.table("questoes").delete().eq("id", q['id']).execute()
+                texto_puro = re.sub('<[^<]+>', '', str(q['enunciado']))
+                previa = texto_puro[:90] + "..." if len(texto_puro) > 90 else texto_puro
+                
+                with st.container(border=True):
+                    c1, c2, c3, c4, c5, c6 = st.columns([0.6, 0.8, 1.2, 4, 0.5, 0.8], gap="small")
+                    
+                    # ID curto
+                    id_curto = str(q['id']).split('-')[0][:4] 
+                    c1.write(f"#{id_curto}")
+                    
+                    # Status
+                    c2.markdown('<span style="color: #28a745; background-color: #d4edda; padding: 4px; border-radius: 4px; font-size: 11px;">✅ Pronta</span>', unsafe_allow_html=True)
+                    
+                    # Classificação
+                    c3.markdown(f"**{q['serie']}**<br><span style='color:#28a745; font-size:11px;'>{q['assunto'].upper()}</span>", unsafe_allow_html=True)
+                    
+                    # Enunciado
+                    c4.write(previa)
+                    
+                    # Gabarito
+                    c5.markdown(f"**{q['resposta_correta']}**")
+                    
+                    # Botões de Ação
+                    bc1, bc2 = c6.columns(2)
+                    
+                    # Botão Editar
+                    if bc1.button("✏️", key=f"edit_{q['id']}", help="Editar questão"):
+                        st.session_state.editando_id = q['id']
                         st.rerun()
                         
-        with tab_edit:
-            st.info("💡 Clique diretamente nas células abaixo para editar. Depois, clique em 'Salvar Alterações'.")
-            df_edit = pd.DataFrame(data)
-            
-            # Selecionando apenas as colunas amigáveis para edição (ignorando dicionários complexos)
-            colunas_visao = ['id', 'serie', 'assunto', 'dificuldade', 'resposta_correta']
-            df_view = df_edit[colunas_visao]
-            
-            # Componente de Data Grid interativo do Streamlit
-            edited_df = st.data_editor(
-                df_view,
-                disabled=["id"], # Bloqueia a edição do ID
-                hide_index=True,
-                use_container_width=True,
-                column_config={
-                    "serie": st.column_config.SelectboxColumn("Série", options=["1º Ano", "2º Ano", "3º Ano"]),
-                    "dificuldade": st.column_config.SelectboxColumn("Dificuldade", options=["Fácil", "Média", "Difícil"]),
-                    "resposta_correta": st.column_config.SelectboxColumn("Gabarito", options=["A", "B", "C", "D"])
-                }
-            )
-            
-            if st.button("💾 Salvar Alterações em Lote"):
-                # Compara o DataFrame editado com o original para achar o que mudou
-                mudancas = edited_df.compare(df_view)
-                if not mudancas.empty:
-                    with st.spinner("Salvando no banco de dados..."):
-                        for index in mudancas.index:
-                            row_id = edited_df.loc[index, 'id']
-                            dados_atualizados = {
-                                "serie": edited_df.loc[index, 'serie'],
-                                "assunto": edited_df.loc[index, 'assunto'],
-                                "dificuldade": edited_df.loc[index, 'dificuldade'],
-                                "resposta_correta": edited_df.loc[index, 'resposta_correta']
-                            }
-                            supabase.table("questoes").update(dados_atualizados).eq("id", row_id).execute()
-                    st.success("Atualizações salvas com sucesso!")
-                    st.rerun()
-                else:
-                    st.warning("Nenhuma alteração foi feita na tabela.")
-    else:
-        st.info("Nenhuma questão encontrada com esses filtros.")
+                    # Botão Excluir
+                    if bc2.button("🗑️", key=f"del_{q['id']}", help="Excluir questão"):
+                        supabase.table("questoes").delete().eq("id", q['id']).execute()
+                        st.rerun()
+        else:
+            st.info("Nenhuma questão encontrada.")
 
 # --- 8. GERADOR DE MODELOS (ESTILO CARDS PROFISSIONAIS) ---
 elif menu == "📜 Gerar Modelo de Prova":
