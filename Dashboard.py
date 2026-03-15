@@ -126,10 +126,11 @@ elif menu == "📝 Cadastrar Questões":
                 supabase.table("questoes").insert(dados_m).execute()
                 st.success("Questão salva!")
 
-# --- 7. BIBLIOTECA DE QUESTÕES ---
+# --- 7. BIBLIOTECA DE QUESTÕES (COM EDIÇÃO EM LOTE) ---
 elif menu == "📚 Biblioteca de Questões":
     st.title("📚 Biblioteca de Questões")
     
+    # Filtros superiores
     col1, col2, col3 = st.columns(3)
     with col1: f_serie = st.multiselect("Série", ["1º Ano", "2º Ano", "3º Ano"])
     with col2:
@@ -144,32 +145,114 @@ elif menu == "📚 Biblioteca de Questões":
     if f_diff: query = query.in_("dificuldade", f_diff)
     
     data = query.execute().data
+    
     if data:
-        st.write(f"Encontradas: {len(data)}")
-        for q in data:
-            with st.expander(f"[{q['serie']}] {q['assunto']} ({q['dificuldade']})"):
-                st.markdown(q['enunciado'], unsafe_allow_html=True)
-                st.write(f"**Correta:** {q['resposta_correta']}")
-                if st.button("🗑️ Excluir", key=f"del_{q['id']}"):
-                    supabase.table("questoes").delete().eq("id", q['id']).execute()
+        # Criando abas para separar a visualização da edição em massa
+        tab_view, tab_edit = st.tabs(["👀 Visualização Padrão", "✏️ Edição Geral (Planilha)"])
+        
+        with tab_view:
+            st.write(f"Encontradas: {len(data)}")
+            for q in data:
+                with st.expander(f"[{q['serie']}] {q['assunto']} ({q['dificuldade']})"):
+                    st.markdown(q['enunciado'], unsafe_allow_html=True)
+                    st.write(f"**Correta:** {q['resposta_correta']}")
+                    if st.button("🗑️ Excluir", key=f"del_{q['id']}"):
+                        supabase.table("questoes").delete().eq("id", q['id']).execute()
+                        st.rerun()
+                        
+        with tab_edit:
+            st.info("💡 Clique diretamente nas células abaixo para editar. Depois, clique em 'Salvar Alterações'.")
+            df_edit = pd.DataFrame(data)
+            
+            # Selecionando apenas as colunas amigáveis para edição (ignorando dicionários complexos)
+            colunas_visao = ['id', 'serie', 'assunto', 'dificuldade', 'resposta_correta']
+            df_view = df_edit[colunas_visao]
+            
+            # Componente de Data Grid interativo do Streamlit
+            edited_df = st.data_editor(
+                df_view,
+                disabled=["id"], # Bloqueia a edição do ID
+                hide_index=True,
+                use_container_width=True,
+                column_config={
+                    "serie": st.column_config.SelectboxColumn("Série", options=["1º Ano", "2º Ano", "3º Ano"]),
+                    "dificuldade": st.column_config.SelectboxColumn("Dificuldade", options=["Fácil", "Média", "Difícil"]),
+                    "resposta_correta": st.column_config.SelectboxColumn("Gabarito", options=["A", "B", "C", "D"])
+                }
+            )
+            
+            if st.button("💾 Salvar Alterações em Lote"):
+                # Compara o DataFrame editado com o original para achar o que mudou
+                mudancas = edited_df.compare(df_view)
+                if not mudancas.empty:
+                    with st.spinner("Salvando no banco de dados..."):
+                        for index in mudancas.index:
+                            row_id = edited_df.loc[index, 'id']
+                            dados_atualizados = {
+                                "serie": edited_df.loc[index, 'serie'],
+                                "assunto": edited_df.loc[index, 'assunto'],
+                                "dificuldade": edited_df.loc[index, 'dificuldade'],
+                                "resposta_correta": edited_df.loc[index, 'resposta_correta']
+                            }
+                            supabase.table("questoes").update(dados_atualizados).eq("id", row_id).execute()
+                    st.success("Atualizações salvas com sucesso!")
                     st.rerun()
+                else:
+                    st.warning("Nenhuma alteração foi feita na tabela.")
     else:
-        st.info("Nada encontrado.")
+        st.info("Nenhuma questão encontrada com esses filtros.")
 
-# --- 8. GERADOR DE MODELOS ---
+# --- 8. GERADOR DE MODELOS (COM CHECKBOXES E CARDS) ---
 elif menu == "📜 Gerar Modelo de Prova":
     st.title("📜 Publicar Prova para Alunos")
-    res_q = supabase.table("questoes").select("id, assunto, serie").execute()
+    
+    # Buscamos o enunciado também para criar o resumo
+    import re
+    res_q = supabase.table("questoes").select("id, assunto, serie, dificuldade, enunciado").execute()
     df_q = pd.DataFrame(res_q.data)
     
     if not df_q.empty:
         tit = st.text_input("Título da Prova")
         ser = st.selectbox("Série alvo", ["1º Ano", "2º Ano", "3º Ano"])
         qs_disp = df_q[df_q['serie'] == ser]
-        selec = st.multiselect("Selecione as questões:", options=qs_disp['id'].tolist(),
-                               format_func=lambda x: f"ID:{x} - {qs_disp[qs_disp['id']==x]['assunto'].values[0]}")
         
-        if st.button("🚀 Colocar Prova Online"):
-            if selec and tit:
-                supabase.table("modelos_prova").insert({"titulo": tit, "serie": ser, "questoes_ids": selec, "ativa": True}).execute()
-                st.success(f"Prova '{tit}' publicada!")
+        st.write("### Selecione as questões:")
+        st.caption("Marque a caixa ao lado de cada questão para incluí-la na prova.")
+        
+        questoes_selecionadas = []
+        
+        # Criação dos "cards" interativos em vez do multiselect
+        for _, row in qs_disp.iterrows():
+            with st.container(border=True): # Cria a bordinha do card
+                
+                # Limpamos as tags HTML do Quill para gerar a prévia de leitura
+                texto_puro = re.sub('<[^<]+>', '', str(row['enunciado']))
+                previa = texto_puro[:110] + "..." if len(texto_puro) > 110 else texto_puro
+                
+                # Dividimos em 2 colunas: uma fininha para o checkbox, o resto para o texto
+                c_chk, c_text = st.columns([0.5, 9.5])
+                
+                with c_chk:
+                    is_checked = st.checkbox("", key=f"chk_{row['id']}")
+                    if is_checked:
+                        questoes_selecionadas.append(row['id'])
+                        
+                with c_text:
+                    st.markdown(f"**{row['assunto']}** | Nível: `{row['dificuldade']}`")
+                    st.write(f"*{previa}*")
+                    with st.expander("Expandir questão completa"):
+                        st.markdown(row['enunciado'], unsafe_allow_html=True)
+
+        st.divider()
+        
+        if st.button("🚀 Colocar Prova Online", type="primary"):
+            if questoes_selecionadas and tit:
+                supabase.table("modelos_prova").insert({
+                    "titulo": tit, 
+                    "serie": ser, 
+                    "questoes_ids": questoes_selecionadas, 
+                    "ativa": True
+                }).execute()
+                st.success(f"Prova '{tit}' publicada com {len(questoes_selecionadas)} questões selecionadas!")
+            else:
+                st.error("Por favor, digite um título e selecione pelo menos uma questão.")
