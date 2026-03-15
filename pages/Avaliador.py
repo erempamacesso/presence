@@ -1,86 +1,86 @@
 import streamlit as st
-import os
-from dotenv import load_dotenv
 from supabase import create_client
+import pandas as pd
 
-# Configuração da página para ficar larga e bonita
-st.set_page_config(page_title="EREMPAM - Avaliador", layout="wide")
+# --- 1. CONFIGURAÇÃO E CONEXÃO ---
+st.set_page_config(page_title="EREMPAM - Avaliação", layout="centered")
 
-# CSS Personalizado para a "Área do Aluno"
-st.markdown("""
-    <style>
-    .stApp {
-        background: linear-gradient(135deg, #e0eafc 0%, #cfdef3 100%);
-    }
-    .card-aluno {
-        background: rgba(255, 255, 255, 0.7);
-        padding: 20px;
-        border-radius: 15px;
-        box-shadow: 0 8px 32px rgba(31, 38, 135, 0.1);
-        backdrop-filter: blur(4px);
-        border: 1px solid rgba(255, 255, 255, 0.18);
-        margin-bottom: 25px;
-    }
-    .prova-item {
-        background: white;
-        padding: 15px;
-        border-radius: 12px;
-        margin-bottom: 10px;
-        border-left: 6px solid #007bff;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-    </style>
-""", unsafe_allow_html=True)
+URL = st.secrets["SUPABASE_URL_PROVAS"]
+KEY = st.secrets["SUPABASE_KEY_PROVAS"]
+supabase = create_client(URL, KEY)
 
-# Conexão com as Bases (Puxando do seu .env)
-load_dotenv()
-supabase_alunos = create_client(os.getenv("SUPABASE_URL_ALUNOS"), os.getenv("SUPABASE_KEY_ALUNOS"))
-supabase_provas = create_client(os.getenv("SUPABASE_URL_PROVAS"), os.getenv("SUPABASE_KEY_PROVAS"))
+st.title("📝 Portal de Avaliações - EREMPAM")
 
-# --- INTERFACE ---
-st.title("🎓 Portal de Avaliações EREMPAM")
+# --- 2. BUSCAR PROVAS ATIVAS ---
+# Puxa os modelos de prova que estão com status ativa = True
+res_provas = supabase.table("modelos_prova").select("*").eq("ativa", True).execute()
+provas = res_provas.data
 
-# Sidebar para identificação (Puxando da Base 1)
-with st.sidebar:
-    st.header("Acesso Aluno")
-    try:
-        res = supabase_alunos.table("alunos").select("turma").execute()
-        turmas = sorted(list(set([r['turma'] for r in res.data if r.get('turma')])))
-        turma_sel = st.selectbox("Sua Turma:", turmas)
-        
-        res_n = supabase_alunos.table("alunos").select("nome").eq("turma", turma_sel).execute()
-        nomes = [n['nome'] for n in res_n.data]
-        aluno_nome = st.selectbox("Seu Nome:", nomes)
-    except:
-        st.error("Erro ao conectar na Base de Alunos.")
+if not provas:
+    st.info("Nenhuma prova ativa no momento. Aguarde o professor publicar.")
+    st.stop()
 
-# Área Principal
-st.markdown(f"""
-    <div class="card-aluno">
-        <h3>Bem-vindo, {aluno_nome}!</h3>
-        <p>Selecione abaixo a prova que deseja realizar hoje.</p>
-    </div>
-""", unsafe_allow_html=True)
+# --- 3. SELEÇÃO DA PROVA ---
+# Cria um dicionário para o selectbox ficar bonito (Título - Série)
+opcoes_provas = {p['id']: f"{p['titulo']} ({p['serie']})" for p in provas}
 
-# Listagem de Provas (Puxando da Base 2)
-st.subheader("📚 Provas Disponíveis")
-try:
-    # Tenta buscar as matérias cadastradas no Novo Projeto
-    res_p = supabase_provas.table("questoes_prova").select("materia").execute()
-    materias = list(set([p['materia'] for p in res_p.data])) if res_p.data else []
+prova_selecionada_id = st.selectbox(
+    "Selecione a prova que deseja realizar:", 
+    options=list(opcoes_provas.keys()), 
+    format_func=lambda x: opcoes_provas[x]
+)
+
+st.divider()
+
+# --- 4. RENDERIZAR A PROVA SELECIONADA ---
+if prova_selecionada_id:
+    # Pega os dados da prova escolhida
+    prova_atual = next(p for p in provas if p['id'] == prova_selecionada_id)
+    ids_questoes = prova_atual['questoes_ids']
     
-    if materias:
-        for mat in materias:
-            col_txt, col_btn = st.columns([3, 1])
-            with col_txt:
-                st.markdown(f"""<div class="prova-item"><b>Prova de {mat}</b></div>""", unsafe_allow_html=True)
-            with col_btn:
-                if st.button(f"Abrir {mat}", key=mat):
-                    st.session_state.prova_atual = mat
-                    st.write(f"Carregando prova de {mat}...")
-    else:
-        st.info("Nenhuma prova cadastrada no banco ainda.")
-except:
-    st.warning("Aguardando criação da tabela 'questoes_prova' no Supabase Novo.")
+    st.subheader(f"📄 {prova_atual['titulo']}")
+    st.caption(f"Série: {prova_atual['serie']} | Total de questões: {len(ids_questoes)}")
+    
+    # Busca as questões no banco usando a lista de IDs
+    # O comando in_ busca todos os IDs de uma vez só!
+    res_questoes = supabase.table("questoes").select("*").in_("id", ids_questoes).execute()
+    questoes = res_questoes.data
+    
+    # Ordena as questões para aparecerem na mesma ordem que o professor selecionou
+    questoes_ordenadas = sorted(questoes, key=lambda q: ids_questoes.index(q['id']))
+    
+    # Variável para guardar as respostas do aluno
+    respostas_aluno = {}
+    
+    with st.form("form_prova"):
+        for i, q in enumerate(questoes_ordenadas):
+            st.markdown(f"### Questão {i + 1}")
+            # Mostra o enunciado (renderiza o HTML do Quill)
+            st.markdown(q['enunciado'], unsafe_allow_html=True)
+            
+            # Monta as alternativas
+            alts = q.get('alternativas', {})
+            opcoes_radio = []
+            for letra in ["A", "B", "C", "D"]:
+                texto_alt = alts.get(letra, "")
+                if texto_alt:
+                    opcoes_radio.append(f"{letra}) {texto_alt}")
+            
+            # Coleta a resposta
+            escolha = st.radio("Selecione sua resposta:", options=opcoes_radio, index=None, key=f"resp_{q['id']}")
+            
+            if escolha:
+                # Salva apenas a letra (A, B, C ou D)
+                respostas_aluno[q['id']] = escolha[0]
+                
+            st.divider()
+            
+        # Botão de Envio
+        enviado = st.form_submit_button("✅ Finalizar e Enviar Prova", type="primary", use_container_width=True)
+        
+        if enviado:
+            if len(respostas_aluno) < len(questoes_ordenadas):
+                st.warning("⚠️ Você precisa responder todas as questões antes de enviar!")
+            else:
+                st.success("🎉 Prova enviada com sucesso! (A lógica de salvar a nota entra aqui)")
+                st.balloons()
