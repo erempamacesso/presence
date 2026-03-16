@@ -18,6 +18,7 @@ try:
     from modulos.atualiza_alunos import exibir_importacao
     from modulos.busca_ativa import exibir_busca_ativa
     from modulos.aee import exibir_painel_aee
+    from modulos.ocorrencias_aba import exibir_ocorrencias # 👈 NOSSO NOVO MÓDULO AQUI!
 except Exception as e:
     st.error(f"🚨 Erro ao carregar os módulos das telas: {e}")
     st.stop()
@@ -66,6 +67,7 @@ with st.sidebar:
     st.button("🔎 Busca Ativa", on_click=mudar_pagina, args=('busca_ativa',), use_container_width=True)
     st.button("📸 Fotograma", on_click=mudar_pagina, args=('fotograma',), use_container_width=True)
     st.button("🧩 AEE & Inclusão", on_click=mudar_pagina, args=('aee',), use_container_width=True)
+    st.button("🚨 Ocorrências", on_click=mudar_pagina, args=('ocorrencias',), use_container_width=True) # 👈 BOTÃO NOVO NO MENU!
     st.button("📝 Gestão de Alunos", on_click=mudar_pagina, args=('cadastro',), use_container_width=True)
     st.button("📅 Reservas", on_click=mudar_pagina, args=('reservas',), use_container_width=True)
     
@@ -115,6 +117,9 @@ elif st.session_state.pagina == 'fotograma':
 
 elif st.session_state.pagina == 'aee':
     exibir_painel_aee(supabase)
+
+elif st.session_state.pagina == 'ocorrencias': # 👈 NOVA ROTA AQUI!
+    exibir_ocorrencias(supabase)
     
 elif st.session_state.pagina == 'cadastro':
     exibir_cadastro(supabase)
