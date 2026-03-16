@@ -20,11 +20,12 @@ def exibir_ocorrencias(supabase):
             
             # Escolhendo as colunas para ficar bonito na tela
             df_exibicao = df_ocorrencias[['aluno_nome', 'turma', 'tipo_ocorrencia', 'data_retorno', 'quem_registrou']]
-            df_exibicao.columns = ['Nome do Estudante', 'Turma', 'Penalidade', 'Data de Retorno', 'Registrado por']
+            df_exibicao.columns = ['Nome do Estudante', 'Turma', 'Penalidade', 'Vigente até', 'Registrado por']
             
             # Deixando a data no padrão brasileiro (DD/MM/AAAA)
-            df_exibicao['Data de Retorno'] = pd.to_datetime(df_exibicao['Data de Retorno']).dt.strftime('%d/%m/%Y')
-            df_exibicao['Data de Retorno'] = df_exibicao['Data de Retorno'].fillna('Sem data')
+            # Adicionado um tratamento caso a data venha nula do banco
+            df_exibicao['Vigente até'] = pd.to_datetime(df_exibicao['Vigente até'], errors='coerce').dt.strftime('%d/%m/%Y')
+            df_exibicao['Vigente até'] = df_exibicao['Vigente até'].fillna('Sem prazo')
             
             st.dataframe(df_exibicao, use_container_width=True, hide_index=True)
         else:
@@ -62,45 +63,65 @@ def exibir_ocorrencias(supabase):
                 with st.container(border=True):
                     st.markdown(f"**Registrando penalidade para:** `{aluno_sel_nome}`")
                     
-                    tipo_ocorrencia = st.selectbox("Tipo de Ação:", ["Advertência", "Suspensão (Professor)", "Suspensão (Gestão)"])
+                    # 1. ESCOLHA DO TIPO DE OCORRÊNCIA
+                    tipo_selecionado = st.selectbox("Tipo de Ação:", ["Advertência", "Suspensão (Professor)", "Suspensão (Gestão)", "Outros"])
+                    
+                    # Se escolher "Outros", abre um campo de texto para digitar
+                    if tipo_selecionado == "Outros":
+                        tipo_ocorrencia = st.text_input("Qual ocorrência? (Especifique):")
+                    else:
+                        tipo_ocorrencia = tipo_selecionado
+
                     motivo = st.text_area("Motivo (Descreva o que aconteceu):")
                     
-                    # Se for suspensão, pede o dia que o aluno volta
+                    # 2. ⏳ LÓGICA DO PRAZO DE SUSPENSÃO
                     data_retorno = None
-                    if "Suspensão" in tipo_ocorrencia:
-                        data_retorno = st.date_input("Data autorizada para retorno à escola/aula:")
+                    if "Suspensão" in tipo_selecionado:
+                        data_hoje = datetime.today().date()
+                        data_retorno = st.date_input("⏳ Vigente até (Último dia da suspensão):", min_value=data_hoje)
+                        
+                        # Calcula e mostra os dias na tela em tempo real
+                        if data_retorno:
+                            dias_suspensao = (data_retorno - data_hoje).days + 1
+                            st.info(f"O aluno ficará suspenso por **{dias_suspensao} dia(s)**. O alerta sumirá após essa data.")
                     
                     st.markdown("---")
                     st.markdown("🔑 **Autenticação de Segurança**")
                     
-                    col_sec1, col_sec2 = st.columns(2)
-                    with col_sec1:
-                        usuario_nome = st.text_input("Seu Usuário (Quem está registrando):")
-                    with col_sec2:
-                        senha_assinatura = st.text_input("Sua Assinatura Eletrônica (Senha):", type="password")
+                    # 3. 🔐 LÓGICA DA ASSINATURA ELETRÔNICA (Usa só a matrícula)
+                    senha_assinatura = st.text_input("Sua Assinatura Eletrônica (Matrícula):", type="password", help="Digite sua matrícula para validar a ocorrência.")
                     
                     if st.button("🚨 Gravar Ocorrência", type="primary", use_container_width=True):
-                        if not motivo or not usuario_nome or not senha_assinatura:
-                            st.warning("Por favor, preencha o motivo, seu usuário e sua assinatura eletrônica!")
+                        # Verifica se preencheu tudo (inclusive o campo 'Outros' se foi selecionado)
+                        if not motivo or not senha_assinatura or not tipo_ocorrencia:
+                            st.warning("Por favor, preencha o tipo de ocorrência, o motivo e a sua assinatura (Matrícula)!")
                         else:
-                            # ⚠️ AQUI ENTRARÁ A LÓGICA DE VALIDAR A SENHA DEPOIS
+                            # Vai no banco conferir a assinatura secreta
+                            res_prof = supabase.table("professores_matriculas").select("professor").eq("matricula", senha_assinatura).execute()
                             
-                            dados_inserir = {
-                                "aluno_id": aluno_id,
-                                "aluno_nome": aluno_sel_nome,
-                                "turma": turma_sel,
-                                "tipo_ocorrencia": tipo_ocorrencia,
-                                "motivo": motivo,
-                                "data_retorno": str(data_retorno) if data_retorno else None,
-                                "quem_registrou": usuario_nome,
-                                "status": "Ativa"
-                            }
-                            
-                            try:
-                                supabase.table("ocorrencias_disciplinares").insert(dados_inserir).execute()
-                                st.success("Ocorrência registrada com sucesso!")
-                                st.rerun() # Recarrega a página na hora para mostrar no mural
-                            except Exception as e:
-                                st.error(f"Erro ao salvar no banco: {e}")
+                            if not res_prof.data:
+                                st.error("❌ Assinatura inválida! Matrícula não encontrada no sistema.")
+                            else:
+                                # Pegou o nome do professor automaticamente
+                                nome_professor = res_prof.data[0]['professor']
+                                
+                                dados_inserir = {
+                                    "aluno_id": aluno_id,
+                                    "aluno_nome": aluno_sel_nome,
+                                    "turma": turma_sel,
+                                    "tipo_ocorrencia": tipo_ocorrencia,
+                                    "motivo": motivo,
+                                    "data_retorno": str(data_retorno) if data_retorno else None,
+                                    "quem_registrou": nome_professor,
+                                    "status": "Ativa"
+                                }
+                                
+                                try:
+                                    supabase.table("ocorrencias_disciplinares").insert(dados_inserir).execute()
+                                    st.success(f"✅ Ocorrência assinada e registrada por: **{nome_professor}**!")
+                                    st.rerun() # Recarrega a página na hora para mostrar no mural
+                                except Exception as e:
+                                    st.error(f"Erro ao salvar no banco: {e}")
+    # AQUI ESTAVA FALTANDO O FECHAMENTO DO CÓDIGO! 👇
     except Exception as e:
         st.error(f"Erro ao carregar o formulário: {e}")
