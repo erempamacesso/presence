@@ -51,18 +51,28 @@ if st.session_state.etapa == "login":
         st.image("logo_erempam.png", width=150)
         st.title("🚀 Portal de Avaliações")
         
-        matricula = st.text_input("Digite sua Matrícula", key="input_matricula_principal")
+        matricula = st.text_input("Digite sua Matrícula", key="input_matricula_aluno")
         
-        if st.button("ACESSAR SISTEMA", use_container_width=True):
+        if st.button("ACESSAR SISTEMA", use_container_width=True, key="btn_login"):
             if matricula:
                 try:
-                    # Busca aluno na base SIGEREMPAM
+                    # 1. Busca aluno na base SIGEREMPAM
                     res = db_alunos.table("alunos").select("*").eq("numero_matricula", matricula).execute()
                     
                     if res.data:
-                        st.session_state.aluno = res.data[0]
-                        # Busca prova ativa na base AVALIADOR que seja da série do aluno
-                        serie_aluno = st.session_state.aluno.get('serie', '1º Ano')
+                        aluno_data = res.data[0]
+                        st.session_state.aluno = aluno_data
+                        
+                        # --- 💡 LÓGICA DE TRADUÇÃO DE TURMA PARA SÉRIE ---
+                        turma = aluno_data.get('turma', '')
+                        serie_aluno = "1º Ano" # Valor padrão
+                        
+                        if "1" in turma: serie_aluno = "1º Ano"
+                        elif "2" in turma: serie_aluno = "2º Ano"
+                        elif "3" in turma: serie_aluno = "3º Ano"
+                        # ------------------------------------------------
+                        
+                        # 2. Busca prova ativa na base AVALIADOR usando a série traduzida
                         res_p = db_provas.table("modelos_prova").select("*").eq("ativa", True).eq("serie", serie_aluno).limit(1).execute()
                         
                         if res_p.data:
@@ -70,13 +80,11 @@ if st.session_state.etapa == "login":
                             st.session_state.etapa = "instrucoes"
                             st.rerun()
                         else:
-                            st.warning(f"Olá {st.session_state.aluno['nome']}, não há provas ativas para o {serie_aluno} no momento.")
+                            st.warning(f"Olá {aluno_data['nome']}, não encontramos provas ativas para o {serie_aluno} ({turma}).")
                     else:
                         st.error("Matrícula não encontrada.")
                 except Exception as e:
-                    st.error(f"Erro de conexão: {e}")
-            else:
-                st.info("Por favor, informe sua matrícula para continuar.")
+                    st.error(f"Erro ao conectar: {e}")
 
 # ==========================================
 # ETAPA 2: INSTRUÇÕES
