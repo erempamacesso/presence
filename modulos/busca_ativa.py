@@ -148,6 +148,29 @@ def exibir_busca_ativa(supabase):
     except Exception as e:
         st.error(f"Erro ao carregar métricas: {e}")
 
+    # --- NOVO: ALERTA DE ALUNOS PRESENTES SEM FOTO NO FOTOGRAMA ---
+    try:
+        # Busca apenas os nomes dos alunos que estão com presença (P) hoje
+        res_pres_nomes = supabase.table("frequencia").select("aluno_nome").eq("data_chamada", hoje).eq("status", "P").execute()
+        
+        if res_pres_nomes.data:
+            mapa_fotos = listar_arquivos_bucket(supabase)
+            alunos_sem_foto = 0
+            
+            for item in res_pres_nomes.data:
+                nome = item.get('aluno_nome', '')
+                if nome:
+                    nome_limpo = limpar_texto_absoluto(nome)
+                    prim_limpo = limpar_texto_absoluto(nome.split()[0])
+                    # Se não achar o nome completo E não achar o primeiro nome no bucket, conta como sem foto
+                    if not mapa_fotos.get(nome_limpo) and not mapa_fotos.get(prim_limpo):
+                        alunos_sem_foto += 1
+            
+            if alunos_sem_foto > 0:
+                st.warning(f"📸 **Atenção:** {alunos_sem_foto} aluno(s) presente(s) hoje estão sem foto no fotograma.")
+    except Exception as e:
+        pass # Falha silenciosa para não quebrar a UI caso haja erro na contagem de fotos
+
     st.markdown("---")
 
     # ==========================================
@@ -189,7 +212,6 @@ def exibir_busca_ativa(supabase):
                     ranking = ranking.merge(df_turmas, left_on='Aluno', right_on='aluno_nome').drop('aluno_nome', axis=1)
                     ranking.rename(columns={'turma': 'Turma'}, inplace=True)
                     
-                    # --- CORREÇÃO: ORDENANDO PRIMEIRO POR TURMA, DEPOIS POR FALTAS ---
                     ranking = ranking.sort_values(by=['Turma', 'Faltas'], ascending=[True, False])
                     
                     st.dataframe(ranking, use_container_width=True, hide_index=True)
@@ -312,7 +334,6 @@ def exibir_busca_ativa(supabase):
                 
                 with col_foto:
                     mapa_fotos = listar_arquivos_bucket(supabase)
-                    # --- CORREÇÃO: PEGANDO A URL DIRETO DO CLIENTE SUPABASE ---
                     url_base = f"{supabase.supabase_url}/storage/v1/object/public/fotos-alunos/"
                     foto_fallback = "https://cdn-icons-png.flaticon.com/512/149/149071.png"
                     
@@ -355,7 +376,6 @@ def exibir_busca_ativa(supabase):
                                     "status": "Ativa"
                                 }
                                 
-                                # Insere na tabela correta baseada no seu print
                                 supabase.table("ocorrencias_disciplinares").insert(dados_insert).execute()
                                 st.success("✅ Ocorrência registrada com sucesso!")
                                 st.balloons()
