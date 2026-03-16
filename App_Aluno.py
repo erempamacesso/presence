@@ -196,30 +196,45 @@ elif st.session_state.etapa == "em_prova":
         entregar = st.form_submit_button("✅ FINALIZAR E ENVIAR PROVA", use_container_width=True)
 
     if entregar:
-        # 1. Calcular Nota
-        acertos = 0
+        # 1. Primeiro, calculamos o total de acertos e a nota final
+        acertos_totais = 0
         for q in st.session_state.questoes:
-            if st.session_state.respostas.get(q['id']) == q['resposta_correta']:
-                acertos += 1
+            resposta_dada = st.session_state.respostas.get(q['id'])
+            if resposta_dada == q['resposta_correta']:
+                acertos_totais += 1
+                
+        nota_final = acertos_totais * st.session_state.prova_config.get('valor_questao', 1.0)
         
-        nota = acertos * st.session_state.prova_config.get('valor_questao', 1.0)
+        # 2. Preparamos a lista com os resultados questão por questão
+        lista_resultados = []
         
-        # 2. Salvar no Banco (Projeto Provas)
-        resultado = {
-            "aluno_id": st.session_state.aluno['id'],
-            "prova_id": st.session_state.prova_config['id'],
-            "nota": nota,
-            "respostas": st.session_state.respostas,
-            "acertos": acertos
-        }
+        for q in st.session_state.questoes:
+            resposta_dada = st.session_state.respostas.get(q['id'])
+            acertou = (resposta_dada == q['resposta_correta'])
+            
+            linha = {
+                # Transformando o ID do aluno em texto porque na sua tabela aluno_id é text
+                "aluno_id": str(st.session_state.aluno['id']), 
+                "prova_id": st.session_state.prova_config['id'],
+                "questao_id": q['id'],
+                "resposta_aluno": resposta_dada,
+                "acertou": acertou,
+                "acertos": acertos_totais # Salvamos o total de acertos da prova aqui também!
+            }
+            lista_resultados.append(linha)
         
+        # 3. Enviamos tudo de uma vez para o banco de dados
         try:
-            db_provas.table("resultados_provas").insert(resultado).execute()
-            st.success(f"Prova enviada com sucesso! Nota calculada: {nota}")
+            db_provas.table("resultados_provas").insert(lista_resultados).execute()
+            
+            st.success(f"🎉 Prova enviada com sucesso! Você acertou {acertos_totais} questões. Nota: {nota_final}")
             st.balloons()
             time.sleep(5)
-            # Limpa estado e volta pro login
-            for key in list(st.session_state.keys()): del st.session_state[key]
+            
+            # Limpa estado e volta pro login para o próximo aluno
+            for key in list(st.session_state.keys()): 
+                del st.session_state[key]
             st.rerun()
+            
         except Exception as e:
             st.error(f"Erro ao salvar resultado: {e}")
