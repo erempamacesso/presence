@@ -211,3 +211,62 @@ def exibir_cadastro(supabase):
                     st.success("Aluno cadastrado!")
                     time.sleep(1)
                     st.rerun()
+
+# =========================================================
+    # ABA 5: SINCRONIZAÇÃO FORÇADA DE MATRÍCULAS
+    # =========================================================
+    with aba_manual: # Se você quiser criar uma nova: st.tabs([... , "🔄 Sincronizar Matrículas"])
+        pass # Apenas marcador
+
+    # Nota: Adicione "Aba Sincronizar" na sua lista de st.tabs lá no início do código
+    # aba_busca, aba_gerenciar, aba_excel, aba_manual, aba_sinc = st.tabs([...])
+    
+    with aba_sinc:
+        st.subheader("🔄 Sincronização Forçada de Matrículas")
+        st.warning("Esta ferramenta busca alunos pelo nome e preenche a matrícula que estiver faltando.")
+        
+        arquivo_sinc = st.file_uploader("Suba a planilha completa (.xlsx)", type=["xlsx"], key="sinc_up")
+        
+        if arquivo_sinc:
+            xl_sinc = pd.ExcelFile(arquivo_sinc)
+            
+            if st.button("🔍 Cruzar Dados e Atualizar Matrículas", type="primary"):
+                # 1. Pegar todos os alunos do banco que NÃO TÊM matrícula
+                res = supabase.table("alunos").select("id, nome").is_("numero_matricula", "null").execute()
+                # Se o filtro de null falhar, pegamos todos para garantir:
+                if not res.data:
+                    res = supabase.table("alunos").select("id, nome").execute()
+                
+                alunos_db = res.data
+                mapa_db = {limpar_texto(a['nome']): a['id'] for a in alunos_db}
+                
+                sucesso = []
+                falha = []
+                
+                progress = st.progress(0)
+                abas = xl_sinc.sheet_names
+                
+                for idx, nome_aba in enumerate(abas):
+                    df_aba = xl_sinc.parse(nome_aba)
+                    df_aba.columns = [c.strip() for c in df_aba.columns]
+                    
+                    for _, row in df_aba.iterrows():
+                        nome_planilha = str(row.get('Nome', '')).strip()
+                        matricula = str(row.get('Matrícula', ''))
+                        
+                        if nome_planilha and matricula and matricula != 'nan':
+                            chave_planilha = limpar_texto(nome_planilha)
+                            
+                            if chave_planilha in mapa_db:
+                                id_banco = mapa_db[chave_planilha]
+                                # ATUALIZAÇÃO APENAS DA MATRÍCULA
+                                supabase.table("alunos").update({"numero_matricula": matricula}).eq("id", id_banco).execute()
+                                sucesso.append({"Nome": nome_planilha.upper(), "Matrícula": matricula, "Turma": nome_aba})
+                    
+                    progress.progress((idx + 1) / len(abas))
+                
+                st.success(f"✅ Finalizado! {len(sucesso)} matrículas foram vinculadas com sucesso.")
+                
+                if sucesso:
+                    with st.expander("📄 Ver alunos atualizados"):
+                        st.dataframe(pd.DataFrame(sucesso))
