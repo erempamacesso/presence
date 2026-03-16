@@ -173,23 +173,33 @@ def exibir_busca_ativa(supabase):
 
                         mapa_fotos = listar_arquivos_bucket(supabase)
                         
-                        # --- PROTEÇÃO DO SUPABASE URL ---
+                        # --- TENTATIVA DE LOCALIZAR A URL AUTOMATICAMENTE ---
+                        url_base = ""
+                        
+                        # 1. Tenta buscar nos segredos (padrão)
                         if "SUPABASE_URL" in st.secrets:
-                            url_base = f"{st.secrets['SUPABASE_URL']}/storage/v1/object/public/fotos-alunos/"
+                            url_base = st.secrets["SUPABASE_URL"]
+                        # 2. Se não achar, tenta buscar do próprio cliente supabase que já está conectado
+                        elif hasattr(supabase, 'supabase_url'):
+                            url_base = supabase.supabase_url
+                        
+                        if url_base:
+                            if not url_base.endswith("/"): url_base += "/"
+                            url_final_fotos = f"{url_base}storage/v1/object/public/fotos-alunos/"
                         else:
-                            st.warning("⚠️ Atenção: 'SUPABASE_URL' não encontrada nos segredos (secrets.toml ou Streamlit Cloud). Usando imagem padrão.")
-                            url_base = ""
+                            st.warning("⚠️ Não foi possível localizar a URL do banco para carregar as fotos. Verifique suas configurações de conexão.")
+                            url_final_fotos = ""
 
                         foto_fallback = "https://cdn-icons-png.flaticon.com/512/149/149071.png"
 
                         def buscar_url_foto(nome_aluno):
-                            if not url_base:
+                            if not url_final_fotos:
                                 return foto_fallback
                             nome_limpo = limpar_texto_absoluto(nome_aluno)
                             prim_limpo = limpar_texto_absoluto(nome_aluno.split()[0])
                             nome_arq = mapa_fotos.get(nome_limpo) or mapa_fotos.get(prim_limpo)
                             if nome_arq:
-                                return f"{url_base}{quote(nome_arq)}"
+                                return f"{url_final_fotos}{quote(nome_arq)}"
                             return foto_fallback
 
                         ranking['Foto'] = ranking['Aluno'].apply(buscar_url_foto)
@@ -235,7 +245,7 @@ def exibir_busca_ativa(supabase):
                 st.info("Ainda não há histórico de faltas acumulado.")
         except Exception as e:
             st.error(f"Erro ao gerar tabela visual: {e}")
-
+            
     # ==========================================
     # ABA 2: MAPA DE COMPORTAMENTO DE EVASÕES 2.0 (NOVO)
     # ==========================================
