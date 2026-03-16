@@ -272,24 +272,40 @@ elif menu == "📚 Biblioteca de Questões":
         else:
             st.info("Nenhuma questão encontrada.")
 
-# --- 8. GERADOR DE MODELOS (ESTILO CARDS PROFISSIONAIS) ---
+# --- 8. GERADOR DE MODELOS (ESTILO CARDS PROFISSIONAIS) E CONFIGURAÇÃO ---
 elif menu == "📜 Gerar Modelo de Prova":
     st.title("📜 Publicar Prova para Alunos")
     
-    # Import para limpar HTML da prévia
+    # Import para limpar HTML da prévia e mexer com datas
     import re
+    from datetime import datetime
 
     # Buscamos as questões
     res_q = supabase.table("questoes").select("id, assunto, serie, dificuldade, enunciado, resposta_correta").execute()
     df_q = pd.DataFrame(res_q.data)
     
     if not df_q.empty:
-        # Área de Configuração da Prova
-        col_t1, col_t2 = st.columns([2, 1])
-        with col_t1:
-            tit = st.text_input("Título da Prova", placeholder="Ex: 1º Simulado Bimestral")
-        with col_t2:
-            ser = st.selectbox("Filtrar questões da Série:", ["1º Ano", "2º Ano", "3º Ano"])
+        # ==========================================
+        # 🟢 NOVA ÁREA DE CONFIGURAÇÃO DA PROVA
+        # ==========================================
+        st.subheader("⚙️ Configurações Gerais")
+        with st.container(border=True):
+            col_t1, col_t2 = st.columns([2, 1])
+            with col_t1:
+                tit = st.text_input("Título da Prova", placeholder="Ex: 1º Simulado Bimestral de Química")
+            with col_t2:
+                ser = st.selectbox("Filtrar questões da Série:", ["1º Ano", "2º Ano", "3º Ano"])
+            
+            st.write("---")
+            st.write("**Regras de Acesso e Tempo**")
+            col_c1, col_c2, col_c3 = st.columns(3)
+            
+            with col_c1:
+                data_limite = st.date_input("📅 Data Limite")
+            with col_c2:
+                hora_limite = st.time_input("⏰ Hora Limite (Brasília)")
+            with col_c3:
+                tempo_duracao = st.number_input("⏳ Duração (Minutos)", min_value=10, max_value=300, value=60, step=10)
         
         st.divider()
         st.subheader("📋 Selecione as Questões para a Prova")
@@ -307,32 +323,19 @@ elif menu == "📜 Gerar Modelo de Prova":
 
         questoes_selecionadas = []
 
-        # Renderização dos Cards conforme o print
+        # Renderização dos Cards
         for _, row in qs_disp.iterrows():
-            # Limpeza do enunciado para prévia (remove tags HTML do Quill)
             texto_puro = re.sub('<[^<]+>', '', str(row['enunciado']))
             previa = texto_puro[:120] + "..." if len(texto_puro) > 120 else texto_puro
             
-            # Container do Card
             with st.container(border=True):
                 c1, c2, c3, c4, c5 = st.columns([0.8, 1.2, 5, 0.5, 0.5])
-                
-                # Coluna 1: Status (Estilizado)
                 c1.markdown('<span style="color: #28a745; background-color: #d4edda; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">✅ Pronta</span>', unsafe_allow_html=True)
-                
-                # Coluna 2: Classificação
                 c2.markdown(f"**{row['serie']}**\n\n<span style='color: #28a745; font-size: 11px; font-weight: bold;'>{row['assunto'].upper()}</span>", unsafe_allow_html=True)
-                
-                # Coluna 3: Enunciado
                 c3.write(previa)
                 with c3.expander("🔍 Ver questão completa"):
                     st.markdown(row['enunciado'], unsafe_allow_html=True)
-                
-                # Coluna 4: Gabarito
                 c4.markdown(f"### {row['resposta_correta']}")
-                
-                # Coluna 5: Checkbox de Seleção
-                # Usamos o ID no key para garantir que seja único
                 escolhida = c5.checkbox("", key=f"sel_{row['id']}")
                 if escolhida:
                     questoes_selecionadas.append(row['id'])
@@ -345,12 +348,20 @@ elif menu == "📜 Gerar Modelo de Prova":
         if col_fim2.button("🚀 Publicar Prova", type="primary", use_container_width=True):
             if questoes_selecionadas and tit:
                 with st.spinner("Publicando..."):
+                    # Prepara a data e hora em formato ISO para o Supabase
+                    data_hora_combinada = datetime.combine(data_limite, hora_limite)
+                    data_hora_iso = data_hora_combinada.isoformat()
+
+                    # Insere todos os dados na tabela modelos_prova
                     supabase.table("modelos_prova").insert({
                         "titulo": tit, 
                         "serie": ser, 
                         "questoes_ids": questoes_selecionadas, 
-                        "ativa": True
+                        "ativa": True,
+                        "data_limite": data_hora_iso,
+                        "tempo_duracao": tempo_duracao
                     }).execute()
+                
                 st.success(f"Prova '{tit}' publicada com sucesso!")
                 st.balloons()
             else:
