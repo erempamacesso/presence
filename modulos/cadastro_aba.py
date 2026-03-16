@@ -2,17 +2,28 @@ import streamlit as st
 import pandas as pd
 import unicodedata
 import time
+import re # <-- Nova biblioteca adicionada para formatar as turmas
 
 # --- FUNÇÕES DE UTILITÁRIO ---
 
 def limpar_texto(texto):
     """Padronização para nomes de arquivos e chaves de busca"""
     if not texto: return ""
-    # Remove extensão se houver
     if "." in str(texto): texto = str(texto).rsplit('.', 1)[0]
     nfkd = unicodedata.normalize('NFKD', str(texto))
     texto_limpo = "".join([c for c in nfkd if not unicodedata.combining(c)]).lower()
     return "".join(filter(str.isalnum, texto_limpo))
+
+def formatar_turma(nome_aba):
+    """Transforma '1A', '1 A', '1ºA' automaticamente em '1º A'"""
+    nome = str(nome_aba).strip().upper()
+    # Identifica o padrão: número + (opcional espaços/º) + letra
+    match = re.match(r'^(\d+)\s*º?\s*([A-Z]+)$', nome)
+    if match:
+        numero = match.group(1)
+        letra = match.group(2)
+        return f"{numero}º {letra}"
+    return nome # Se for algo como "MATERNAL", devolve do jeito que veio
 
 def listar_arquivos_bucket(supabase):
     try:
@@ -26,15 +37,12 @@ def listar_arquivos_bucket(supabase):
 def exibir_cadastro(supabase):
     st.title("👤 Sistema de Gestão Escolar")
     
-    # =========================================================
-    # CORREÇÃO AQUI: Agora declaramos 5 abas!
-    # =========================================================
     aba_busca, aba_gerenciar, aba_excel, aba_manual, aba_sinc = st.tabs([
         "🔍 Localizar Aluno", 
         "📸 Fotos e Turmas", 
         "📁 Atualização Excel", 
         "➕ Cadastro Avulso",
-        "🔄 Sincronizar Matrículas" # Nova aba adicionada
+        "🔄 Sincronizar Matrículas"
     ])
 
     # =========================================================
@@ -119,7 +127,7 @@ def exibir_cadastro(supabase):
     # =========================================================
     with aba_excel:
         st.subheader("📁 Sincronização Total via Planilha")
-        st.info("O sistema lerá cada aba (ex: 1A, 1B) e vinculará os alunos automaticamente.")
+        st.info("O sistema lerá cada aba (ex: 1A, 1B) e vinculará os alunos formatando a turma automaticamente.")
         
         arquivo = st.file_uploader("Suba a planilha da secretaria (.xlsx)", type=["xlsx"])
         
@@ -141,13 +149,22 @@ def exibir_cadastro(supabase):
                     lista_atualizados = []
 
                     for i, nome_aba in enumerate(abas):
-                        status_text.text(f"Processando Turma: {nome_aba}...")
+                        turma_formatada = formatar_turma(nome_aba) # <-- Aplica a formatação aqui
+                        status_text.text(f"Processando Turma: {turma_formatada}...")
+                        
                         df_turma = xl.parse(nome_aba)
-                        df_turma.columns = [c.strip() for c in df_turma.columns]
+                        
+                        # Proteção caso a aba não tenha cabeçalho (como ocorreu no 1B)
+                        colunas_upper = [str(c).strip().upper() for c in df_turma.columns]
+                        if "NOME" not in colunas_upper:
+                            df_turma = xl.parse(nome_aba, header=None)
+                            df_turma.rename(columns={0: 'Matrícula', 1: 'Nome', 2: 'Data de nascimento'}, inplace=True)
+                        else:
+                            df_turma.columns = [str(c).strip() for c in df_turma.columns]
                         
                         for _, row in df_turma.iterrows():
                             nome_aluno = str(row.get('Nome', '')).strip()
-                            matricula = str(row.get('Matrícula', ''))
+                            matricula = str(row.get('Matrícula', '')).strip()
                             data_nasc = str(row.get('Data de nascimento', ''))
                             
                             if not nome_aluno or nome_aluno.lower() == 'nan':
@@ -162,17 +179,17 @@ def exibir_cadastro(supabase):
 
                             dados = {
                                 "nome": nome_aluno.upper(),
-                                "turma": nome_aba,
+                                "turma": turma_formatada, # <-- Salva no banco formatado como '1º A'
                                 "numero_matricula": matricula,
                                 "data_nascimento": data_formatada
                             }
 
                             if chave in mapa_nomes_db:
                                 supabase.table("alunos").update(dados).eq("id", mapa_nomes_db[chave]).execute()
-                                lista_atualizados.append({"Nome": nome_aluno.upper(), "Turma": nome_aba, "Status": "Matrícula Atualizada"})
+                                lista_atualizados.append({"Nome": nome_aluno.upper(), "Turma": turma_formatada, "Status": "Atualizado"})
                             else:
                                 supabase.table("alunos").insert(dados).execute()
-                                lista_novos.append({"Nome": nome_aluno.upper(), "Turma": nome_aba, "Status": "Novo Cadastro"})
+                                lista_novos.append({"Nome": nome_aluno.upper(), "Turma": turma_formatada, "Status": "Novo Cadastro"})
                         
                         progress_bar.progress((i + 1) / len(abas))
 
@@ -206,8 +223,9 @@ def exibir_cadastro(supabase):
             t = st.text_input("Turma:")
             if st.form_submit_button("Cadastrar"):
                 if n and t:
-                    supabase.table("alunos").insert({"nome": n.upper().strip(), "turma": t.upper().strip()}).execute()
-                    st.success("Aluno cadastrado!")
+                    turma_formatada = formatar_turma(t)
+                    supabase.table("alunos").insert({"nome": n.upper().strip(), "turma": turma_formatada}).execute()
+                    st.success(f"Aluno cadastrado na turma {turma_formatada}!")
                     time.sleep(1)
                     st.rerun()
 
@@ -217,11 +235,9 @@ def exibir_cadastro(supabase):
     with aba_sinc:
         st.subheader("🔄 Auditoria e Sincronização de Matrículas")
         
-        # --- PARTE 1: AUDITORIA (VERIFICAR PENDÊNCIAS) ---
         st.markdown("### 🔎 1. Verificar Pendências")
         st.write("Selecione uma turma para ver quem ainda está sem matrícula no sistema.")
         
-        # Puxa a lista de turmas para o filtro
         res_t = supabase.table("alunos").select("turma").execute()
         lista_turmas_audit = sorted(list(set([x['turma'] for x in res_t.data if x['turma']])))
         
@@ -231,7 +247,6 @@ def exibir_cadastro(supabase):
             
             if st.button("Verificar Turma", key="btn_audit"):
                 with st.spinner("Analisando dados..."):
-                    # Busca os alunos baseado no filtro
                     if turma_audit == "Todas as Turmas":
                         res_audit = supabase.table("alunos").select("nome, turma, numero_matricula").order("turma").execute()
                     else:
@@ -240,7 +255,6 @@ def exibir_cadastro(supabase):
                     df_audit = pd.DataFrame(res_audit.data) if res_audit.data else pd.DataFrame()
                     
                     if not df_audit.empty:
-                        # Filtro inteligente: pega nulos, vazios ou 'nan'
                         df_audit['mat_limpa'] = df_audit['numero_matricula'].fillna("").astype(str).str.strip().str.lower()
                         df_pendentes = df_audit[df_audit['mat_limpa'].isin(["", "nan", "null", "none"])]
                         
@@ -255,7 +269,6 @@ def exibir_cadastro(supabase):
                         
         st.divider()
         
-        # --- PARTE 2: SINCRONIZAÇÃO FORÇADA ---
         st.markdown("### 🛠️ 2. Preencher Matrículas Faltantes")
         st.info("Suba a planilha completa para o sistema tentar cruzar os nomes e preencher quem apareceu na tabela acima.")
         
@@ -274,12 +287,19 @@ def exibir_cadastro(supabase):
                 abas = xl_sinc.sheet_names
                 
                 for idx, nome_aba in enumerate(abas):
+                    turma_formatada = formatar_turma(nome_aba)
                     df_aba = xl_sinc.parse(nome_aba)
-                    df_aba.columns = [c.strip() for c in df_aba.columns]
+                    
+                    colunas_upper = [str(c).strip().upper() for c in df_aba.columns]
+                    if "NOME" not in colunas_upper:
+                        df_aba = xl_sinc.parse(nome_aba, header=None)
+                        df_aba.rename(columns={0: 'Matrícula', 1: 'Nome', 2: 'Data de nascimento'}, inplace=True)
+                    else:
+                        df_aba.columns = [str(c).strip() for c in df_aba.columns]
                     
                     for _, row in df_aba.iterrows():
                         nome_planilha = str(row.get('Nome', '')).strip()
-                        matricula = str(row.get('Matrícula', ''))
+                        matricula = str(row.get('Matrícula', '')).strip()
                         
                         if nome_planilha and matricula and matricula.lower() != 'nan':
                             chave_planilha = limpar_texto(nome_planilha)
@@ -287,7 +307,7 @@ def exibir_cadastro(supabase):
                             if chave_planilha in mapa_db:
                                 id_banco = mapa_db[chave_planilha]
                                 supabase.table("alunos").update({"numero_matricula": matricula}).eq("id", id_banco).execute()
-                                sucesso.append({"Nome": nome_planilha.upper(), "Matrícula": matricula, "Turma": nome_aba})
+                                sucesso.append({"Nome": nome_planilha.upper(), "Matrícula": matricula, "Turma": turma_formatada})
                     
                     progress.progress((idx + 1) / len(abas))
                 
