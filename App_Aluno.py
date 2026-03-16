@@ -54,13 +54,22 @@ if st.session_state.aluno is None:
             
             if btn_acessar:
                 if matricula.strip():
-                    # Busca no banco de ALUNOS
-                    res = db_alunos.table("alunos").select("*").eq("numero_matricula", matricula.strip()).execute()
-                    if res.data:
-                        st.session_state.aluno = res.data[0]
-                        st.rerun()
-                    else:
-                        st.error("Matrícula não encontrada! Verifique os números.")
+                    try:
+                        # Buscando o aluno
+                        st.info(f"Procurando a matrícula: '{matricula.strip()}'...")
+                        res = db_alunos.table("alunos").select("*").eq("numero_matricula", matricula.strip()).execute()
+                        
+                        # Mostrando o que o banco devolveu (DEBUG)
+                        st.write("Resposta do Banco:", res.data)
+                        
+                        if res.data:
+                            st.success("Aluno encontrado!")
+                            st.session_state.aluno = res.data[0]
+                            st.rerun()
+                        else:
+                            st.error("O banco buscou, mas retornou VAZIO. A matrícula não bateu.")
+                    except Exception as e:
+                        st.error(f"ERRO DE CONEXÃO: {e}")
                 else:
                     st.warning("Por favor, digite sua matrícula.")
 
