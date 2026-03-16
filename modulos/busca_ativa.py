@@ -7,7 +7,9 @@ from urllib.parse import quote
 import streamlit.components.v1 as components  
 from fpdf import FPDF 
 
-# --- 1. FUNÇÕES DE APOIO ---
+# ==========================================
+# 1. FUNÇÕES DE APOIO
+# ==========================================
 def limpar_texto_absoluto(texto):
     if not texto: return ""
     texto = str(texto).strip().lower()
@@ -48,28 +50,77 @@ def gerar_pdf_relatorio(df, titulo_relatorio, data_hoje):
         
         pdf.set_fill_color(230, 230, 230)
         pdf.set_font("Arial", "B", 10)
-        pdf.cell(100, 10, " Estudante", 1, 0, "L", True)
-        pdf.cell(40, 10, " Turma", 1, 0, "C", True)
-        pdf.cell(50, 10, " Info", 1, 1, "C", True)
         
-        pdf.set_font("Arial", "", 10)
-        for _, row in df.iterrows():
-            nome = str(row.get('Aluno', row.get('nome', ''))).encode('latin-1', 'replace').decode('latin-1')
-            turma = str(row.get('turma', '')).encode('latin-1', 'replace').decode('latin-1')
-            info = str(row.get('Faltas', 'S/R')).encode('latin-1', 'replace').decode('latin-1')
+        # Ajustando larguras dinamicamente com base nas colunas
+        colunas = list(df.columns)
+        if "Aluno" in colunas and "Turma" in colunas:
+            pdf.cell(100, 10, " Estudante", 1, 0, "L", True)
+            pdf.cell(40, 10, " Turma", 1, 0, "C", True)
+            pdf.cell(50, 10, " Info", 1, 1, "C", True)
             
-            pdf.cell(100, 10, f" {nome[:45]}", 1)
-            pdf.cell(40, 10, f" {turma}", 1, 0, "C")
-            pdf.cell(50, 10, f" {info}", 1, 1, "C")
+            pdf.set_font("Arial", "", 10)
+            for _, row in df.iterrows():
+                nome = str(row.get('Aluno', row.get('nome', ''))).encode('latin-1', 'replace').decode('latin-1')
+                turma = str(row.get('Turma', row.get('turma', ''))).encode('latin-1', 'replace').decode('latin-1')
+                info = str(row.get('Faltas', row.get('Total de Fugas', 'S/R'))).encode('latin-1', 'replace').decode('latin-1')
+                
+                pdf.cell(100, 10, f" {nome[:45]}", 1)
+                pdf.cell(40, 10, f" {turma}", 1, 0, "C")
+                pdf.cell(50, 10, f" {info}", 1, 1, "C")
+        else:
+            # Fallback genérico para outras tabelas
+            for col in colunas[:3]: # Pega até 3 colunas
+                pdf.cell(63, 10, str(col)[:15], 1, 0, "C", True)
+            pdf.ln()
+            pdf.set_font("Arial", "", 10)
+            for _, row in df.iterrows():
+                for col in colunas[:3]:
+                    val = str(row[col]).encode('latin-1', 'replace').decode('latin-1')
+                    pdf.cell(63, 10, f" {val[:25]}", 1, 0, "L")
+                pdf.ln()
             
         saida = pdf.output(dest='S')
         return saida.encode('latin-1') if isinstance(saida, str) else bytes(saida)
     except Exception as e:
         return f"Erro PDF: {e}".encode('utf-8')
 
-# --- 2. TELA PRINCIPAL DA BUSCA ATIVA ---
+# ==========================================
+# 2. TELA PRINCIPAL
+# ==========================================
 def exibir_busca_ativa(supabase):
-    # Garantir que o título apareça logo de cara
+    # --- CSS INJETADO PARA ABAS TIPO "FICHÁRIO" (ARREDONDADAS) ---
+    st.markdown("""
+        <style>
+        div[data-testid="stTabNav"] {
+            gap: 5px;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 0;
+        }
+        button[data-testid="stTab"] {
+            border: 1px solid #d3d3d3;
+            border-bottom: none;
+            border-radius: 12px 12px 0 0; 
+            padding: 10px 20px;
+            background-color: #f8f9fa;
+            font-size: 16px;
+            color: #555;
+            transition: 0.3s;
+        }
+        button[data-testid="stTab"]:hover {
+            background-color: #e9ecef;
+        }
+        button[data-testid="stTab"][aria-selected="true"] {
+            background-color: white;
+            border-top: 4px solid #FF4B4B;
+            border-left: 1px solid #d3d3d3;
+            border-right: 1px solid #d3d3d3;
+            color: #FF4B4B;
+            font-weight: bold;
+            box-shadow: 0px 4px 0px white inset; /* Disfarça a borda inferior */
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
     st.title("🔎 Busca Ativa")
     st.caption("Inteligência de Dados para Prevenção Escolar")
     
@@ -77,31 +128,42 @@ def exibir_busca_ativa(supabase):
     hoje = datetime.now(fuso).strftime('%Y-%m-%d')
     data_hora_atual = datetime.now(fuso).strftime('%d/%m/%Y %H:%M')
 
-    # --- MÉTRICAS ---
+    # --- MÉTRICAS DE HOJE ---
     st.subheader(f"📊 Resumo do Dia: {datetime.now(fuso).strftime('%d/%m/%Y')}")
     col1, col2, col3 = st.columns(3)
 
     try:
-        # Faltas
-        res_f = supabase.table("frequencia").select("id", count="exact").eq("data_chamada", hoje).eq("status", "F").execute()
-        # Evasões
-        res_e = supabase.table("evasoes").select("id", count="exact").eq("data_registro", hoje).execute()
-        # Presentes
-        res_p = supabase.table("frequencia").select("*").eq("data_chamada", hoje).eq("status", "P").execute()
+        res_faltas = supabase.table("frequencia").select("id", count="exact").eq("data_chamada", hoje).eq("status", "F").execute()
+        total_faltas = res_faltas.count if res_faltas.count else 0
+        
+        res_evasoes = supabase.table("evasoes").select("id", count="exact").eq("data_registro", hoje).execute()
+        total_evasoes = res_evasoes.count if res_evasoes.count else 0
 
-        col1.metric("Faltas (Entrada)", res_f.count if res_f.count else 0)
-        col2.metric("Evasões (Em aula)", res_e.count if res_e.count else 0)
-        col3.metric("Presentes Agora", len(res_p.data) if res_p.data else 0)
+        res_pres = supabase.table("frequencia").select("id", count="exact").eq("data_chamada", hoje).eq("status", "P").execute()
+        total_presentes = res_pres.count if res_pres.count else 0
+
+        col1.metric("Faltas (Entrada)", total_faltas)
+        col2.metric("Evasões (Em aula)", total_evasoes)
+        col3.metric("Presentes Agora", total_presentes)
     except Exception as e:
-        st.error(f"Erro ao conectar com as métricas: {e}")
+        st.error(f"Erro ao carregar métricas: {e}")
 
     st.markdown("---")
 
-    # --- ABAS ---
-    # Se essa linha não rodar, a tela fica em branco.
-    abas = st.tabs(["🚨 Alertas & Ranking", "🗺️ Mapa de Evasões", "📝 Registrar Ação"])
+    # ==========================================
+    # AS 4 ABAS SOLICITADAS
+    # ==========================================
+    aba_ranking, aba_zero, aba_lista, aba_registro = st.tabs([
+        "🚨 Alertas & Ranking", 
+        "❌ Presença Zero", 
+        "🗺️ Lista Geral", 
+        "📝 Registrar Ação"
+    ])
 
-    with abas[0]:
+    # ------------------------------------------
+    # ABA 1: RANKING DE FALTAS (COM PDF)
+    # ------------------------------------------
+    with aba_ranking:
         st.subheader("🏆 Alunos com Mais Faltas")
         
         try:
@@ -111,7 +173,7 @@ def exibir_busca_ativa(supabase):
                 
                 col_t, col_s = st.columns([1, 2])
                 with col_t:
-                    turma_sel = st.selectbox("📍 Turma:", ["Todas"] + sorted(df_hist['turma'].unique().tolist()))
+                    turma_sel = st.selectbox("📍 Turma:", ["Todas"] + sorted(df_hist['turma'].unique().tolist()), key="rank_turma")
                 with col_s:
                     min_f = st.slider("Mínimo de faltas:", 1, 20, 3)
 
@@ -123,25 +185,29 @@ def exibir_busca_ativa(supabase):
                 ranking = ranking[ranking['Faltas'] >= min_f].sort_values(by='Faltas', ascending=False)
 
                 if not ranking.empty:
-                    # Adicionando a turma de volta para o ranking
                     df_turmas = df_hist.drop_duplicates('aluno_nome')[['aluno_nome', 'turma']]
                     ranking = ranking.merge(df_turmas, left_on='Aluno', right_on='aluno_nome').drop('aluno_nome', axis=1)
+                    ranking.rename(columns={'turma': 'Turma'}, inplace=True)
                     
                     st.dataframe(ranking, use_container_width=True, hide_index=True)
                     
-                    # Botão de PDF para a Busca Ativa
-                    pdf_data = gerar_pdf_relatorio(ranking, f"Ranking de Faltas (Min: {min_f})", data_hora_atual)
+                    pdf_data = gerar_pdf_relatorio(ranking, f"Ranking de Faltas - Turma: {turma_sel}", data_hora_atual)
                     st.download_button("📄 Baixar Relatório em PDF", pdf_data, f"ranking_faltas_{hoje}.pdf", "application/pdf", use_container_width=True)
                 else:
-                    st.info("Nenhum aluno atingiu esse limite de faltas.")
+                    st.info("Nenhum aluno atingiu esse limite de faltas na turma selecionada.")
+            else:
+                st.info("Nenhum registro de falta encontrado no sistema.")
         except Exception as e:
             st.error(f"Erro no ranking: {e}")
 
-        st.markdown("---")
+    # ------------------------------------------
+    # ABA 2: PRESENÇA ZERO (ABANDONO)
+    # ------------------------------------------
+    with aba_zero:
         st.subheader("❌ Abandono (Presença Zero)")
+        st.caption("Alunos que nunca tiveram uma presença registrada no sistema.")
         
         try:
-            # Lógica: Alunos que existem mas não têm nenhum 'P' na frequência
             res_todos = supabase.table("alunos").select("nome, turma").execute()
             res_com_p = supabase.table("frequencia").select("aluno_nome").eq("status", "P").execute()
             
@@ -150,12 +216,13 @@ def exibir_busca_ativa(supabase):
                 nomes_p = [x['aluno_nome'] for x in res_com_p.data] if res_com_p.data else []
                 
                 df_zero = df_todos[~df_todos['nome'].isin(nomes_p)].copy()
-                df_zero.rename(columns={'nome': 'Aluno'}, inplace=True)
+                df_zero.rename(columns={'nome': 'Aluno', 'turma': 'Turma'}, inplace=True)
+                df_zero = df_zero.sort_values(by=['Turma', 'Aluno'])
                 df_zero['Faltas'] = "ZERO PRESENÇA"
 
                 if not df_zero.empty:
                     st.warning(f"Encontrados {len(df_zero)} alunos sem nenhuma presença registrada.")
-                    st.dataframe(df_zero[['Aluno', 'turma']], use_container_width=True, hide_index=True)
+                    st.dataframe(df_zero[['Aluno', 'Turma']], use_container_width=True, hide_index=True)
                     
                     pdf_z = gerar_pdf_relatorio(df_zero, "Relatorio de Presenca Zero (Abandono)", data_hora_atual)
                     st.download_button("📄 Baixar Relatório de Abandono", pdf_z, f"abandono_{hoje}.pdf", "application/pdf", use_container_width=True)
@@ -164,16 +231,135 @@ def exibir_busca_ativa(supabase):
         except Exception as e:
             st.error(f"Erro ao processar abandono: {e}")
 
-    with abas[1]:
-        st.subheader("🗺️ Mapa de Fugas")
-        st.info("Esta aba analisa os horários e turmas com maior índice de evasão.")
-        # [Aqui vai o seu código de gráficos que você já tinha...]
+    # ------------------------------------------
+    # ABA 3: LISTA GERAL / MAPA DE FUGAS
+    # ------------------------------------------
+    with aba_lista:
+        st.subheader("🗺️ Lista e Histórico de Evasões")
+        st.write("Visão geral de evasões organizadas por nome e turma.")
 
-    with abas[2]:
-        st.subheader("📝 Registrar Ação")
-        # [Aqui vai o seu formulário de registro de ação...]
+        col_f1, col_f2 = st.columns([1, 2])
+        with col_f1:
+            data_inicio = st.date_input("Data Inicial", datetime.now(fuso).date() - pd.Timedelta(days=7), format="DD/MM/YYYY")
+            data_fim = st.date_input("Data Final", datetime.now(fuso).date(), format="DD/MM/YYYY")
+        
+        try:
+            res_turmas_evas = supabase.table("evasoes").select("turma").execute()
+            lista_t = sorted(list(set([t['turma'] for t in res_turmas_evas.data if t.get('turma')]))) if res_turmas_evas.data else []
+            
+            with col_f2:
+                turma_filtro = st.selectbox("Selecione a Turma:", ["Geral (Todas as Turmas)"] + lista_t, key="lista_turma")
 
-# --- 3. DICA PARA O SEU MENU PRINCIPAL ---
-# No seu arquivo que gerencia as páginas, certifique-se de que está assim:
-# if pagina_selecionada == "Busca Ativa":
-#     exibir_busca_ativa(supabase)
+            query = supabase.table("evasoes").select("aluno_nome, turma, aula_periodo")\
+                .gte("data_registro", data_inicio.strftime('%Y-%m-%d'))\
+                .lte("data_registro", data_fim.strftime('%Y-%m-%d'))
+            
+            if turma_filtro != "Geral (Todas as Turmas)":
+                query = query.eq("turma", turma_filtro)
+                
+            res_evas_mapa = query.execute()
+
+            if res_evas_mapa.data:
+                df_mapa = pd.DataFrame(res_evas_mapa.data)
+                resumo_evas = df_mapa.groupby(['turma', 'aluno_nome']).agg(
+                    Total_Evasoes=('aula_periodo', 'count'),
+                    Aulas_Evadidas=('aula_periodo', lambda x: ', '.join(x.unique()))
+                ).reset_index()
+                
+                resumo_evas = resumo_evas.sort_values(by=['turma', 'aluno_nome'])
+                resumo_evas.columns = ['Turma', 'Aluno', 'Total de Fugas', 'Aulas Gazeáveis (Histórico)']
+
+                st.dataframe(resumo_evas, use_container_width=True, hide_index=True)
+                
+                pdf_evas = gerar_pdf_relatorio(resumo_evas, f"Relatorio de Evasoes - {turma_filtro}", data_hora_atual)
+                st.download_button("📄 Baixar Relatório de Evasões", pdf_evas, f"evasoes_{hoje}.pdf", "application/pdf", use_container_width=True)
+            else:
+                st.success("Nenhuma evasão encontrada para os filtros selecionados.")
+                
+        except Exception as e:
+            st.error(f"Erro ao gerar lista geral: {e}")
+
+    # ------------------------------------------
+    # ABA 4: REGISTRAR NOVA OCORRÊNCIA
+    # ------------------------------------------
+    with aba_registro:
+        st.subheader("➕ Registrar Nova Ocorrência")
+        
+        try:
+            # 1. Carregar Alunos
+            res_alunos = supabase.table("alunos").select("id, nome, turma").order("nome").execute()
+            df_alunos = pd.DataFrame(res_alunos.data) if res_alunos.data else pd.DataFrame()
+            
+            if not df_alunos.empty:
+                col_sel1, col_sel2 = st.columns(2)
+                
+                with col_sel1:
+                    turmas_disponiveis = sorted(df_alunos['turma'].dropna().unique().tolist())
+                    turma_escolhida = st.selectbox("1. Selecione a Turma:", turmas_disponiveis)
+                
+                with col_sel2:
+                    alunos_da_turma = df_alunos[df_alunos['turma'] == turma_escolhida]
+                    aluno_dict = dict(zip(alunos_da_turma['nome'], alunos_da_turma['id']))
+                    aluno_nome_escolhido = st.selectbox("2. Selecione o Estudante:", list(aluno_dict.keys()))
+                
+                st.markdown("---")
+                
+                # Layout Foto (Esquerda) e Formulário (Direita) - Igual ao Print 4
+                col_foto, col_form = st.columns([1, 2.5])
+                
+                with col_foto:
+                    mapa_fotos = listar_arquivos_bucket(supabase)
+                    url_base = f"{st.secrets['SUPABASE_URL']}/storage/v1/object/public/fotos-alunos/"
+                    foto_fallback = "https://cdn-icons-png.flaticon.com/512/149/149071.png"
+                    
+                    nome_limpo = limpar_texto_absoluto(aluno_nome_escolhido)
+                    prim_limpo = limpar_texto_absoluto(aluno_nome_escolhido.split()[0]) if aluno_nome_escolhido else ""
+                    nome_arq = mapa_fotos.get(nome_limpo) or mapa_fotos.get(prim_limpo)
+                    
+                    url_final = f"{url_base}{quote(nome_arq)}" if nome_arq else foto_fallback
+                    
+                    st.markdown(f"""
+                        <div style="background-color: #e9ecef; border-radius: 10px; padding: 15px; text-align: center;">
+                            <img src="{url_final}" style="width: 100%; border-radius: 8px; object-fit: cover;">
+                            <p style="margin-top: 10px; font-weight: bold; font-size: 14px; margin-bottom: 0;">{aluno_nome_escolhido}</p>
+                            <p style="font-size: 12px; color: #666; margin-top: 0;">{turma_escolhida}</p>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+                with col_form:
+                    with st.form("form_ocorrencias", clear_on_submit=True):
+                        # Baseado na sua tabela ocorrencias_disciplinares
+                        tipo_acao = st.selectbox("Tipo de Ação:", ["Advertência", "Suspensão", "Visita Domiciliar", "Conselho Tutelar", "Ligação para Família", "Outros"])
+                        motivo = st.text_area("Motivo da ocorrência:")
+                        matricula = st.text_input("Sua Matrícula (Assinatura):")
+                        
+                        btn_salvar = st.form_submit_button("🚨 Gravar Ocorrência", type="primary", use_container_width=True)
+                        
+                        if btn_salvar:
+                            if not motivo.strip() or not matricula.strip():
+                                st.warning("⚠️ O motivo e a matrícula são obrigatórios.")
+                            else:
+                                id_aluno = aluno_dict[aluno_nome_escolhido]
+                                
+                                dados_insert = {
+                                    "aluno_id": id_aluno,
+                                    "aluno_nome": aluno_nome_escolhido,
+                                    "turma": turma_escolhida,
+                                    "tipo_ocorrencia": tipo_acao,
+                                    "motivo": motivo,
+                                    "quem_registrou": matricula,
+                                    "status": "Ativa"
+                                }
+                                
+                                # Insere na tabela correta baseada no seu print
+                                supabase.table("ocorrencias_disciplinares").insert(dados_insert).execute()
+                                st.success("✅ Ocorrência registrada com sucesso!")
+                                st.balloons()
+            else:
+                st.warning("Nenhum aluno cadastrado no sistema para registrar ocorrências.")
+        except Exception as e:
+            st.error(f"Erro ao carregar o formulário de registro: {e}")
+
+# Código de teste para você poder rodar o arquivo isolado se quiser:
+if __name__ == "__main__":
+    st.warning("Rode através do seu menu principal `app.py` para garantir a conexão com o banco.")
