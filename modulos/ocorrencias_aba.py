@@ -7,8 +7,15 @@ from urllib.parse import quote
 # === FUNÇÕES DE APOIO (IGUAIS AO FOTOGRAMA) ===
 def limpar_texto(texto):
     if not texto: return ""
+    
+    # Remove a extensão do arquivo (ex: .jpg, .png) se existir
+    if "." in str(texto): texto = str(texto).rsplit('.', 1)[0]
+    
+    # Remove acentos e caracteres especiais, e deixa tudo em minúsculo
     nfkd = unicodedata.normalize('NFKD', str(texto))
     texto_limpo = "".join([c for c in nfkd if not unicodedata.combining(c)]).lower()
+    
+    # Deixa apenas letras e números
     return "".join(filter(str.isalnum, texto_limpo))
 
 @st.cache_data(ttl=600)
