@@ -189,6 +189,9 @@ def exibir_busca_ativa(supabase):
                     ranking = ranking.merge(df_turmas, left_on='Aluno', right_on='aluno_nome').drop('aluno_nome', axis=1)
                     ranking.rename(columns={'turma': 'Turma'}, inplace=True)
                     
+                    # --- CORREÇÃO: ORDENANDO PRIMEIRO POR TURMA, DEPOIS POR FALTAS ---
+                    ranking = ranking.sort_values(by=['Turma', 'Faltas'], ascending=[True, False])
+                    
                     st.dataframe(ranking, use_container_width=True, hide_index=True)
                     
                     pdf_data = gerar_pdf_relatorio(ranking, f"Ranking de Faltas - Turma: {turma_sel}", data_hora_atual)
@@ -309,7 +312,8 @@ def exibir_busca_ativa(supabase):
                 
                 with col_foto:
                     mapa_fotos = listar_arquivos_bucket(supabase)
-                    url_base = f"{st.secrets['SUPABASE_URL']}/storage/v1/object/public/fotos-alunos/"
+                    # --- CORREÇÃO: PEGANDO A URL DIRETO DO CLIENTE SUPABASE ---
+                    url_base = f"{supabase.supabase_url}/storage/v1/object/public/fotos-alunos/"
                     foto_fallback = "https://cdn-icons-png.flaticon.com/512/149/149071.png"
                     
                     nome_limpo = limpar_texto_absoluto(aluno_nome_escolhido)
