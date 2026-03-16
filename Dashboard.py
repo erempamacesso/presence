@@ -276,17 +276,15 @@ elif menu == "📚 Biblioteca de Questões":
 elif menu == "📜 Gerar Modelo de Prova":
     st.title("📜 Publicar Prova para Alunos")
     
-    # Import para limpar HTML da prévia e mexer com datas
     import re
     from datetime import datetime
 
-    # Buscamos as questões
     res_q = supabase.table("questoes").select("id, assunto, serie, dificuldade, enunciado, resposta_correta").execute()
     df_q = pd.DataFrame(res_q.data)
     
     if not df_q.empty:
         # ==========================================
-        # 🟢 NOVA ÁREA DE CONFIGURAÇÃO DA PROVA
+        # 🟢 ÁREA DE CONFIGURAÇÃO DA PROVA
         # ==========================================
         st.subheader("⚙️ Configurações Gerais")
         with st.container(border=True):
@@ -306,14 +304,21 @@ elif menu == "📜 Gerar Modelo de Prova":
                 hora_limite = st.time_input("⏰ Hora Limite (Brasília)")
             with col_c3:
                 tempo_duracao = st.number_input("⏳ Duração (Minutos)", min_value=10, max_value=300, value=60, step=10)
+
+            st.write("---")
+            st.write("**Pontuação e Regras**")
+            col_p1, col_p2 = st.columns(2)
+            
+            with col_p1:
+                qtd_questoes = st.number_input("🔢 Número de Questões da Prova", min_value=1, max_value=100, value=10)
+            with col_p2:
+                valor_questao = st.number_input("⭐ Valor de cada Questão (Pontos)", min_value=0.1, max_value=10.0, value=1.0, step=0.5)
         
         st.divider()
         st.subheader("📋 Selecione as Questões para a Prova")
         
-        # Filtragem por série selecionada
         qs_disp = df_q[df_q['serie'] == ser]
         
-        # Cabeçalho da "Tabela" de Cards
         h_col1, h_col2, h_col3, h_col4, h_col5 = st.columns([0.8, 1.2, 5, 0.5, 0.5])
         h_col1.caption("STATUS")
         h_col2.caption("CLASSIFICAÇÃO")
@@ -323,7 +328,6 @@ elif menu == "📜 Gerar Modelo de Prova":
 
         questoes_selecionadas = []
 
-        # Renderização dos Cards
         for _, row in qs_disp.iterrows():
             texto_puro = re.sub('<[^<]+>', '', str(row['enunciado']))
             previa = texto_puro[:120] + "..." if len(texto_puro) > 120 else texto_puro
@@ -340,31 +344,38 @@ elif menu == "📜 Gerar Modelo de Prova":
                 if escolhida:
                     questoes_selecionadas.append(row['id'])
 
-        # Rodapé fixo para publicar
         st.divider()
         col_fim1, col_fim2 = st.columns([4, 1])
-        col_fim1.write(f"📂 **{len(questoes_selecionadas)}** questões selecionadas para esta prova.")
+        
+        # Mostra o progresso da seleção para o professor
+        qtd_selecionada = len(questoes_selecionadas)
+        if qtd_selecionada == qtd_questoes:
+            col_fim1.success(f"📂 Perfeito! Você selecionou {qtd_selecionada} de {qtd_questoes} questões exigidas.")
+        else:
+            col_fim1.warning(f"📂 Atenção: Você selecionou {qtd_selecionada} questões. A configuração exige {qtd_questoes}.")
         
         if col_fim2.button("🚀 Publicar Prova", type="primary", use_container_width=True):
-            if questoes_selecionadas and tit:
+            if not tit:
+                st.error("Erro: Defina um título para a prova.")
+            elif qtd_selecionada != qtd_questoes:
+                st.error(f"Erro: Você precisa selecionar exatamente {qtd_questoes} questões (atualmente {qtd_selecionada}).")
+            else:
                 with st.spinner("Publicando..."):
-                    # Prepara a data e hora em formato ISO para o Supabase
                     data_hora_combinada = datetime.combine(data_limite, hora_limite)
                     data_hora_iso = data_hora_combinada.isoformat()
 
-                    # Insere todos os dados na tabela modelos_prova
                     supabase.table("modelos_prova").insert({
                         "titulo": tit, 
                         "serie": ser, 
                         "questoes_ids": questoes_selecionadas, 
                         "ativa": True,
                         "data_limite": data_hora_iso,
-                        "tempo_duracao": tempo_duracao
+                        "tempo_duracao": tempo_duracao,
+                        "qtd_questoes": qtd_questoes,
+                        "valor_questao": valor_questao
                     }).execute()
                 
                 st.success(f"Prova '{tit}' publicada com sucesso!")
                 st.balloons()
-            else:
-                st.error("Erro: Defina um título e selecione ao menos uma questão.")
     else:
         st.warning("Nenhuma questão cadastrada para gerar provas.")

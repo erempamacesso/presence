@@ -85,43 +85,50 @@ if st.session_state.etapa == "login":
             st.warning("Por favor, digite uma matrícula.")
 
 # ==========================================
-# ETAPA 2: ANTE-SALA (AVISOS)
+# 2. CONEXÃO COM OS DOIS PROJETOS SUPABASE
 # ==========================================
-elif st.session_state.etapa == "ante_sala":
-    aluno = st.session_state.aluno
-    config = st.session_state.prova_config
-    
-    st.subheader(f"👋 Olá, {aluno.get('nome', 'Aluno')}")
-    
-    # Formata a data limite para ficar bonita (Dia/Mês/Ano)
-    data_limite_formatada = "Sem limite"
-    if config.get('data_limite'):
-        try:
-            # Tenta converter a data do Supabase para o formato brasileiro
-            data_obj = datetime.fromisoformat(config['data_limite'].replace("Z", "+00:00"))
-            data_limite_formatada = data_obj.strftime("%d/%m/%Y às %H:%M")
-        except:
-            data_limite_formatada = config['data_limite']
+@st.cache_resource
+def init_db_alunos():
+    return create_client(st.secrets["SUPABASE_URL_ALUNOS"], st.secrets["SUPABASE_KEY_ALUNOS"])
 
-    st.markdown(f"""
-    <div class="aviso-box">
-        <h4>⚠️ Instruções Importantes</h4>
-        <ul>
-            <li>Esta avaliação ficará disponível até: <b>{data_limite_formatada}</b></li>
-            <li>Após clicar em 'Começar', você terá <b>{config.get('tempo_duracao', 60)} minutos</b> para concluir.</li>
-            <li>O cronômetro não para, mesmo que você feche ou atualize a página!</li>
-        </ul>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.write("")
-    if st.button("🚀 COMEÇAR AVALIAÇÃO AGORA", use_container_width=True):
-        # Define a hora exata que a prova vai acabar
-        minutos = config.get('tempo_duracao', 60)
-        st.session_state.tempo_final = datetime.now() + timedelta(minutes=minutos)
-        st.session_state.etapa = "prova"
-        st.rerun()
+@st.cache_resource
+def init_db_provas():
+    return create_client(st.secrets["SUPABASE_URL_PROVAS"], st.secrets["SUPABASE_KEY_PROVAS"])
 
+# Criamos as duas conexões
+db_alunos = init_db_alunos()
+db_provas = init_db_provas()
+
+# ==========================================
+# ETAPA 1: TELA DE LOGIN (Usa db_alunos)
+# ==========================================
+if st.session_state.etapa == "login":
+    # ... (seu código de imagem e título)
+    matricula = st.text_input("Digite sua Matrícula")
+    
+    if st.button("ACESSAR PROVA"):
+        if matricula:
+            try:
+                # 🟢 BUSCA O ALUNO NO PROJETO 1 (SIGEREMPAM)
+                res_aluno = db_alunos.table("alunos").select("*").eq("numero_matricula", matricula).execute()
+                
+                if len(res_aluno.data) > 0:
+                    st.session_state.aluno = res_aluno.data[0]
+                    
+                    # 🟢 BUSCA A PROVA NO PROJETO 2 (AVALIADOR)
+                    # Agora usamos db_provas para não dar o erro PGRST205!
+                    res_prova = db_provas.table("modelos_prova").select("*").eq("ativa", True).limit(1).execute()
+                    
+                    if len(res_prova.data) > 0:
+                        st.session_state.prova_config = res_prova.data[0]
+                        st.session_state.etapa = "ante_sala"
+                        st.rerun()
+                    else:
+                        st.error("Nenhuma prova ativa encontrada no sistema do Avaliador.")
+                else:
+                    st.error("Matrícula não encontrada.")
+            except Exception as e:
+                st.error(f"Erro de conexão: {e}")
 # ==========================================
 # ETAPA 3: TELA DA PROVA + CRONÔMETRO
 # ==========================================
