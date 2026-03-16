@@ -116,6 +116,8 @@ elif st.session_state.etapa == "instrucoes":
 # ETAPA 3: REALIZAÇÃO DA PROVA
 # ==========================================
 elif st.session_state.etapa == "em_prova":
+    import streamlit.components.v1 as components # Necessário para o cronômetro rodar
+
     # Cronômetro
     tempo_restante = st.session_state.tempo_final - datetime.now()
     segundos = int(tempo_restante.total_seconds())
@@ -130,9 +132,39 @@ elif st.session_state.etapa == "em_prova":
     with col_a:
         st.markdown(f"### ✍️ {st.session_state.prova_config['titulo']}")
         st.caption(f"Aluno: {st.session_state.aluno['nome']} | Turma: {st.session_state.aluno.get('turma', 'N/A')}")
+    
     with col_b:
-        mins, secs = divmod(segundos, 60)
-        st.metric("⏳ Tempo", f"{mins:02d}:{secs:02d}")
+        # Cronômetro Dinâmico com HTML/JS
+        html_cronometro = f"""
+        <div style="font-family: sans-serif; text-align: center; background-color: #f8d7da; color: #721c24; padding: 10px; border-radius: 8px; border: 1px solid #f5c6cb;">
+            <div style="font-size: 14px; font-weight: bold;">⏳ Tempo Restante</div>
+            <div id="relogio" style="font-size: 24px; font-weight: bold; margin-top: 5px;"></div>
+        </div>
+        <script>
+            // Pega o tempo do Python
+            var segundosTotais = {segundos}; 
+            
+            var x = setInterval(function() {{
+                var mins = Math.floor(segundosTotais / 60);
+                var secs = Math.floor(segundosTotais % 60);
+                
+                // Adiciona o zero à esquerda
+                var minsStr = mins < 10 ? "0" + mins : mins;
+                var secsStr = secs < 10 ? "0" + secs : secs;
+                
+                document.getElementById("relogio").innerHTML = minsStr + ":" + secsStr;
+                
+                if (segundosTotais <= 0) {{
+                    clearInterval(x);
+                    document.getElementById("relogio").innerHTML = "ESGOTADO!";
+                    document.getElementById("relogio").style.color = "red";
+                }} else {{
+                    segundosTotais--;
+                }}
+            }}, 1000);
+        </script>
+        """
+        components.html(html_cronometro, height=85)
 
     st.divider()
 
@@ -142,17 +174,22 @@ elif st.session_state.etapa == "em_prova":
             st.markdown(f"**QUESTÃO {i+1}**")
             st.markdown(q['enunciado'], unsafe_allow_html=True)
             
-            # Ajuste de alternativas (supondo que as chaves sejam A, B, C, D, E)
-            opcoes = [f"A) {q['alt_a']}", f"B) {q['alt_b']}", f"C) {q['alt_c']}", f"D) {q['alt_d']}"]
-            if q.get('alt_e'): opcoes.append(f"E) {q['alt_e']}")
+            # --- CORREÇÃO DAS ALTERNATIVAS ---
+            # Puxa o dicionário/JSON da coluna 'alternativas'
+            opcoes_dict = q.get('alternativas', {}) 
             
-            escolha = st.radio(f"Selecione a alternativa da Q{i+1}:", 
-                              options=opcoes, 
-                              index=None, 
-                              key=f"q_id_{q['id']}")
+            # Transforma o dicionário em uma lista para o st.radio
+            opcoes_lista = [f"{letra}) {texto}" for letra, texto in opcoes_dict.items()]
+            
+            escolha = st.radio(
+                f"Selecione a alternativa da Q{i+1}:", 
+                options=opcoes_lista, 
+                index=None, 
+                key=f"q_id_{q['id']}"
+            )
             
             if escolha:
-                st.session_state.respostas[q['id']] = escolha[0] # Pega só a letra inicial
+                st.session_state.respostas[q['id']] = escolha[0] # Salva só a letra (A, B...)
             
             st.write("---")
             
