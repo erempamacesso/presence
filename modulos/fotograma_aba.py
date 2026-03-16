@@ -193,7 +193,14 @@ def exibir_fotograma(supabase):
         res_turmas = supabase.table("alunos").select("turma").execute()
         lista_turmas = sorted(list(set([r['turma'] for r in res_turmas.data if r.get('turma')])))
         mapa_fotos = listar_arquivos_bucket(supabase)
-        supabase_url = st.secrets['SUPABASE_URL']
+        
+        # --- CORREÇÃO AQUI: Lendo a chave com o nome exato do seu secrets.toml ---
+        if "SUPABASE_URL_ALUNOS" in st.secrets:
+            supabase_url = str(st.secrets["SUPABASE_URL_ALUNOS"])
+        elif hasattr(supabase, 'supabase_url'):
+            supabase_url = str(supabase.supabase_url)
+        else:
+            supabase_url = ""
 
         res_busca = supabase.table("historico_busca_ativa").select("aluno_id").in_("status_atual", ["Em acompanhamento", "Alerta"]).execute()
         alunos_em_busca = {r['aluno_id'] for r in res_busca.data} if res_busca.data else set()
