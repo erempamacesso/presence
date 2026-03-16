@@ -63,22 +63,37 @@ if st.session_state.etapa == "login":
                         aluno_data = res.data[0]
                         st.session_state.aluno = aluno_data
                         
-                        # --- 💡 LÓGICA DE TRADUÇÃO DE TURMA PARA SÉRIE ---
+                        # --- LÓGICA DE TRADUÇÃO DE TURMA PARA SÉRIE ---
                         turma = aluno_data.get('turma', '')
                         serie_aluno = "1º Ano" # Valor padrão
                         
                         if "1" in turma: serie_aluno = "1º Ano"
                         elif "2" in turma: serie_aluno = "2º Ano"
                         elif "3" in turma: serie_aluno = "3º Ano"
-                        # ------------------------------------------------
                         
                         # 2. Busca prova ativa na base AVALIADOR usando a série traduzida
                         res_p = db_provas.table("modelos_prova").select("*").eq("ativa", True).eq("serie", serie_aluno).limit(1).execute()
                         
                         if res_p.data:
-                            st.session_state.prova_config = res_p.data[0]
-                            st.session_state.etapa = "instrucoes"
-                            st.rerun()
+                            prova_ativa = res_p.data[0]
+                            
+                            # --- 🔒 NOVA TRAVA DE SEGURANÇA: Verifica se o aluno já fez a prova ---
+                            # Converte o ID do aluno para string pois na tabela resultados_provas ele é text
+                            ja_fez = db_provas.table("resultados_provas") \
+                                .select("id") \
+                                .eq("aluno_id", str(aluno_data['id'])) \
+                                .eq("prova_id", prova_ativa['id']) \
+                                .limit(1) \
+                                .execute()
+                            
+                            if ja_fez.data:
+                                # Se encontrou registro, exibe o aviso e bloqueia
+                                st.warning(f"⚠️ Olá, {aluno_data['nome']}! Nosso sistema registra que você já enviou esta avaliação. Não é permitido refazer a prova.")
+                            else:
+                                # Se não encontrou, libera o acesso
+                                st.session_state.prova_config = prova_ativa
+                                st.session_state.etapa = "instrucoes"
+                                st.rerun()
                         else:
                             st.warning(f"Olá {aluno_data['nome']}, não encontramos provas ativas para o {serie_aluno} ({turma}).")
                     else:

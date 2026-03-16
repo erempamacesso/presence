@@ -3,47 +3,50 @@ import streamlit.components.v1 as components
 from supabase import create_client, Client
 
 # ==========================================
-# 1. CONFIGURAÇÃO GERAL DA PÁGINA
+# 1. CONFIGURAÇÃO GERAL DA PÁGINA (Sempre no topo!)
 # ==========================================
 st.set_page_config(page_title="EREM PAM - Chamada Escolar", layout="wide", page_icon="🏫")
 
 # ==========================================
-# 2. IMPORTAÇÃO DOS MÓDULOS (Onde as telas moram)
+# 2. IMPORTAÇÃO DOS MÓDULOS E BANCO
 # ==========================================
-from modulos.cenario_dia import exibir_cenario
-from modulos.fotograma_aba import exibir_fotograma
-from modulos.cadastro_aba import exibir_cadastro
-from modulos.reservas_aba import exibir_reservas
-from modulos.atualiza_alunos import exibir_importacao
-from modulos.busca_ativa import exibir_busca_ativa
-from modulos.aee import exibir_painel_aee
+try:
+    from modulos.cenario_dia import exibir_cenario
+    from modulos.fotograma_aba import exibir_fotograma
+    from modulos.cadastro_aba import exibir_cadastro
+    from modulos.reservas_aba import exibir_reservas
+    from modulos.atualiza_alunos import exibir_importacao
+    from modulos.busca_ativa import exibir_busca_ativa
+    from modulos.aee import exibir_painel_aee
+except Exception as e:
+    st.error(f"🚨 Erro ao carregar os módulos das telas: {e}")
+    st.stop()
+
+try:
+    URL_SUPABASE = st.secrets["SUPABASE_URL"]
+    CHAVE_SUPABASE = st.secrets["SUPABASE_KEY"]
+    supabase: Client = create_client(URL_SUPABASE, CHAVE_SUPABASE)
+except Exception as e:
+    st.error(f"🚨 Erro ao conectar no Supabase. Verifique os secrets: {e}")
+    st.stop()
 
 # ==========================================
-# 3. CONEXÃO COM O BANCO DE DADOS (SUPABASE)
-# ==========================================
-URL_SUPABASE = st.secrets["SUPABASE_URL"]
-CHAVE_SUPABASE = st.secrets["SUPABASE_KEY"]
-supabase: Client = create_client(URL_SUPABASE, CHAVE_SUPABASE)
-
-# ==========================================
-# 4. GERENCIADOR DE ESTADO (Para lembrar em qual página estamos)
+# 3. GERENCIADOR DE ESTADO
 # ==========================================
 if 'pagina' not in st.session_state:
-    st.session_state.pagina = 'cenario' # Define a página inicial ao abrir o app
-
-if 'fechar_menu' not in st.session_state:
-    st.session_state.fechar_menu = False
+    st.session_state.pagina = 'cenario'
 
 def mudar_pagina(nome_pagina):
     st.session_state.pagina = nome_pagina
-    st.session_state.fechar_menu = True # Liga o gatilho para recolher o menu no celular
+    # O comando de fechar_menu foi desativado temporariamente para garantir a visualização
 
 # ==========================================
-# 5. MENU LATERAL (SIDEBAR)
+# 4. MENU LATERAL (SIDEBAR)
 # ==========================================
 with st.sidebar:
     try:
-        st.image("logo_erempam.png", use_column_width=True)
+        # Troquei use_column_width por use_container_width (o Streamlit prefere assim agora)
+        st.image("logo_erempam.png", use_container_width=True) 
     except:
         st.title("🏫 EREM PAM")
         
@@ -59,60 +62,25 @@ with st.sidebar:
     
     st.divider()
     
-    st.button("📤 Importar e Atualizar Alunos", on_click=mudar_pagina, args=('importacao',), type="primary", use_container_width=True)
+    st.button("📤 Importar Alunos", on_click=mudar_pagina, args=('importacao',), type="primary", use_container_width=True)
 
 # ==========================================
-# 6. INJEÇÃO DE CÓDIGO PARA CELULAR (Fecha o Menu)
-# ==========================================
-if st.session_state.fechar_menu:
-    js_fechar_menu = '''
-    <script>
-        setTimeout(function() {
-            var doc = window.parent.document;
-            
-            // Estratégia 1: Procura exatamente a tag oficial do botão de fechar do Streamlit
-            var btn_fechar = doc.querySelector('[data-testid="stSidebarCollapseButton"]');
-            
-            if (btn_fechar) {
-                btn_fechar.click();
-            } else {
-                // Estratégia 2: Se a versão for um pouco mais antiga, clica no primeiro botão do cabeçalho
-                var botoes_header = doc.querySelectorAll('header button');
-                if (botoes_header.length > 0) {
-                    botoes_header[0].click();
-                }
-            }
-        }, 300); // Aumentei o delay para 300ms para ter certeza absoluta que a tela carregou
-    </script>
-    '''
-    components.html(js_fechar_menu, width=0, height=0)
-    
-    st.session_state.fechar_menu = False
-
-# ==========================================
-# 7. ROTEAMENTO DE PÁGINAS (O MAESTRO EM AÇÃO)
+# 5. ROTEAMENTO DE PÁGINAS (O MAESTRO EM AÇÃO)
 # ==========================================
 if st.session_state.pagina == 'cenario':
     exibir_cenario(supabase)
-
 elif st.session_state.pagina == 'busca_ativa':
     exibir_busca_ativa(supabase)
-    
 elif st.session_state.pagina == 'fotograma':
     exibir_fotograma(supabase)
-
 elif st.session_state.pagina == 'aee':
     exibir_painel_aee(supabase)
-    
 elif st.session_state.pagina == 'cadastro':
     exibir_cadastro(supabase)
-    
 elif st.session_state.pagina == 'reservas':
     LISTA_PROF = ["Prof. Silva", "Profa. Maria", "Prof. Ricardo"]
     AULAS = ["1ª Aula", "2ª Aula", "3ª Aula", "4ª Aula", "5ª Aula", "6ª Aula"]
     ESPACOS = ["Auditório", "Laboratório", "Biblioteca", "Quadra", "Multimídia"]
     exibir_reservas(supabase, LISTA_PROF, AULAS, ESPACOS, 3, 2, 5)
-    
 elif st.session_state.pagina == 'importacao':
     exibir_importacao(supabase)
-
