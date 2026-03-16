@@ -279,6 +279,7 @@ elif menu == "📜 Gerar Modelo de Prova":
     
     import re
     from datetime import datetime
+    import time
 
     res_q = supabase.table("questoes").select("id, assunto, serie, dificuldade, enunciado, resposta_correta").execute()
     df_q = pd.DataFrame(res_q.data)
@@ -307,13 +308,20 @@ elif menu == "📜 Gerar Modelo de Prova":
                 tempo_duracao = st.number_input("⏳ Duração (Minutos)", min_value=10, max_value=300, value=60, step=10)
 
             st.write("---")
-            st.write("**Pontuação e Regras**")
+            st.write("**Pontuação e Sorteio**")
             col_p1, col_p2 = st.columns(2)
             
             with col_p1:
-                qtd_questoes = st.number_input("🔢 Número de Questões da Prova", min_value=1, max_value=100, value=10)
+                qtd_questoes = st.number_input("🔢 Banco de Questões (Total Selecionado)", min_value=1, max_value=100, value=10)
+            
             with col_p2:
                 valor_questao = st.number_input("⭐ Valor de cada Questão (Pontos)", min_value=0.1, max_value=10.0, value=1.0, step=0.5)
+                # NOVO: Campo para definir quantas questões o aluno de fato verá (Sorteio)
+                qtd_sorteio = st.number_input("🎲 Sorteio: Questões por Aluno", 
+                                               min_value=1, 
+                                               max_value=int(qtd_questoes), 
+                                               value=int(qtd_questoes),
+                                               help="Ex: Selecione 20 questões abaixo, mas defina 8 aqui para que cada aluno receba 8 questões aleatórias das 20.")
         
         st.divider()
         st.subheader("📋 Selecione as Questões para a Prova")
@@ -348,18 +356,17 @@ elif menu == "📜 Gerar Modelo de Prova":
         st.divider()
         col_fim1, col_fim2 = st.columns([4, 1])
         
-        # Mostra o progresso da seleção para o professor
         qtd_selecionada = len(questoes_selecionadas)
         if qtd_selecionada == qtd_questoes:
-            col_fim1.success(f"📂 Perfeito! Você selecionou {qtd_selecionada} de {qtd_questoes} questões exigidas.")
+            col_fim1.success(f"📂 Perfeito! Você selecionou {qtd_selecionada} de {qtd_questoes} questões para o banco da prova.")
         else:
-            col_fim1.warning(f"📂 Atenção: Você selecionou {qtd_selecionada} questões. A configuração exige {qtd_questoes}.")
+            col_fim1.warning(f"📂 Atenção: Você selecionou {qtd_selecionada} questões. O banco configurado exige {qtd_questoes}.")
         
         if col_fim2.button("🚀 Publicar Prova", type="primary", use_container_width=True):
             if not tit:
                 st.error("Erro: Defina um título para a prova.")
             elif qtd_selecionada != qtd_questoes:
-                st.error(f"Erro: Você precisa selecionar exatamente {qtd_questoes} questões (atualmente {qtd_selecionada}).")
+                st.error(f"Erro: Selecione exatamente {qtd_questoes} questões.")
             else:
                 with st.spinner("Publicando..."):
                     data_hora_combinada = datetime.combine(data_limite, hora_limite)
@@ -373,76 +380,13 @@ elif menu == "📜 Gerar Modelo de Prova":
                         "data_limite": data_hora_iso,
                         "tempo_duracao": tempo_duracao,
                         "qtd_questoes": qtd_questoes,
+                        "qtd_sorteio": qtd_sorteio, # <-- SALVANDO A REGRA DE SORTEIO
                         "valor_questao": valor_questao
                     }).execute()
                 
                 st.success(f"Prova '{tit}' publicada com sucesso!")
                 st.balloons()
+                time.sleep(2)
+                st.rerun()
     else:
         st.warning("Nenhuma questão cadastrada para gerar provas.")
-
-        # --- 9. LIMPEZA DE AMBIENTE (PROVAS E RESULTADOS FAKE) ---
-elif menu == "🧹 Limpeza de Testes":
-    st.title("🧹 Limpeza e Administração")
-    st.warning("Cuidado: As ações abaixo são permanentes. Use para apagar dados de teste antes do uso oficial.")
-
-    tab_provas, tab_resultados = st.tabs(["📝 Gerenciar Provas Publicadas", "📊 Limpar Notas/Respostas"])
-
-    # --- ABA: GERENCIAR PROVAS PUBLICADAS ---
-    with tab_provas:
-        st.subheader("Provas Disponíveis para Alunos")
-        try:
-            # Busca da tabela correta: modelos_prova
-            res_p = supabase.table("modelos_prova").select("id, titulo, serie, data_limite").execute()
-            provas_pub = res_p.data
-
-            if not provas_pub:
-                st.info("Nenhuma prova publicada encontrada.")
-            else:
-                for p in provas_pub:
-                    with st.container(border=True):
-                        col1, col2 = st.columns([4, 1])
-                        with col1:
-                            st.markdown(f"**{p['titulo']}** ({p['serie']})")
-                            st.caption(f"Expira em: {p['data_limite']}")
-                        with col2:
-                            if st.button("Excluir 🗑️", key=f"del_mod_{p['id']}", use_container_width=True):
-                                supabase.table("modelos_prova").delete().eq("id", p['id']).execute()
-                                st.success("Prova removida!")
-                                time.sleep(0.5)
-                                st.rerun()
-        except Exception as e:
-            st.error(f"Erro ao listar modelos: {e}")
-
-    # --- ABA: LIMPAR RESULTADOS ---
-    with tab_resultados:
-        st.subheader("Resultados e Notas dos Alunos")
-        st.info("Esta ação limpa o Dashboard, removendo todas as notas registradas.")
-        
-        try:
-            # Busca da tabela de respostas (ajuste para o nome real da sua tabela de resultados/notas)
-            # Geralmente é 'respostas' ou 'resultados_provas'
-            res_r = supabase.table("resultados_provas").select("id, aluno_nome, titulo_prova").execute()
-            resultados = res_r.data
-
-            if not resultados:
-                st.info("Nenhum resultado de aluno encontrado.")
-            else:
-                if st.button("🚨 APAGAR TODOS OS RESULTADOS FAKE", type="primary", use_container_width=True):
-                    # Deleta tudo que não tem ID zero (ou seja, tudo)
-                    supabase.table("resultados_provas").delete().neq("id", 0).execute()
-                    st.success("Toda a base de respostas foi zerada!")
-                    time.sleep(1)
-                    st.rerun()
-
-                st.divider()
-                for r in resultados:
-                    c1, c2 = st.columns([4, 1])
-                    with c1:
-                        st.write(f"Aluno: {r['aluno_nome']} | Prova: {r['titulo_prova']}")
-                    with c2:
-                        if st.button("Apagar", key=f"del_res_{r['id']}"):
-                            supabase.table("resultados_provas").delete().eq("id", r['id']).execute()
-                            st.rerun()
-        except:
-            st.info("Tabela de resultados ainda não criada ou vazia.")
