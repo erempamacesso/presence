@@ -34,7 +34,8 @@ menu = st.sidebar.radio("Navegação", [
     "📊 Dashboard Diagnóstico", 
     "📝 Cadastrar Questões", 
     "📚 Biblioteca de Questões", 
-    "📜 Gerar Modelo de Prova"
+    "📜 Gerar Modelo de Prova",
+    "🧹 Limpeza de Testes"  # <-- ADICIONE ESTA LINHA
 ])
 
 # --- 5. LOGICA DO DASHBOARD DIAGNÓSTICO ---
@@ -379,3 +380,69 @@ elif menu == "📜 Gerar Modelo de Prova":
                 st.balloons()
     else:
         st.warning("Nenhuma questão cadastrada para gerar provas.")
+
+        # --- 9. LIMPEZA DE AMBIENTE (PROVAS E RESULTADOS FAKE) ---
+elif menu == "🧹 Limpeza de Testes":
+    st.title("🧹 Limpeza e Administração")
+    st.warning("Cuidado: As ações abaixo são permanentes. Use para apagar dados de teste antes do uso oficial.")
+
+    tab_provas, tab_resultados = st.tabs(["📝 Gerenciar Provas Publicadas", "📊 Limpar Notas/Respostas"])
+
+    # --- ABA: GERENCIAR PROVAS PUBLICADAS ---
+    with tab_provas:
+        st.subheader("Provas Disponíveis para Alunos")
+        try:
+            # Busca da tabela correta: modelos_prova
+            res_p = supabase.table("modelos_prova").select("id, titulo, serie, data_limite").execute()
+            provas_pub = res_p.data
+
+            if not provas_pub:
+                st.info("Nenhuma prova publicada encontrada.")
+            else:
+                for p in provas_pub:
+                    with st.container(border=True):
+                        col1, col2 = st.columns([4, 1])
+                        with col1:
+                            st.markdown(f"**{p['titulo']}** ({p['serie']})")
+                            st.caption(f"Expira em: {p['data_limite']}")
+                        with col2:
+                            if st.button("Excluir 🗑️", key=f"del_mod_{p['id']}", use_container_width=True):
+                                supabase.table("modelos_prova").delete().eq("id", p['id']).execute()
+                                st.success("Prova removida!")
+                                time.sleep(0.5)
+                                st.rerun()
+        except Exception as e:
+            st.error(f"Erro ao listar modelos: {e}")
+
+    # --- ABA: LIMPAR RESULTADOS ---
+    with tab_resultados:
+        st.subheader("Resultados e Notas dos Alunos")
+        st.info("Esta ação limpa o Dashboard, removendo todas as notas registradas.")
+        
+        try:
+            # Busca da tabela de respostas (ajuste para o nome real da sua tabela de resultados/notas)
+            # Geralmente é 'respostas' ou 'resultados_provas'
+            res_r = supabase.table("resultados_provas").select("id, aluno_nome, titulo_prova").execute()
+            resultados = res_r.data
+
+            if not resultados:
+                st.info("Nenhum resultado de aluno encontrado.")
+            else:
+                if st.button("🚨 APAGAR TODOS OS RESULTADOS FAKE", type="primary", use_container_width=True):
+                    # Deleta tudo que não tem ID zero (ou seja, tudo)
+                    supabase.table("resultados_provas").delete().neq("id", 0).execute()
+                    st.success("Toda a base de respostas foi zerada!")
+                    time.sleep(1)
+                    st.rerun()
+
+                st.divider()
+                for r in resultados:
+                    c1, c2 = st.columns([4, 1])
+                    with c1:
+                        st.write(f"Aluno: {r['aluno_nome']} | Prova: {r['titulo_prova']}")
+                    with c2:
+                        if st.button("Apagar", key=f"del_res_{r['id']}"):
+                            supabase.table("resultados_provas").delete().eq("id", r['id']).execute()
+                            st.rerun()
+        except:
+            st.info("Tabela de resultados ainda não criada ou vazia.")
