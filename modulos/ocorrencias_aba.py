@@ -89,7 +89,7 @@ def exibir_ocorrencias(supabase):
                     st.markdown("🔑 **Autenticação de Segurança**")
                     
                     # 3. 🔐 LÓGICA DA ASSINATURA ELETRÔNICA (Usa só a matrícula)
-                    senha_assinatura = st.text_input("Sua Assinatura Eletrônica (Matrícula):", type="password", help="Digite sua matrícula para validar a ocorrência.")
+                    senha_assinatura = st.text_input("Sua Assinatura Eletrônica (a mesma usa para cancelar reservas):", type="password", help="Digite sua matrícula para validar a ocorrência.")
                     
                     if st.button("🚨 Gravar Ocorrência", type="primary", use_container_width=True):
                         # Verifica se preencheu tudo (inclusive o campo 'Outros' se foi selecionado)
