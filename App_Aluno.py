@@ -3,168 +3,178 @@ import pandas as pd
 from datetime import datetime, timedelta
 from supabase import create_client, Client
 import time
+import re
 
 # ==========================================
-# 1. CONFIGURAÇÕES E CSS (REMOVENDO SIDEBAR)
+# 1. CONFIGURAÇÕES E ESTILO
 # ==========================================
 st.set_page_config(page_title="Portal do Aluno - EREMPAM", layout="wide", initial_sidebar_state="collapsed")
 
+# CSS para esconder menu e dar um ar profissional
 st.markdown("""
     <style>
         [data-testid="stSidebar"] {display: none;}
         .main .block-container {padding-top: 2rem;}
-        .aviso-box {
-            background-color: #fff3cd; 
-            padding: 20px; 
-            border-radius: 10px; 
-            border: 1px solid #ffeeba;
-            color: #856404;
-        }
+        .stButton>button {border-radius: 8px; height: 3em;}
+        .prova-header {background-color: #f0f2f6; padding: 20px; border-radius: 10px; margin-bottom: 20px;}
     </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. CONEXÃO COM O SUPABASE
+# 2. CONEXÃO COM OS DOIS PROJETOS (IMPORTANTÍSSIMO)
 # ==========================================
 @st.cache_resource
-def init_connection():
-    url = st.secrets["SUPABASE_URL_ALUNOS"]
-    key = st.secrets["SUPABASE_KEY_ALUNOS"]
-    return create_client(url, key)
+def init_connections():
+    # Conexão 1: Base de Alunos (SIGEREMPAM)
+    db_alunos = create_client(st.secrets["SUPABASE_URL_ALUNOS"], st.secrets["SUPABASE_KEY_ALUNOS"])
+    # Conexão 2: Base de Provas (AVALIADOR)
+    db_provas = create_client(st.secrets["SUPABASE_URL_PROVAS"], st.secrets["SUPABASE_KEY_PROVAS"])
+    return db_alunos, db_provas
 
-supabase: Client = init_connection()
-
-# ==========================================
-# 3. CONTROLE DE ESTADO (MEMÓRIA DO APP)
-# ==========================================
-if 'etapa' not in st.session_state:
-    st.session_state.etapa = "login"
-if 'aluno' not in st.session_state:
-    st.session_state.aluno = None
-if 'prova_config' not in st.session_state:
-    st.session_state.prova_config = None
-if 'tempo_final' not in st.session_state:
-    st.session_state.tempo_final = None
+db_alunos, db_provas = init_connections()
 
 # ==========================================
-# ETAPA 1: TELA DE LOGIN
+# 3. INICIALIZAÇÃO DO ESTADO (MEMÓRIA)
+# ==========================================
+for key in ['etapa', 'aluno', 'prova_config', 'tempo_final', 'questoes', 'respostas']:
+    if key not in st.session_state:
+        if key == 'etapa': st.session_state[key] = "login"
+        elif key == 'respostas': st.session_state[key] = {}
+        else: st.session_state[key] = None
+
+# ==========================================
+# ETAPA 1: LOGIN (Busca no Projeto Alunos)
 # ==========================================
 if st.session_state.etapa == "login":
-    # Adapte o nome da sua imagem de logo aqui
-    st.image("logo_erempam.png", width=120) 
-    st.title("Login do Estudante")
-    
-    matricula = st.text_input("Digite sua Matrícula")
-    
-    if st.button("ACESSAR PROVA"):
-        if matricula:
-            try:
-                # 1. Busca o aluno no banco
-                resposta_aluno = supabase.table("alunos").select("*").eq("numero_matricula", matricula).execute()
-                
-                if len(resposta_aluno.data) > 0:
-                    st.session_state.aluno = resposta_aluno.data[0]
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.image("logo_erempam.png", width=150)
+        st.title("🚀 Portal de Avaliações")
+        
+        matricula = st.text_input("Digite sua Matrícula", key="input_matricula_principal")
+        
+        if st.button("ACESSAR SISTEMA", use_container_width=True):
+            if matricula:
+                try:
+                    # Busca aluno na base SIGEREMPAM
+                    res = db_alunos.table("alunos").select("*").eq("numero_matricula", matricula).execute()
                     
-                    # 2. Busca as configurações da prova (tempo e data limite)
-                    # Aqui pegamos a primeira prova ativa como exemplo.
-                    resposta_prova = supabase.table("modelos_prova").select("*").limit(1).execute()
-                    
-                    if len(resposta_prova.data) > 0:
-                        st.session_state.prova_config = resposta_prova.data[0]
-                    else:
-                        # Valores padrão caso você não tenha cadastrado a prova ainda
-                        st.session_state.prova_config = {"tempo_duracao": 60, "data_limite": "2026-12-31T23:59:00"}
+                    if res.data:
+                        st.session_state.aluno = res.data[0]
+                        # Busca prova ativa na base AVALIADOR que seja da série do aluno
+                        serie_aluno = st.session_state.aluno.get('serie', '1º Ano')
+                        res_p = db_provas.table("modelos_prova").select("*").eq("ativa", True).eq("serie", serie_aluno).limit(1).execute()
                         
-                    st.session_state.etapa = "ante_sala"
-                    st.rerun()
-                else:
-                    st.error("Matrícula não encontrada no sistema.") #
-            except Exception as e:
-                st.error(f"Erro ao conectar com o banco: {e}")
-        else:
-            st.warning("Por favor, digite uma matrícula.")
-
-# ==========================================
-# 2. CONEXÃO COM OS DOIS PROJETOS SUPABASE
-# ==========================================
-@st.cache_resource
-def init_db_alunos():
-    return create_client(st.secrets["SUPABASE_URL_ALUNOS"], st.secrets["SUPABASE_KEY_ALUNOS"])
-
-@st.cache_resource
-def init_db_provas():
-    return create_client(st.secrets["SUPABASE_URL_PROVAS"], st.secrets["SUPABASE_KEY_PROVAS"])
-
-# Criamos as duas conexões
-db_alunos = init_db_alunos()
-db_provas = init_db_provas()
-
-# ==========================================
-# ETAPA 1: TELA DE LOGIN (Usa db_alunos)
-# ==========================================
-if st.session_state.etapa == "login":
-    # ... (seu código de imagem e título)
-    matricula = st.text_input("Digite sua Matrícula")
-    
-    if st.button("ACESSAR PROVA"):
-        if matricula:
-            try:
-                # 🟢 BUSCA O ALUNO NO PROJETO 1 (SIGEREMPAM)
-                res_aluno = db_alunos.table("alunos").select("*").eq("numero_matricula", matricula).execute()
-                
-                if len(res_aluno.data) > 0:
-                    st.session_state.aluno = res_aluno.data[0]
-                    
-                    # 🟢 BUSCA A PROVA NO PROJETO 2 (AVALIADOR)
-                    # Agora usamos db_provas para não dar o erro PGRST205!
-                    res_prova = db_provas.table("modelos_prova").select("*").eq("ativa", True).limit(1).execute()
-                    
-                    if len(res_prova.data) > 0:
-                        st.session_state.prova_config = res_prova.data[0]
-                        st.session_state.etapa = "ante_sala"
-                        st.rerun()
+                        if res_p.data:
+                            st.session_state.prova_config = res_p.data[0]
+                            st.session_state.etapa = "instrucoes"
+                            st.rerun()
+                        else:
+                            st.warning(f"Olá {st.session_state.aluno['nome']}, não há provas ativas para o {serie_aluno} no momento.")
                     else:
-                        st.error("Nenhuma prova ativa encontrada no sistema do Avaliador.")
-                else:
-                    st.error("Matrícula não encontrada.")
-            except Exception as e:
-                st.error(f"Erro de conexão: {e}")
-# ==========================================
-# ETAPA 3: TELA DA PROVA + CRONÔMETRO
-# ==========================================
-elif st.session_state.etapa == "prova":
-    aluno = st.session_state.aluno
-    
-    # CABEÇALHO DINÂMICO
-    col_foto, col_info, col_timer = st.columns([1, 4, 2])
-    
-    with col_foto:
-        # Puxa a foto do banco, se não tiver, usa o ícone padrão
-        foto_url = aluno.get('foto_url', "https://cdn-icons-png.flaticon.com/512/3135/3135715.png")
-        st.image(foto_url, width=80)
-        
-    with col_info:
-        st.markdown(f"### **{aluno.get('nome', 'Aluno')}**")
-        st.caption(f"📍 {aluno.get('turma', 'Turma')} | Avaliação Online")
+                        st.error("Matrícula não encontrada.")
+                except Exception as e:
+                    st.error(f"Erro de conexão: {e}")
+            else:
+                st.info("Por favor, informe sua matrícula para continuar.")
 
-    with col_timer:
-        # Lógica do tempo
-        tempo_restante = st.session_state.tempo_final - datetime.now()
-        segundos_totais = int(tempo_restante.total_seconds())
-        
-        if segundos_totais <= 0:
-            st.error("⌛ TEMPO ESGOTADO!")
-            st.warning("O sistema enviará suas respostas automaticamente.")
-            # st.button("Finalizar Prova") -> Aqui entrará a lógica de forçar o envio
-            st.stop() # Trava a tela para o aluno não marcar mais nada
-        else:
-            mins, secs = divmod(segundos_totais, 60)
-            st.metric("⏳ Tempo Restante", f"{mins:02d}:{secs:02d}")
-            
-    st.divider()
+# ==========================================
+# ETAPA 2: INSTRUÇÕES
+# ==========================================
+elif st.session_state.etapa == "instrucoes":
+    aluno = st.session_state.aluno
+    prova = st.session_state.prova_config
     
-    # ----------------------------------------------------
-    # AQUI ENTRA O SEU CÓDIGO DE RENDERIZAR AS QUESTÕES
-    # st.write("Questão 1: O isooctano é...")
-    # ----------------------------------------------------
-    st.info("As questões da prova aparecerão aqui...")
+    st.header(f"👋 Bem-vindo(a), {aluno['nome']}!")
+    
+    with st.container(border=True):
+        st.subheader(f"📝 {prova['titulo']}")
+        st.write(f"**Série:** {prova['serie']} | **Duração:** {prova['tempo_duracao']} minutos")
+        st.write(f"**Total de Questões:** {prova.get('qtd_questoes', 10)}")
+        st.write(f"**Valor por Questão:** {prova.get('valor_questao', 1.0)} pontos")
+        
+        st.warning("⚠️ Uma vez iniciada, o tempo não para. Certifique-se de que sua conexão está estável.")
+        
+        if st.button("INICIAR PROVA AGORA", type="primary", use_container_width=True):
+            st.session_state.tempo_final = datetime.now() + timedelta(minutes=prova['tempo_duracao'])
+            # Busca as questões reais baseadas nos IDs salvos no modelo
+            ids = prova.get('questoes_ids', [])
+            res_q = db_provas.table("questoes").select("*").in_("id", ids).execute()
+            st.session_state.questoes = res_q.data
+            st.session_state.etapa = "em_prova"
+            st.rerun()
+
+# ==========================================
+# ETAPA 3: REALIZAÇÃO DA PROVA
+# ==========================================
+elif st.session_state.etapa == "em_prova":
+    # Cronômetro
+    tempo_restante = st.session_state.tempo_final - datetime.now()
+    segundos = int(tempo_restante.total_seconds())
+    
+    if segundos <= 0:
+        st.error("⌛ TEMPO ESGOTADO!")
+        # Lógica de envio automático poderia entrar aqui
+        st.stop()
+    
+    # Cabeçalho Fixo
+    col_a, col_b = st.columns([3, 1])
+    with col_a:
+        st.markdown(f"### ✍️ {st.session_state.prova_config['titulo']}")
+        st.caption(f"Aluno: {st.session_state.aluno['nome']} | Turma: {st.session_state.aluno.get('turma', 'N/A')}")
+    with col_b:
+        mins, secs = divmod(segundos, 60)
+        st.metric("⏳ Tempo", f"{mins:02d}:{secs:02d}")
+
+    st.divider()
+
+    # Formulário de Questões
+    with st.form("form_prova"):
+        for i, q in enumerate(st.session_state.questoes):
+            st.markdown(f"**QUESTÃO {i+1}**")
+            st.markdown(q['enunciado'], unsafe_allow_html=True)
+            
+            # Ajuste de alternativas (supondo que as chaves sejam A, B, C, D, E)
+            opcoes = [f"A) {q['alt_a']}", f"B) {q['alt_b']}", f"C) {q['alt_c']}", f"D) {q['alt_d']}"]
+            if q.get('alt_e'): opcoes.append(f"E) {q['alt_e']}")
+            
+            escolha = st.radio(f"Selecione a alternativa da Q{i+1}:", 
+                              options=opcoes, 
+                              index=None, 
+                              key=f"q_id_{q['id']}")
+            
+            if escolha:
+                st.session_state.respostas[q['id']] = escolha[0] # Pega só a letra inicial
+            
+            st.write("---")
+            
+        entregar = st.form_submit_button("✅ FINALIZAR E ENVIAR PROVA", use_container_width=True)
+
+    if entregar:
+        # 1. Calcular Nota
+        acertos = 0
+        for q in st.session_state.questoes:
+            if st.session_state.respostas.get(q['id']) == q['resposta_correta']:
+                acertos += 1
+        
+        nota = acertos * st.session_state.prova_config.get('valor_questao', 1.0)
+        
+        # 2. Salvar no Banco (Projeto Provas)
+        resultado = {
+            "aluno_id": st.session_state.aluno['id'],
+            "prova_id": st.session_state.prova_config['id'],
+            "nota": nota,
+            "respostas": st.session_state.respostas,
+            "acertos": acertos
+        }
+        
+        try:
+            db_provas.table("resultados_provas").insert(resultado).execute()
+            st.success(f"Prova enviada com sucesso! Nota calculada: {nota}")
+            st.balloons()
+            time.sleep(5)
+            # Limpa estado e volta pro login
+            for key in list(st.session_state.keys()): del st.session_state[key]
+            st.rerun()
+        except Exception as e:
+            st.error(f"Erro ao salvar resultado: {e}")
