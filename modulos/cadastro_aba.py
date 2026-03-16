@@ -212,11 +212,52 @@ def exibir_cadastro(supabase):
                     st.rerun()
 
     # =========================================================
-    # ABA 5: SINCRONIZAÇÃO FORÇADA DE MATRÍCULAS
+    # ABA 5: SINCRONIZAÇÃO FORÇADA DE MATRÍCULAS E AUDITORIA
     # =========================================================
     with aba_sinc:
-        st.subheader("🔄 Sincronização Forçada de Matrículas")
-        st.warning("Esta ferramenta busca alunos pelo nome e preenche a matrícula que estiver faltando.")
+        st.subheader("🔄 Auditoria e Sincronização de Matrículas")
+        
+        # --- PARTE 1: AUDITORIA (VERIFICAR PENDÊNCIAS) ---
+        st.markdown("### 🔎 1. Verificar Pendências")
+        st.write("Selecione uma turma para ver quem ainda está sem matrícula no sistema.")
+        
+        # Puxa a lista de turmas para o filtro
+        res_t = supabase.table("alunos").select("turma").execute()
+        lista_turmas_audit = sorted(list(set([x['turma'] for x in res_t.data if x['turma']])))
+        
+        if lista_turmas_audit:
+            opcoes_turma = ["Todas as Turmas"] + lista_turmas_audit
+            turma_audit = st.selectbox("Selecione a Turma:", opcoes_turma)
+            
+            if st.button("Verificar Turma", key="btn_audit"):
+                with st.spinner("Analisando dados..."):
+                    # Busca os alunos baseado no filtro
+                    if turma_audit == "Todas as Turmas":
+                        res_audit = supabase.table("alunos").select("nome, turma, numero_matricula").order("turma").execute()
+                    else:
+                        res_audit = supabase.table("alunos").select("nome, turma, numero_matricula").eq("turma", turma_audit).order("nome").execute()
+                    
+                    df_audit = pd.DataFrame(res_audit.data) if res_audit.data else pd.DataFrame()
+                    
+                    if not df_audit.empty:
+                        # Filtro inteligente: pega nulos, vazios ou 'nan'
+                        df_audit['mat_limpa'] = df_audit['numero_matricula'].fillna("").astype(str).str.strip().str.lower()
+                        df_pendentes = df_audit[df_audit['mat_limpa'].isin(["", "nan", "null", "none"])]
+                        
+                        if not df_pendentes.empty:
+                            st.warning(f"⚠️ Encontrados {len(df_pendentes)} aluno(s) sem matrícula!")
+                            df_exibir = df_pendentes[['nome', 'turma']].rename(columns={"nome": "Nome Completo", "turma": "Turma"})
+                            st.dataframe(df_exibir, use_container_width=True, hide_index=True)
+                        else:
+                            st.success(f"✅ Perfeito! Todos os alunos em '{turma_audit}' possuem matrícula.")
+                    else:
+                        st.info("Nenhum aluno encontrado para este filtro.")
+                        
+        st.divider()
+        
+        # --- PARTE 2: SINCRONIZAÇÃO FORÇADA ---
+        st.markdown("### 🛠️ 2. Preencher Matrículas Faltantes")
+        st.info("Suba a planilha completa para o sistema tentar cruzar os nomes e preencher quem apareceu na tabela acima.")
         
         arquivo_sinc = st.file_uploader("Suba a planilha completa (.xlsx)", type=["xlsx"], key="sinc_up")
         
@@ -224,13 +265,11 @@ def exibir_cadastro(supabase):
             xl_sinc = pd.ExcelFile(arquivo_sinc)
             
             if st.button("🔍 Cruzar Dados e Atualizar Matrículas", type="primary"):
-                # 1. Pegar todos os alunos do banco
                 res = supabase.table("alunos").select("id, nome").execute()
                 alunos_db = res.data if res.data else []
                 mapa_db = {limpar_texto(a['nome']): a['id'] for a in alunos_db}
                 
                 sucesso = []
-                
                 progress = st.progress(0)
                 abas = xl_sinc.sheet_names
                 
@@ -242,7 +281,7 @@ def exibir_cadastro(supabase):
                         nome_planilha = str(row.get('Nome', '')).strip()
                         matricula = str(row.get('Matrícula', ''))
                         
-                        if nome_planilha and matricula and matricula != 'nan':
+                        if nome_planilha and matricula and matricula.lower() != 'nan':
                             chave_planilha = limpar_texto(nome_planilha)
                             
                             if chave_planilha in mapa_db:
@@ -255,5 +294,5 @@ def exibir_cadastro(supabase):
                 st.success(f"✅ Finalizado! {len(sucesso)} matrículas foram vinculadas com sucesso.")
                 
                 if sucesso:
-                    with st.expander("📄 Ver alunos atualizados"):
-                        st.dataframe(pd.DataFrame(sucesso))
+                    with st.expander("📄 Ver alunos atualizados nesta rodada"):
+                        st.dataframe(pd.DataFrame(sucesso), use_container_width=True)
