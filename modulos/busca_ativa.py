@@ -190,6 +190,7 @@ def exibir_busca_ativa(supabase):
                             url_base = supabase.supabase_url
                         
                         if url_base:
+                            url_base = str(url_base) # <--- CORREÇÃO APLICADA AQUI (Forçando a virar texto)
                             if not url_base.endswith("/"): url_base += "/"
                             url_final_fotos = f"{url_base}storage/v1/object/public/fotos-alunos/"
                         else:
