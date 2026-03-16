@@ -7,7 +7,7 @@ from urllib.parse import quote
 import streamlit.components.v1 as components  
 from fpdf import FPDF 
 
-# --- FUNÇÕES DE APOIO PARA AS FOTOS ---
+# --- FUNÇÕES DE APOIO ---
 def limpar_texto_absoluto(texto):
     if not texto: return ""
     texto = str(texto).strip().lower()
@@ -29,6 +29,44 @@ def listar_arquivos_bucket(_supabase):
         return mapa
     except: return {}
 
+# --- NOVA FUNÇÃO: GERAR PDF DO RANKING E ABANDONO ---
+def gerar_pdf_relatorio(df, titulo_relatorio, data_hoje):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", "B", 16)
+    pdf.cell(190, 10, "Relatorio de Busca Ativa - Gestao Escolar", ln=True, align="C")
+    pdf.set_font("Arial", "", 10)
+    pdf.cell(190, 10, f"Gerado em: {data_hoje}", ln=True, align="C")
+    pdf.ln(10)
+    
+    pdf.set_font("Arial", "B", 12)
+    titulo_safe = str(titulo_relatorio).encode('latin-1', 'replace').decode('latin-1')
+    pdf.cell(190, 10, titulo_safe.upper(), ln=True, align="L")
+    pdf.ln(5)
+    
+    pdf.set_fill_color(230, 230, 230)
+    pdf.set_font("Arial", "B", 10)
+    pdf.cell(100, 10, " Estudante", 1, 0, "L", True)
+    pdf.cell(40, 10, " Turma", 1, 0, "C", True)
+    pdf.cell(50, 10, " Total", 1, 1, "C", True)
+    
+    pdf.set_font("Arial", "", 10)
+    for _, row in df.iterrows():
+        # Encoding para evitar erro com acentos no FPDF
+        nome = str(row.get('Aluno', row.get('nome', ''))).encode('latin-1', 'replace').decode('latin-1')
+        turma = str(row.get('turma', '')).encode('latin-1', 'replace').decode('latin-1')
+        faltas = str(row.get('Faltas', '0')).encode('latin-1', 'replace').decode('latin-1')
+        
+        pdf.cell(100, 10, f" {nome[:45]}", 1)
+        pdf.cell(40, 10, f" {turma}", 1, 0, "C")
+        pdf.cell(50, 10, f" {faltas}", 1, 1, "C")
+        
+    saida = pdf.output(dest='S')
+    if isinstance(saida, str):
+        return saida.encode('latin-1')
+    return bytes(saida)
+
+# --- TELA PRINCIPAL ---
 def exibir_busca_ativa(supabase):
     st.title("🔎 Busca Ativa")
     st.caption("Inteligência de Dados para Prevenção Escolar")
@@ -36,6 +74,7 @@ def exibir_busca_ativa(supabase):
 
     fuso = pytz.timezone('America/Recife')
     hoje = datetime.now(fuso).strftime('%Y-%m-%d')
+    data_hora_atual = datetime.now(fuso).strftime('%d/%m/%Y %H:%M')
 
     # --- 1. MÉTRICAS RÁPIDAS (HOJE) ---
     st.subheader(f"📊 Resumo do Dia: {datetime.now(fuso).strftime('%d/%m/%Y')}")
@@ -92,7 +131,6 @@ def exibir_busca_ativa(supabase):
                             pdf.cell(130, 10, f" {nome_pdf}", 1)
                             pdf.cell(60, 10, f" {turma_pdf}", 1, 1, "C")
                         
-                        # Correção para blindar contra diferentes versões do FPDF
                         pdf_saida = pdf.output(dest='S')
                         if isinstance(pdf_saida, str):
                             pdf_bytes = pdf_saida.encode('latin-1')
@@ -175,33 +213,28 @@ def exibir_busca_ativa(supabase):
                     else:
                         df_turmas = df_hist.drop_duplicates('aluno_nome')[['aluno_nome', 'turma']]
                         ranking = ranking.merge(df_turmas, left_on='Aluno', right_on='aluno_nome').drop('aluno_nome', axis=1)
-                        ranking = ranking.sort_values(by='Aluno', ascending=True)
+                        ranking = ranking.sort_values(by='Faltas', ascending=False) # Ordenar pelas maiores faltas
 
                         mapa_fotos = listar_arquivos_bucket(supabase)
                         
-                        # --- TENTATIVA DE LOCALIZAR A URL AUTOMATICAMENTE ---
                         url_base = ""
-                        
-                        # 1. Tenta buscar nos segredos (padrão)
                         if "SUPABASE_URL" in st.secrets:
                             url_base = st.secrets["SUPABASE_URL"]
-                        # 2. Se não achar, tenta buscar do próprio cliente supabase que já está conectado
                         elif hasattr(supabase, 'supabase_url'):
                             url_base = supabase.supabase_url
                         
                         if url_base:
-                            url_base = str(url_base) # <--- CORREÇÃO APLICADA AQUI (Forçando a virar texto)
+                            url_base = str(url_base)
                             if not url_base.endswith("/"): url_base += "/"
                             url_final_fotos = f"{url_base}storage/v1/object/public/fotos-alunos/"
                         else:
-                            st.warning("⚠️ Não foi possível localizar a URL do banco para carregar as fotos. Verifique suas configurações de conexão.")
+                            st.warning("⚠️ Não foi possível localizar a URL do banco para carregar as fotos.")
                             url_final_fotos = ""
 
                         foto_fallback = "https://cdn-icons-png.flaticon.com/512/149/149071.png"
 
                         def buscar_url_foto(nome_aluno):
-                            if not url_final_fotos:
-                                return foto_fallback
+                            if not url_final_fotos: return foto_fallback
                             nome_limpo = limpar_texto_absoluto(nome_aluno)
                             prim_limpo = limpar_texto_absoluto(nome_aluno.split()[0])
                             nome_arq = mapa_fotos.get(nome_limpo) or mapa_fotos.get(prim_limpo)
@@ -248,19 +281,65 @@ def exibir_busca_ativa(supabase):
                         altura_tabela = min(len(ranking) * 90 + 50, 600)
                         components.html(html_table, height=altura_tabela, scrolling=True)
 
+                        # --- BOTÃO DE PDF DO RANKING (NOVO) ---
+                        pdf_faltas = gerar_pdf_relatorio(ranking, f"Alunos com {min_faltas} ou mais faltas", data_hora_atual)
+                        st.download_button(
+                            label=f"📄 Baixar PDF - Ranking de Faltas ({len(ranking)} alunos)",
+                            data=pdf_faltas,
+                            file_name=f"relatorio_faltas_{hoje}.pdf",
+                            mime="application/pdf",
+                            type="primary",
+                            use_container_width=True
+                        )
+
             else:
                 st.info("Ainda não há histórico de faltas acumulado.")
         except Exception as e:
             st.error(f"Erro ao gerar tabela visual: {e}")
             
+        # --- SESSÃO DE ABANDONO (PRESENÇA ZERO) (NOVO) ---
+        st.markdown("---")
+        st.subheader("❌ Alerta de Abandono (Presença Zero)")
+        st.write("Alunos matriculados que nunca registraram presença no sistema.")
+        
+        try:
+            todos_alunos = supabase.table("alunos").select("id, nome, turma").execute()
+            alunos_com_presenca = supabase.table("frequencia").select("aluno_nome").eq("status", "P").execute()
+            
+            if todos_alunos.data:
+                df_todos = pd.DataFrame(todos_alunos.data)
+                lista_com_presenca = [p['aluno_nome'] for p in alunos_com_presenca.data] if alunos_com_presenca.data else []
+                
+                # Filtra alunos que o nome não está na lista de quem tem presença
+                df_abandono = df_todos[~df_todos['nome'].isin(lista_com_presenca)].copy()
+                df_abandono.rename(columns={'nome': 'Aluno'}, inplace=True)
+                df_abandono['Faltas'] = "S/ Registro" # Preenche para usar a mesma função do PDF
+                
+                if not df_abandono.empty:
+                    st.error(f"⚠️ {len(df_abandono)} alunos sem nenhum registro de presença detectados!")
+                    st.dataframe(df_abandono[['Aluno', 'turma']], use_container_width=True, hide_index=True)
+                    
+                    pdf_abandono = gerar_pdf_relatorio(df_abandono, "Risco de Abandono - Zero Presencas", data_hora_atual)
+                    st.download_button(
+                        label="📄 Baixar PDF - Relatório de Abandono",
+                        data=pdf_abandono,
+                        file_name=f"relatorio_abandono_{hoje}.pdf",
+                        mime="application/pdf",
+                        type="primary",
+                        use_container_width=True
+                    )
+                else:
+                    st.success("🎉 Nenhum caso de abandono detectado! Todos os alunos cadastrados têm pelo menos uma presença.")
+        except Exception as e:
+            st.error(f"Erro ao buscar dados de abandono: {e}")
+
     # ==========================================
-    # ABA 2: MAPA DE COMPORTAMENTO DE EVASÕES 2.0 (NOVO)
+    # ABA 2: MAPA DE COMPORTAMENTO DE EVASÕES 2.0
     # ==========================================
     with aba_mapa:
         st.subheader("🗺️ Inteligência e Mapa de Evasões")
         st.write("Analise o padrão de fuga visualmente para tomar decisões estratégicas.")
 
-        # Filtros de Data
         col_f1, col_f2 = st.columns(2)
         with col_f1:
             hoje_data = datetime.now(fuso).date()
@@ -271,7 +350,6 @@ def exibir_busca_ativa(supabase):
         st.caption(f"📍 Analisando período: **{data_inicio.strftime('%d/%m/%Y')}** a **{data_fim.strftime('%d/%m/%Y')}**")
 
         try:
-            # Puxando as evasões do banco no período
             query = supabase.table("evasoes").select("aluno_nome, turma, aula_periodo, data_registro")\
                 .gte("data_registro", data_inicio.strftime('%Y-%m-%d'))\
                 .lte("data_registro", data_fim.strftime('%Y-%m-%d'))
@@ -281,19 +359,15 @@ def exibir_busca_ativa(supabase):
             if res_evas.data:
                 df_mapa = pd.DataFrame(res_evas.data)
                 
-                # --- GRÁFICOS VISUAIS ---
                 col_graf1, col_graf2 = st.columns(2)
-                
                 with col_graf1:
                     st.write("**⏰ Horários Mais Críticos**")
-                    # Contagem por período de aula
                     graf_aulas = df_mapa['aula_periodo'].value_counts().reset_index()
                     graf_aulas.columns = ['Período/Aula', 'Fugas']
                     st.bar_chart(graf_aulas.set_index('Período/Aula'), color="#ff4b4b")
 
                 with col_graf2:
                     st.write("**📈 Evolução nos Últimos Dias**")
-                    # Contagem por dia
                     graf_dias = df_mapa['data_registro'].value_counts().reset_index()
                     graf_dias.columns = ['Data', 'Fugas']
                     graf_dias = graf_dias.sort_values('Data')
@@ -302,7 +376,6 @@ def exibir_busca_ativa(supabase):
                 st.markdown("---")
                 
                 col_graf3, col_graf4 = st.columns([1, 2])
-                
                 with col_graf3:
                     st.write("**🏆 Top Turmas com Mais Evasões**")
                     graf_turmas = df_mapa['turma'].value_counts().reset_index()
@@ -311,8 +384,6 @@ def exibir_busca_ativa(supabase):
 
                 with col_graf4:
                     st.write("**🕵️ Tabela de Alunos Fujões**")
-                    
-                    # Correção: convertendo aula_periodo para texto (str) antes do join
                     resumo_evas = df_mapa.groupby(['turma', 'aluno_nome']).agg(
                         Total_Evasoes=('aula_periodo', 'count'),
                         Aulas_Evadidas=('aula_periodo', lambda x: ', '.join(x.dropna().astype(str).unique()))
@@ -343,7 +414,6 @@ def exibir_busca_ativa(supabase):
 
                 with st.form("form_busca_ativa", clear_on_submit=True):
                     aluno_selecionado = st.selectbox("1. Selecione o Estudante:", options=res_alunos.data, format_func=formatar_aluno)
-                    
                     acao = st.text_area("2. O que foi feito? (Ex: Ligação para a mãe, visita domiciliar, encaminhamento ao conselho)", height=100)
                     
                     col_status, col_resp = st.columns(2)
