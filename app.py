@@ -10,20 +10,32 @@ st.set_page_config(page_title="EREM PAM - Chamada Escolar", layout="wide", page_
 # ==========================================
 # 2. IMPORTAÇÃO DOS MÓDULOS (Onde as telas moram)
 # ==========================================
-from modulos.cenario_dia import exibir_cenario
-from modulos.fotograma_aba import exibir_fotograma
-from modulos.cadastro_aba import exibir_cadastro
-from modulos.reservas_aba import exibir_reservas
-from modulos.atualiza_alunos import exibir_importacao
-from modulos.busca_ativa import exibir_busca_ativa
-from modulos.aee import exibir_painel_aee
+try:
+    from modulos.cenario_dia import exibir_cenario
+    from modulos.fotograma_aba import exibir_fotograma
+    from modulos.cadastro_aba import exibir_cadastro
+    from modulos.reservas_aba import exibir_reservas
+    from modulos.atualiza_alunos import exibir_importacao
+    from modulos.busca_ativa import exibir_busca_ativa
+    from modulos.aee import exibir_painel_aee
+except Exception as e:
+    st.error(f"🚨 Erro ao carregar os módulos das telas: {e}")
+    st.stop()
 
 # ==========================================
 # 3. CONEXÃO COM O BANCO DE DADOS (SUPABASE)
 # ==========================================
-URL_SUPABASE = st.secrets["SUPABASE_URL"]
-CHAVE_SUPABASE = st.secrets["SUPABASE_KEY"]
-supabase: Client = create_client(URL_SUPABASE, CHAVE_SUPABASE)
+try:
+    # Aqui está o segredo ajustado: buscando com o _ALUNOS no final!
+    URL_SUPABASE = st.secrets["SUPABASE_URL_ALUNOS"]
+    CHAVE_SUPABASE = st.secrets["SUPABASE_KEY_ALUNOS"]
+    supabase: Client = create_client(URL_SUPABASE, CHAVE_SUPABASE)
+except KeyError as e:
+    st.error(f"🚨 ALERTA: A chave {e} não foi encontrada no cofre do Streamlit!")
+    st.stop()
+except Exception as e:
+    st.error(f"🚨 Erro ao conectar no Supabase: {e}")
+    st.stop()
 
 # ==========================================
 # 4. GERENCIADOR DE ESTADO (Para lembrar em qual página estamos)
@@ -43,7 +55,7 @@ def mudar_pagina(nome_pagina):
 # ==========================================
 with st.sidebar:
     try:
-        st.image("logo_erempam.png", use_column_width=True)
+        st.image("logo_erempam.png", use_container_width=True)
     except:
         st.title("🏫 EREM PAM")
         
