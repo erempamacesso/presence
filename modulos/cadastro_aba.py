@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import unicodedata
 import time
-import re # <-- Nova biblioteca adicionada para formatar as turmas
+import re
 
 # --- FUNÇÕES DE UTILITÁRIO ---
 
@@ -15,15 +15,18 @@ def limpar_texto(texto):
     return "".join(filter(str.isalnum, texto_limpo))
 
 def formatar_turma(nome_aba):
-    """Transforma '1A', '1 A', '1ºA' automaticamente em '1º A'"""
+    """Transforma '1A', '1 A', '1ºA', '1 ANO A', '1-A' automaticamente em '1º A'"""
     nome = str(nome_aba).strip().upper()
-    # Identifica o padrão: número + (opcional espaços/º) + letra
-    match = re.match(r'^(\d+)\s*º?\s*([A-Z]+)$', nome)
+    
+    # Arranca palavras extras, espaços e pontuações para sobrar só (ex: '1A')
+    limpo = re.sub(r'(º|ANO|SÉRIE|SERIE|-)', '', nome).replace(" ", "")
+    
+    # Se sobrou exatamente um número seguido de uma letra (ex: 1A, 9C)...
+    match = re.match(r'^(\d+)([A-Z])$', limpo)
     if match:
-        numero = match.group(1)
-        letra = match.group(2)
-        return f"{numero}º {letra}"
-    return nome # Se for algo como "MATERNAL", devolve do jeito que veio
+        return f"{match.group(1)}º {match.group(2)}"
+    
+    return nome # Se for "Maternal", devolve do jeito que veio
 
 def listar_arquivos_bucket(supabase):
     try:
@@ -71,56 +74,73 @@ def exibir_cadastro(supabase):
         res_t = supabase.table("alunos").select("turma").execute()
         lista_turmas = sorted(list(set([x['turma'] for x in res_t.data if x['turma']])))
         
-        if lista_turmas:
-            turma_sel = st.selectbox("Selecione a Turma para gerenciar:", lista_turmas)
-            alunos = supabase.table("alunos").select("*").eq("turma", turma_sel).order("nome").execute().data
-            mapa_fotos = listar_arquivos_bucket(supabase)
+        col_t1, col_t2 = st.columns([3, 1])
+        with col_t2:
+            # BOTÃO DE FAXINA PARA CONSERTAR O BANCO DE DADOS
+            if st.button("🧹 Padronizar Todas as Turmas", help="Use isso se turmas antigas como '1A' ainda estiverem aparecendo"):
+                with st.spinner("Limpando banco de dados..."):
+                    todos = supabase.table("alunos").select("id, turma").execute().data
+                    corrigidos = 0
+                    for al in todos:
+                        turma_corrigida = formatar_turma(al['turma'])
+                        if turma_corrigida != al['turma']:
+                            supabase.table("alunos").update({"turma": turma_corrigida}).eq("id", al['id']).execute()
+                            corrigidos += 1
+                    st.success(f"Faxina concluída! {corrigidos} alunos foram atualizados.")
+                    time.sleep(1.5)
+                    st.rerun()
 
-            st.write(f"Exibindo **{len(alunos)}** alunos")
+        with col_t1:
+            if lista_turmas:
+                turma_sel = st.selectbox("Selecione a Turma para gerenciar:", lista_turmas)
+                alunos = supabase.table("alunos").select("*").eq("turma", turma_sel).order("nome").execute().data
+                mapa_fotos = listar_arquivos_bucket(supabase)
 
-            for aluno in alunos:
-                with st.container(border=True):
-                    c1, c2, c3 = st.columns([1, 2, 2])
-                    uid, nome_aluno, chave = aluno['id'], aluno['nome'], limpar_texto(aluno['nome'])
-                    foto_real = mapa_fotos.get(chave)
-                    
-                    with c1:
-                        if foto_real:
-                            url = supabase.storage.from_('fotos-alunos').get_public_url(foto_real)
-                            st.image(url, width=80)
-                        else:
-                            st.caption("🟡 Sem Foto")
+                st.write(f"Exibindo **{len(alunos)}** alunos")
 
-                    with c2:
-                        st.markdown(f"**{nome_aluno}**")
-                        nova_t = st.selectbox("Mudar Turma:", lista_turmas, index=lista_turmas.index(aluno['turma']), key=f"t_{uid}")
-                        if nova_t != aluno['turma']:
-                            supabase.table("alunos").update({"turma": nova_t}).eq("id", uid).execute()
-                            st.toast("Turma atualizada!")
-                            time.sleep(0.5)
-                            st.rerun()
+                for aluno in alunos:
+                    with st.container(border=True):
+                        c1, c2, c3 = st.columns([1, 2, 2])
+                        uid, nome_aluno, chave = aluno['id'], aluno['nome'], limpar_texto(aluno['nome'])
+                        foto_real = mapa_fotos.get(chave)
                         
-                        with st.popover("🗑️ Opções Críticas"):
-                            if st.button("Excluir Aluno Permanentemente", key=f"del_{uid}", type="primary"):
-                                if foto_real: supabase.storage.from_('fotos-alunos').remove([foto_real])
-                                supabase.table("alunos").delete().eq("id", uid).execute()
-                                st.rerun()
+                        with c1:
+                            if foto_real:
+                                url = supabase.storage.from_('fotos-alunos').get_public_url(foto_real)
+                                st.image(url, width=80)
+                            else:
+                                st.caption("🟡 Sem Foto")
 
-                    with c3:
-                        foto_nova = st.file_uploader("Trocar Foto (.png)", type=["png"], key=f"up_{uid}")
-                        if foto_nova and st.button("Salvar Foto", key=f"btn_{uid}"):
-                            nome_arquivo = f"{chave}.png"
-                            supabase.storage.from_('fotos-alunos').upload(
-                                path=nome_arquivo, file=foto_nova.getvalue(),
-                                file_options={"content-type": "image/png", "upsert": "true"}
-                            )
-                            st.rerun()
-                        elif foto_real:
-                            if st.button("🗑️ Remover Foto", key=f"del_pic_{uid}"):
-                                supabase.storage.from_('fotos-alunos').remove([foto_real])
+                        with c2:
+                            st.markdown(f"**{nome_aluno}**")
+                            nova_t = st.selectbox("Mudar Turma:", lista_turmas, index=lista_turmas.index(aluno['turma']), key=f"t_{uid}")
+                            if nova_t != aluno['turma']:
+                                supabase.table("alunos").update({"turma": nova_t}).eq("id", uid).execute()
+                                st.toast("Turma atualizada!")
+                                time.sleep(0.5)
                                 st.rerun()
-        else:
-            st.warning("Nenhum dado encontrado. Use as abas de importação.")
+                            
+                            with st.popover("🗑️ Opções Críticas"):
+                                if st.button("Excluir Aluno Permanentemente", key=f"del_{uid}", type="primary"):
+                                    if foto_real: supabase.storage.from_('fotos-alunos').remove([foto_real])
+                                    supabase.table("alunos").delete().eq("id", uid).execute()
+                                    st.rerun()
+
+                        with c3:
+                            foto_nova = st.file_uploader("Trocar Foto (.png)", type=["png"], key=f"up_{uid}")
+                            if foto_nova and st.button("Salvar Foto", key=f"btn_{uid}"):
+                                nome_arquivo = f"{chave}.png"
+                                supabase.storage.from_('fotos-alunos').upload(
+                                    path=nome_arquivo, file=foto_nova.getvalue(),
+                                    file_options={"content-type": "image/png", "upsert": "true"}
+                                )
+                                st.rerun()
+                            elif foto_real:
+                                if st.button("🗑️ Remover Foto", key=f"del_pic_{uid}"):
+                                    supabase.storage.from_('fotos-alunos').remove([foto_real])
+                                    st.rerun()
+            else:
+                st.warning("Nenhum dado encontrado. Use as abas de importação.")
 
     # =========================================================
     # ABA 3: ATUALIZAÇÃO EXCEL (GERAL)
@@ -149,12 +169,11 @@ def exibir_cadastro(supabase):
                     lista_atualizados = []
 
                     for i, nome_aba in enumerate(abas):
-                        turma_formatada = formatar_turma(nome_aba) # <-- Aplica a formatação aqui
+                        turma_formatada = formatar_turma(nome_aba)
                         status_text.text(f"Processando Turma: {turma_formatada}...")
                         
                         df_turma = xl.parse(nome_aba)
                         
-                        # Proteção caso a aba não tenha cabeçalho (como ocorreu no 1B)
                         colunas_upper = [str(c).strip().upper() for c in df_turma.columns]
                         if "NOME" not in colunas_upper:
                             df_turma = xl.parse(nome_aba, header=None)
@@ -179,7 +198,7 @@ def exibir_cadastro(supabase):
 
                             dados = {
                                 "nome": nome_aluno.upper(),
-                                "turma": turma_formatada, # <-- Salva no banco formatado como '1º A'
+                                "turma": turma_formatada,
                                 "numero_matricula": matricula,
                                 "data_nascimento": data_formatada
                             }
