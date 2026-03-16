@@ -11,3 +11,4 @@ fpdf
 simple-icd-10
 streamlit-quill
 plotly
+fpdf

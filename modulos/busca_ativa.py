@@ -87,12 +87,18 @@ def exibir_busca_ativa(supabase):
                         pdf.cell(60, 10, " Turma", 1, 1, "C", True)
                         pdf.set_font("Arial", "", 11)
                         for s in sem_foto:
-                            nome_pdf = s['Estudante'].encode('latin-1', 'replace').decode('latin-1')
-                            turma_pdf = s['Turma'].encode('latin-1', 'replace').decode('latin-1')
+                            nome_pdf = str(s['Estudante']).encode('latin-1', 'replace').decode('latin-1')
+                            turma_pdf = str(s['Turma']).encode('latin-1', 'replace').decode('latin-1')
                             pdf.cell(130, 10, f" {nome_pdf}", 1)
                             pdf.cell(60, 10, f" {turma_pdf}", 1, 1, "C")
                         
-                        pdf_bytes = pdf.output(dest='S').encode('latin-1')
+                        # Correção para blindar contra diferentes versões do FPDF
+                        pdf_saida = pdf.output(dest='S')
+                        if isinstance(pdf_saida, str):
+                            pdf_bytes = pdf_saida.encode('latin-1')
+                        else:
+                            pdf_bytes = bytes(pdf_saida)
+
                         st.download_button(
                             label="📄 Baixar Lista para Impressão (PDF)",
                             data=pdf_bytes,
@@ -304,10 +310,11 @@ def exibir_busca_ativa(supabase):
 
                 with col_graf4:
                     st.write("**🕵️ Tabela de Alunos Fujões**")
-                    # Agrupando por aluno como era no mapa original
+                    
+                    # Correção: convertendo aula_periodo para texto (str) antes do join
                     resumo_evas = df_mapa.groupby(['turma', 'aluno_nome']).agg(
                         Total_Evasoes=('aula_periodo', 'count'),
-                        Aulas_Evadidas=('aula_periodo', lambda x: ', '.join(x.unique()))
+                        Aulas_Evadidas=('aula_periodo', lambda x: ', '.join(x.dropna().astype(str).unique()))
                     ).reset_index()
                     resumo_evas = resumo_evas.sort_values(by=['Total_Evasoes'], ascending=False)
                     resumo_evas.columns = ['Turma', 'Nome do Aluno', 'Qtd de Fugas', 'Aulas Gazeadas']
