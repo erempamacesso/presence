@@ -26,12 +26,15 @@ def listar_arquivos_bucket(supabase):
 def exibir_cadastro(supabase):
     st.title("👤 Sistema de Gestão Escolar")
     
-    # Organização Profissional das Abas
-    aba_busca, aba_gerenciar, aba_excel, aba_manual = st.tabs([
+    # =========================================================
+    # CORREÇÃO AQUI: Agora declaramos 5 abas!
+    # =========================================================
+    aba_busca, aba_gerenciar, aba_excel, aba_manual, aba_sinc = st.tabs([
         "🔍 Localizar Aluno", 
         "📸 Fotos e Turmas", 
         "📁 Atualização Excel", 
-        "➕ Cadastro Avulso"
+        "➕ Cadastro Avulso",
+        "🔄 Sincronizar Matrículas" # Nova aba adicionada
     ])
 
     # =========================================================
@@ -112,7 +115,7 @@ def exibir_cadastro(supabase):
             st.warning("Nenhum dado encontrado. Use as abas de importação.")
 
     # =========================================================
-    # ABA 3: ATUALIZAÇÃO EXCEL (COM RELATÓRIO DE OPERAÇÕES)
+    # ABA 3: ATUALIZAÇÃO EXCEL (GERAL)
     # =========================================================
     with aba_excel:
         st.subheader("📁 Sincronização Total via Planilha")
@@ -134,7 +137,6 @@ def exibir_cadastro(supabase):
                     progress_bar = st.progress(0)
                     status_text = st.empty()
                     
-                    # Listas para o relatório final
                     lista_novos = []
                     lista_atualizados = []
 
@@ -176,10 +178,8 @@ def exibir_cadastro(supabase):
 
                     status_text.success("✅ Sincronização concluída!")
                     
-                    # --- EXIBIÇÃO DO RELATÓRIO ---
                     st.divider()
                     st.subheader("📝 Relatório da Operação")
-                    
                     col1, col2 = st.columns(2)
                     col1.metric("Novos Alunos", len(lista_novos))
                     col2.metric("Atualizados", len(lista_atualizados))
@@ -187,7 +187,6 @@ def exibir_cadastro(supabase):
                     if lista_novos:
                         with st.expander("🔍 Ver detalhes dos NOVOS alunos adicionados"):
                             st.table(pd.DataFrame(lista_novos))
-                    
                     if lista_atualizados:
                         with st.expander("🔍 Ver detalhes dos alunos que receberam MATRÍCULA"):
                             st.table(pd.DataFrame(lista_atualizados))
@@ -212,15 +211,9 @@ def exibir_cadastro(supabase):
                     time.sleep(1)
                     st.rerun()
 
-# =========================================================
+    # =========================================================
     # ABA 5: SINCRONIZAÇÃO FORÇADA DE MATRÍCULAS
     # =========================================================
-    with aba_manual: # Se você quiser criar uma nova: st.tabs([... , "🔄 Sincronizar Matrículas"])
-        pass # Apenas marcador
-
-    # Nota: Adicione "Aba Sincronizar" na sua lista de st.tabs lá no início do código
-    # aba_busca, aba_gerenciar, aba_excel, aba_manual, aba_sinc = st.tabs([...])
-    
     with aba_sinc:
         st.subheader("🔄 Sincronização Forçada de Matrículas")
         st.warning("Esta ferramenta busca alunos pelo nome e preenche a matrícula que estiver faltando.")
@@ -231,17 +224,12 @@ def exibir_cadastro(supabase):
             xl_sinc = pd.ExcelFile(arquivo_sinc)
             
             if st.button("🔍 Cruzar Dados e Atualizar Matrículas", type="primary"):
-                # 1. Pegar todos os alunos do banco que NÃO TÊM matrícula
-                res = supabase.table("alunos").select("id, nome").is_("numero_matricula", "null").execute()
-                # Se o filtro de null falhar, pegamos todos para garantir:
-                if not res.data:
-                    res = supabase.table("alunos").select("id, nome").execute()
-                
-                alunos_db = res.data
+                # 1. Pegar todos os alunos do banco
+                res = supabase.table("alunos").select("id, nome").execute()
+                alunos_db = res.data if res.data else []
                 mapa_db = {limpar_texto(a['nome']): a['id'] for a in alunos_db}
                 
                 sucesso = []
-                falha = []
                 
                 progress = st.progress(0)
                 abas = xl_sinc.sheet_names
@@ -259,7 +247,6 @@ def exibir_cadastro(supabase):
                             
                             if chave_planilha in mapa_db:
                                 id_banco = mapa_db[chave_planilha]
-                                # ATUALIZAÇÃO APENAS DA MATRÍCULA
                                 supabase.table("alunos").update({"numero_matricula": matricula}).eq("id", id_banco).execute()
                                 sucesso.append({"Nome": nome_planilha.upper(), "Matrícula": matricula, "Turma": nome_aba})
                     
