@@ -172,10 +172,19 @@ def exibir_busca_ativa(supabase):
                         ranking = ranking.sort_values(by='Aluno', ascending=True)
 
                         mapa_fotos = listar_arquivos_bucket(supabase)
-                        url_base = f"{st.secrets['SUPABASE_URL']}/storage/v1/object/public/fotos-alunos/"
+                        
+                        # --- PROTEÇÃO DO SUPABASE URL ---
+                        if "SUPABASE_URL" in st.secrets:
+                            url_base = f"{st.secrets['SUPABASE_URL']}/storage/v1/object/public/fotos-alunos/"
+                        else:
+                            st.warning("⚠️ Atenção: 'SUPABASE_URL' não encontrada nos segredos (secrets.toml ou Streamlit Cloud). Usando imagem padrão.")
+                            url_base = ""
+
                         foto_fallback = "https://cdn-icons-png.flaticon.com/512/149/149071.png"
 
                         def buscar_url_foto(nome_aluno):
+                            if not url_base:
+                                return foto_fallback
                             nome_limpo = limpar_texto_absoluto(nome_aluno)
                             prim_limpo = limpar_texto_absoluto(nome_aluno.split()[0])
                             nome_arq = mapa_fotos.get(nome_limpo) or mapa_fotos.get(prim_limpo)
