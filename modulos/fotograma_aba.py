@@ -48,7 +48,7 @@ def gerar_sugestoes_ia(relatorio):
     return dicas
 
 # ==========================================
-# 🧩 POPUPS (AEE, BUSCA ATIVA E ZOOM)
+# 🧩 POPUPS (AEE, BUSCA ATIVA, OCORRÊNCIA E ZOOM)
 # ==========================================
 @st.dialog("🧩 Ficha de Inclusão e AEE")
 def abrir_popup_aee(nome, status, cid, relatorio):
@@ -102,7 +102,29 @@ def abrir_popup_busca_ativa(aluno_id, nome, supabase):
     except Exception as e:
         st.error(f"Erro ao buscar histórico: {e}")
 
-# 👇 NOVO POPUP DE FOTO AMPLIADA
+@st.dialog("🚨 Ocorrências Disciplinares")
+def abrir_popup_ocorrencia(aluno_id, nome, supabase):
+    st.subheader(nome)
+    st.write("Histórico de ocorrências ativas:")
+    
+    try:
+        res = supabase.table("ocorrencias_disciplinares").select("*").eq("aluno_id", aluno_id).order("created_at", desc=True).execute()
+        
+        if res.data:
+            for row in res.data:
+                with st.container(border=True):
+                    data_fmt = pd.to_datetime(row['created_at']).strftime('%d/%m/%Y')
+                    st.caption(f"📅 Registrado em: {data_fmt} por {row.get('quem_registrou', 'Sistema')}")
+                    st.error(f"**Ação:** {row.get('tipo_ocorrencia', 'Não informada')}")
+                    st.markdown(f"**Motivo:** {row.get('motivo', 'Não detalhado')}")
+                    if row.get('data_retorno'):
+                        data_retorno_fmt = pd.to_datetime(row['data_retorno']).strftime('%d/%m/%Y')
+                        st.markdown(f"**Data de Retorno:** {data_retorno_fmt}")
+        else:
+            st.success("Este estudante não possui ocorrências recentes.")
+    except Exception as e:
+        st.error(f"Erro ao buscar ocorrências: {e}")
+
 @st.dialog("📸 Foto Ampliada")
 def abrir_popup_foto(nome, url_img):
     st.subheader(nome)
@@ -194,7 +216,6 @@ def exibir_fotograma(supabase):
         lista_turmas = sorted(list(set([r['turma'] for r in res_turmas.data if r.get('turma')])))
         mapa_fotos = listar_arquivos_bucket(supabase)
         
-        # --- CORREÇÃO AQUI: Lendo a chave com o nome exato do seu secrets.toml ---
         if "SUPABASE_URL_ALUNOS" in st.secrets:
             supabase_url = str(st.secrets["SUPABASE_URL_ALUNOS"])
         elif hasattr(supabase, 'supabase_url'):
@@ -202,8 +223,13 @@ def exibir_fotograma(supabase):
         else:
             supabase_url = ""
 
+        # Buscando alunos em Busca Ativa
         res_busca = supabase.table("historico_busca_ativa").select("aluno_id").in_("status_atual", ["Em acompanhamento", "Alerta"]).execute()
         alunos_em_busca = {r['aluno_id'] for r in res_busca.data} if res_busca.data else set()
+
+        # 👇 NOVA BUSCA: Alunos com ocorrência disciplinar ativa
+        res_ocorrencias = supabase.table("ocorrencias_disciplinares").select("aluno_id").eq("status", "Ativa").execute()
+        alunos_com_ocorrencia = {r['aluno_id'] for r in res_ocorrencias.data} if res_ocorrencias.data else set()
 
         res_todos_alunos = supabase.table("alunos").select("nome").execute()
         total_sem_foto_escola = sum(1 for a in res_todos_alunos.data if limpar_texto(a.get('nome')) not in mapa_fotos)
@@ -235,7 +261,7 @@ def exibir_fotograma(supabase):
 
                 st.divider()
                 
-                # --- GRID DE FOTOS COM A LÓGICA DE CORES ---
+                # --- GRID DE FOTOS COM LÓGICA DE MÚLTIPLAS CORES ---
                 num_cols = 4 
                 for i in range(0, len(alunos), num_cols):
                     linha_alunos = alunos[i : i + num_cols]
@@ -243,21 +269,27 @@ def exibir_fotograma(supabase):
                     
                     for j, aluno in enumerate(linha_alunos):
                         with cols[j]:
-                            # Lógica das Cores
+                            # Lógica das Condições
                             status_aee = aluno.get('status_aee', 'Nenhum')
                             is_aee = status_aee != "Nenhum"
                             is_busca = aluno['id'] in alunos_em_busca
+                            is_ocorrencia = aluno['id'] in alunos_com_ocorrencia
                             
-                            cor_aee = "#007BFF" if status_aee == "Laudo Confirmado" else "#FFC107"
-                            cor_busca = "#E53935" # Vermelho Busca Ativa
+                            # Lógica das Cores
+                            cores_borda = []
+                            if is_aee: 
+                                cores_borda.append("#007BFF" if status_aee == "Laudo Confirmado" else "#FFC107") # Azul ou Amarelo
+                            if is_busca: 
+                                cores_borda.append("#FF9800") # Laranja para Busca Ativa (para não confundir com a ocorrência)
+                            if is_ocorrencia: 
+                                cores_borda.append("#E53935") # Vermelho Choque para Ocorrência
                             
-                            # Magia do CSS para Borda Dupla/Gradiente
-                            if is_aee and is_busca:
-                                estilo_borda = f"border: 4px solid transparent; background-image: linear-gradient(white, white), linear-gradient(135deg, {cor_aee}, {cor_busca}); background-origin: border-box; background-clip: padding-box, border-box;"
-                            elif is_aee:
-                                estilo_borda = f"border: 4px solid {cor_aee}; background: white;"
-                            elif is_busca:
-                                estilo_borda = f"border: 4px solid {cor_busca}; background: white;"
+                            # Magia do CSS: Bordas sólidas ou misturadas (Degradê)
+                            if len(cores_borda) == 1:
+                                estilo_borda = f"border: 4px solid {cores_borda[0]}; background: white;"
+                            elif len(cores_borda) > 1:
+                                gradiente = ", ".join(cores_borda)
+                                estilo_borda = f"border: 4px solid transparent; background-image: linear-gradient(white, white), linear-gradient(135deg, {gradiente}); background-origin: border-box; background-clip: padding-box, border-box;"
                             else:
                                 estilo_borda = "border: 1px solid #ddd; background: white;"
                             
@@ -279,7 +311,7 @@ def exibir_fotograma(supabase):
                             except:
                                 dt_fmt = "--/--/----"
                             
-                            # Aplicação do Estilo Dinâmico
+                            # Aplicação do Estilo
                             st.markdown(f"""
                             <div style="{estilo_borda} border-radius: 12px; padding: 10px; text-align: center; min-height: 300px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 2px 2px 5px rgba(0,0,0,0.1); margin-bottom: 5px;">
                                 {img_html}
@@ -290,36 +322,40 @@ def exibir_fotograma(supabase):
                             </div>
                             """, unsafe_allow_html=True)
                             
-                            # Renderização Dinâmica dos Botões de Ação
+                            # Renderização Dinâmica dos Botões
                             tem_foto = bool(url_img)
-                            num_botoes = sum([1 if tem_foto else 0, 1 if is_aee else 0, 1 if is_busca else 0])
+                            num_botoes = sum([1 if tem_foto else 0, 1 if is_aee else 0, 1 if is_busca else 0, 1 if is_ocorrencia else 0])
                             
                             if num_botoes > 0:
                                 cols_btn = st.columns(num_botoes)
                                 idx_btn = 0
                                 
-                                # Botão de Zoom
                                 if tem_foto:
                                     with cols_btn[idx_btn]:
-                                        if st.button("🔍 Zoom", key=f"zoom_{aluno['id']}", use_container_width=True):
+                                        if st.button("🔍", help="Zoom", key=f"zoom_{aluno['id']}", use_container_width=True):
                                             abrir_popup_foto(nome, url_img)
                                     idx_btn += 1
                                 
-                                # Botão do AEE
                                 if is_aee:
                                     with cols_btn[idx_btn]:
-                                        if st.button("🧩 AEE", key=f"aee_{aluno['id']}", use_container_width=True):
+                                        if st.button("🧩", help="Ficha AEE", key=f"aee_{aluno['id']}", use_container_width=True):
                                             abrir_popup_aee(nome, status_aee, aluno.get('cid',''), aluno.get('relatorio_aee',''))
                                     idx_btn += 1
                                 
-                                # Botão da Busca Ativa
                                 if is_busca:
                                     with cols_btn[idx_btn]:
-                                        if st.button("🔎 Busca", key=f"ba_{aluno['id']}", type="primary", use_container_width=True):
+                                        if st.button("🔎", help="Busca Ativa", key=f"ba_{aluno['id']}", type="primary", use_container_width=True):
                                             abrir_popup_busca_ativa(aluno['id'], nome, supabase)
                                     idx_btn += 1
+
+                                if is_ocorrencia:
+                                    with cols_btn[idx_btn]:
+                                        # 👇 Novo Botão de Ocorrência
+                                        if st.button("🚨", help="Ocorrência Disciplinar", key=f"oc_{aluno['id']}", type="primary", use_container_width=True):
+                                            abrir_popup_ocorrencia(aluno['id'], nome, supabase)
+                                    idx_btn += 1
                             else:
-                                st.write("") # Espaçador invisível para alinhar o grid
+                                st.write("") 
 
     except Exception as e:
         st.error(f"Erro ao carregar fotograma: {e}")
