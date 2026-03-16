@@ -4,7 +4,6 @@ from datetime import datetime
 import pytz
 import unicodedata
 from urllib.parse import quote
-import streamlit.components.v1 as components  
 from fpdf import FPDF 
 
 # ==========================================
@@ -148,28 +147,38 @@ def exibir_busca_ativa(supabase):
     except Exception as e:
         st.error(f"Erro ao carregar métricas: {e}")
 
-    # --- NOVO: ALERTA DE ALUNOS PRESENTES SEM FOTO NO FOTOGRAMA ---
+    # --- NOVO: ALERTA E LISTA DE ALUNOS PRESENTES SEM FOTO ---
     try:
-        # Busca apenas os nomes dos alunos que estão com presença (P) hoje
-        res_pres_nomes = supabase.table("frequencia").select("aluno_nome").eq("data_chamada", hoje).eq("status", "P").execute()
+        # Busca nomes E turmas dos alunos com presença (P) hoje
+        res_pres_dados = supabase.table("frequencia").select("aluno_nome, turma").eq("data_chamada", hoje).eq("status", "P").execute()
         
-        if res_pres_nomes.data:
+        if res_pres_dados.data:
             mapa_fotos = listar_arquivos_bucket(supabase)
-            alunos_sem_foto = 0
+            lista_sem_foto = []
             
-            for item in res_pres_nomes.data:
+            for item in res_pres_dados.data:
                 nome = item.get('aluno_nome', '')
+                turma = item.get('turma', 'S/T')
                 if nome:
                     nome_limpo = limpar_texto_absoluto(nome)
                     prim_limpo = limpar_texto_absoluto(nome.split()[0])
-                    # Se não achar o nome completo E não achar o primeiro nome no bucket, conta como sem foto
+                    
+                    # Se não achar o nome completo E não achar o primeiro nome no bucket
                     if not mapa_fotos.get(nome_limpo) and not mapa_fotos.get(prim_limpo):
-                        alunos_sem_foto += 1
+                        lista_sem_foto.append({"Aluno": nome, "Turma": turma})
             
-            if alunos_sem_foto > 0:
-                st.warning(f"📸 **Atenção:** {alunos_sem_foto} aluno(s) presente(s) hoje estão sem foto no fotograma.")
+            if lista_sem_foto:
+                st.warning(f"📸 **Atenção:** {len(lista_sem_foto)} aluno(s) presente(s) hoje estão sem foto no fotograma.")
+                
+                # Expander para não poluir muito a tela principal
+                with st.expander("👀 Ver lista de alunos sem foto"):
+                    df_sem_foto = pd.DataFrame(lista_sem_foto)
+                    # Organiza por Turma e depois pelo Nome
+                    df_sem_foto = df_sem_foto.sort_values(by=['Turma', 'Aluno'])
+                    st.dataframe(df_sem_foto, use_container_width=True, hide_index=True)
+                    
     except Exception as e:
-        pass # Falha silenciosa para não quebrar a UI caso haja erro na contagem de fotos
+        pass # Falha silenciosa para não quebrar a UI caso haja erro
 
     st.markdown("---")
 
@@ -384,6 +393,5 @@ def exibir_busca_ativa(supabase):
         except Exception as e:
             st.error(f"Erro ao carregar o formulário de registro: {e}")
 
-# Código de teste para você poder rodar o arquivo isolado se quiser:
 if __name__ == "__main__":
     st.warning("Rode através do seu menu principal `app.py` para garantir a conexão com o banco.")
