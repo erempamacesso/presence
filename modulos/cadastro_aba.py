@@ -112,43 +112,38 @@ def exibir_cadastro(supabase):
             st.warning("Nenhum dado encontrado. Use as abas de importação.")
 
     # =========================================================
-    # ABA 3: ATUALIZAÇÃO EXCEL (DETECÇÃO AUTOMÁTICA DE TURMAS)
+    # ABA 3: ATUALIZAÇÃO EXCEL (COM RELATÓRIO DE OPERAÇÕES)
     # =========================================================
     with aba_excel:
         st.subheader("📁 Sincronização Total via Planilha")
-        st.info("O sistema lerá cada aba (ex: 1A, 1B) e cadastrará os alunos na turma correspondente.")
+        st.info("O sistema lerá cada aba (ex: 1A, 1B) e vinculará os alunos automaticamente.")
         
         arquivo = st.file_uploader("Suba a planilha da secretaria (.xlsx)", type=["xlsx"])
         
         if arquivo:
             try:
-                # 1. Carregar o arquivo Excel completo (todas as abas)
                 xl = pd.ExcelFile(arquivo)
                 abas = xl.sheet_names
-                st.write(f"📊 Abas detectadas: {', '.join(abas)}")
+                st.write(f"📊 Turmas detectadas nas abas: {', '.join(abas)}")
 
                 if st.button("🚀 Iniciar Sincronização Geral", type="primary"):
-                    # 2. Buscar alunos atuais para evitar duplicados
                     res_db = supabase.table("alunos").select("id, nome").execute()
                     df_db = pd.DataFrame(res_db.data) if res_db.data else pd.DataFrame(columns=['id', 'nome'])
                     mapa_nomes_db = {limpar_texto(row['nome']): row['id'] for _, row in df_db.iterrows()}
                     
                     progress_bar = st.progress(0)
                     status_text = st.empty()
-                    total_novos = 0
-                    total_updates = 0
+                    
+                    # Listas para o relatório final
+                    lista_novos = []
+                    lista_atualizados = []
 
                     for i, nome_aba in enumerate(abas):
                         status_text.text(f"Processando Turma: {nome_aba}...")
                         df_turma = xl.parse(nome_aba)
-                        
-                        # Padronizar colunas para evitar erros de maiúsculo/minúsculo
                         df_turma.columns = [c.strip() for c in df_turma.columns]
                         
-                        registros_turma = []
-                        
                         for _, row in df_turma.iterrows():
-                            # Extrair dados conforme seu print
                             nome_aluno = str(row.get('Nome', '')).strip()
                             matricula = str(row.get('Matrícula', ''))
                             data_nasc = str(row.get('Data de nascimento', ''))
@@ -158,7 +153,6 @@ def exibir_cadastro(supabase):
 
                             chave = limpar_texto(nome_aluno)
                             
-                            # Formatar data para o Supabase (YYYY-MM-DD)
                             try:
                                 data_formatada = pd.to_datetime(data_nasc, dayfirst=True).strftime('%Y-%m-%d')
                             except:
@@ -166,30 +160,42 @@ def exibir_cadastro(supabase):
 
                             dados = {
                                 "nome": nome_aluno.upper(),
-                                "turma": nome_aba, # Nome da aba vira a turma automaticamente
+                                "turma": nome_aba,
                                 "numero_matricula": matricula,
                                 "data_nascimento": data_formatada
                             }
 
                             if chave in mapa_nomes_db:
-                                # UPDATE: Já existe, vamos atualizar matrícula e data
                                 supabase.table("alunos").update(dados).eq("id", mapa_nomes_db[chave]).execute()
-                                total_updates += 1
+                                lista_atualizados.append({"Nome": nome_aluno.upper(), "Turma": nome_aba, "Status": "Matrícula Atualizada"})
                             else:
-                                # INSERT: Aluno novo
                                 supabase.table("alunos").insert(dados).execute()
-                                total_novos += 1
+                                lista_novos.append({"Nome": nome_aluno.upper(), "Turma": nome_aba, "Status": "Novo Cadastro"})
                         
                         progress_bar.progress((i + 1) / len(abas))
 
-                    st.success("✅ Sincronização concluída com sucesso!")
+                    status_text.success("✅ Sincronização concluída!")
+                    
+                    # --- EXIBIÇÃO DO RELATÓRIO ---
+                    st.divider()
+                    st.subheader("📝 Relatório da Operação")
+                    
                     col1, col2 = st.columns(2)
-                    col1.metric("Novos Alunos", total_novos)
-                    col2.metric("Matrículas Atualizadas", total_updates)
+                    col1.metric("Novos Alunos", len(lista_novos))
+                    col2.metric("Atualizados", len(lista_atualizados))
+
+                    if lista_novos:
+                        with st.expander("🔍 Ver detalhes dos NOVOS alunos adicionados"):
+                            st.table(pd.DataFrame(lista_novos))
+                    
+                    if lista_atualizados:
+                        with st.expander("🔍 Ver detalhes dos alunos que receberam MATRÍCULA"):
+                            st.table(pd.DataFrame(lista_atualizados))
+                            
                     st.balloons()
             
             except Exception as e:
-                st.error(f"Erro crítico no processamento: {e}")
+                st.error(f"Erro crítico: {e}")
 
     # =========================================================
     # ABA 4: CADASTRO MANUAL
