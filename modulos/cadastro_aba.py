@@ -249,87 +249,91 @@ def exibir_cadastro(supabase):
                     st.rerun()
 
     # =========================================================
-    # ABA 5: AUDITORIA, SINCRONIZAÇÃO E LIMPEZA (EXPURGO)
+    # ABA 5: AUDITORIA E LIMPEZA COM TRAVA DE SEGURANÇA
     # =========================================================
     with aba_sinc:
-        st.subheader("🔄 Auditoria e Limpeza de Dados")
+        st.subheader("🗑️ Faxina Segura do Banco de Dados")
         
-        tab_pendencia, tab_limpeza = st.tabs(["🔎 Matrículas Faltantes", "🗑️ Alunos Fora da Planilha"])
-
-        # --- SUB-ABA 1: MATRÍCULAS FALTANTES (O que já tínhamos) ---
-        with tab_pendencia:
-            st.markdown("### Verificar quem está sem matrícula")
-            res_t = supabase.table("alunos").select("turma").execute()
-            lista_turmas_audit = sorted(list(set([x['turma'] for x in res_t.data if x['turma']])))
-            
-            if lista_turmas_audit:
-                turma_audit = st.selectbox("Selecione a Turma:", ["Todas as Turmas"] + lista_turmas_audit, key="sel_audit")
-                if st.button("Verificar Pendências", key="btn_audit"):
-                    query = supabase.table("alunos").select("nome, turma, numero_matricula")
-                    if turma_audit != "Todas as Turmas":
-                        query = query.eq("turma", turma_audit)
-                    
-                    res_audit = query.order("nome").execute()
-                    df_audit = pd.DataFrame(res_audit.data) if res_audit.data else pd.DataFrame()
-                    
-                    if not df_audit.empty:
-                        df_audit['mat_limpa'] = df_audit['numero_matricula'].fillna("").astype(str).str.strip().str.lower()
-                        df_pendentes = df_audit[df_audit['mat_limpa'].isin(["", "nan", "null", "none"])]
-                        if not df_pendentes.empty:
-                            st.warning(f"⚠️ {len(df_pendentes)} alunos sem matrícula.")
-                            st.dataframe(df_pendentes[['nome', 'turma']], use_container_width=True, hide_index=True)
-                        else:
-                            st.success("✅ Tudo em ordem!")
-
-        # --- SUB-ABA 2: LIMPEZA DE ALUNOS QUE SAÍRAM (EXPURGO) ---
-        with tab_limpeza:
-            st.markdown("### 🎯 Caçar Alunos fora da Planilha")
-            st.info("Suba a planilha atualizada. O sistema dirá quem está no banco de dados mas NÃO está no arquivo (alunos que provavelmente saíram da escola).")
-            
-            arquivo_limpeza = st.file_uploader("Suba a planilha oficial para comparação (.xlsx)", type=["xlsx"], key="up_limpeza")
-            
-            if arquivo_limpeza:
-                if st.button("🔍 Comparar Banco vs Planilha", type="primary"):
-                    # 1. Pegar todos os nomes da PLANILHA
+        st.info("""
+            **Como funciona esta limpeza:**
+            1. Você sobe a planilha oficial mais recente.
+            2. O sistema lista alunos que estão no banco de dados mas NÃO estão na planilha.
+            3. **Trava de Segurança:** Se o aluno já tiver qualquer registro de presença, ele não será excluído para não apagar o histórico escolar.
+        """)
+        
+        arquivo_limpeza = st.file_uploader("Suba a planilha oficial para conferência (.xlsx)", type=["xlsx"], key="up_limpeza_segura")
+        
+        if arquivo_limpeza:
+            if st.button("🔍 Iniciar Varredura de Segurança", type="primary"):
+                with st.spinner("Cruzando dados e verificando histórico de presenças..."):
+                    # 1. Mapear nomes da PLANILHA
                     xl = pd.ExcelFile(arquivo_limpeza)
                     nomes_planilha = set()
                     for aba in xl.sheet_names:
                         df_aba = xl.parse(aba)
-                        # Tenta achar a coluna Nome
+                        # Tenta achar a coluna Nome (independente de maiúsculas)
                         col_nome = next((c for c in df_aba.columns if str(c).strip().upper() == "NOME"), None)
                         if col_nome:
                             nomes_planilha.update([limpar_texto(n) for n in df_aba[col_nome].dropna()])
                         else:
-                            # Se não tem cabeçalho (caso do 1B), pega a segunda coluna (índice 1)
+                            # Se não tem cabeçalho (caso do 1B), assume a segunda coluna (índice 1)
                             df_aba = xl.parse(aba, header=None)
-                            nomes_planilha.update([limpar_texto(n) for n in df_aba[1].dropna()])
+                            if len(df_aba.columns) > 1:
+                                nomes_planilha.update([limpar_texto(n) for n in df_aba[1].dropna()])
 
-                    # 2. Pegar todos os nomes do BANCO
+                    # 2. Pegar todos os alunos do BANCO
                     res_db = supabase.table("alunos").select("id, nome, turma").execute()
                     alunos_db = res_db.data if res_db.data else []
                     
-                    # 3. Cruzar dados
-                    sobrando = []
+                    # 3. Analisar cada aluno que sobrou no banco
+                    para_excluir = []
+                    preservar_com_historico = []
+
                     for al in alunos_db:
                         if limpar_texto(al['nome']) not in nomes_planilha:
-                            sobrando.append(al)
-                    
-                    if sobrando:
-                        st.error(f"🚨 Detectados {len(sobrando)} alunos que estão no banco mas não na planilha!")
-                        df_sobrando = pd.DataFrame(sobrando)
-                        st.dataframe(df_sobrando[['nome', 'turma']], use_container_width=True, hide_index=True)
-                        
-                        st.divider()
-                        st.warning("Deseja excluir estes alunos permanentemente?")
-                        if st.button("🔥 EXCLUIR TODOS OS ALUNOS LISTADOS ACIMA", type="secondary"):
-                            ids_para_deletar = [str(a['id']) for a in sobrando]
-                            # Deleta em lotes (Supabase suporta .in_)
-                            for i in range(0, len(ids_para_deletar), 100):
-                                lote = ids_para_deletar[i:i+100]
-                                supabase.table("alunos").delete().in_("id", lote).execute()
+                            # CONSULTA DE PRESENÇA: Verifica se existe o ID do aluno na tabela presencas
+                            # IMPORTANTE: Verifique se o nome da coluna no seu Supabase é 'aluno_id'
+                            res_p = supabase.table("presencas").select("id", count="exact").eq("aluno_id", al['id']).execute()
+                            tem_presenca = res_p.count if res_p.count is not None else 0
                             
-                            st.success("✅ Faxina concluída! Os alunos foram removidos.")
-                            time.sleep(2)
-                            st.rerun()
+                            if tem_presenca == 0:
+                                para_excluir.append(al)
+                            else:
+                                al['total_presencas'] = tem_presenca
+                                preservar_com_historico.append(al)
+
+                    # 4. EXIBIÇÃO DOS RESULTADOS
+                    if not para_excluir and not preservar_com_historico:
+                        st.success("✅ Tudo limpo! O banco de dados está idêntico à sua planilha.")
+                    
                     else:
-                        st.success("✅ O banco de dados está perfeitamente sincronizado com a planilha! Ninguém sobrando.")
+                        if preservar_com_historico:
+                            st.warning(f"📋 {len(preservar_com_historico)} alunos não estão na planilha, mas possuem histórico de presença e NÃO serão excluídos.")
+                            with st.expander("Ver alunos mantidos por segurança"):
+                                st.table(pd.DataFrame(preservar_com_historico)[['nome', 'turma', 'total_presencas']])
+
+                        if para_excluir:
+                            st.error(f"🚨 Detectados {len(para_excluir)} alunos que não estão na planilha e não possuem NENHUMA presença.")
+                            df_excluir = pd.DataFrame(para_excluir)
+                            st.dataframe(df_excluir[['nome', 'turma']], use_container_width=True, hide_index=True)
+                            
+                            st.divider()
+                            confirmacao = st.checkbox("Eu confirmo que desejo apagar permanentemente os alunos listados acima.")
+                            
+                            if st.button("🔥 EXCLUIR ALUNOS SEM HISTÓRICO", disabled=not confirmacao):
+                                with st.spinner("Removendo alunos e fotos..."):
+                                    ids_deletar = [str(a['id']) for a in para_excluir]
+                                    mapa_fotos = listar_arquivos_bucket(supabase)
+                                    
+                                    for al_del in para_excluir:
+                                        # Apaga a foto se existir
+                                        chave = limpar_texto(al_del['nome'])
+                                        if chave in mapa_fotos:
+                                            supabase.storage.from_('fotos-alunos').remove([mapa_fotos[chave]])
+                                        
+                                        # Apaga o registro no banco
+                                        supabase.table("alunos").delete().eq("id", al_del['id']).execute()
+                                    
+                                    st.success(f"✅ Faxina concluída! {len(para_excluir)} alunos removidos.")
+                                    time.sleep(2)
+                                    st.rerun()
