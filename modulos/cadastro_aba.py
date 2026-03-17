@@ -249,91 +249,72 @@ def exibir_cadastro(supabase):
                     st.rerun()
 
     # =========================================================
-    # ABA 5: AUDITORIA E LIMPEZA COM TRAVA DE SEGURANÇA
+    # ABA 5: CONFERÊNCIA E LIMPEZA INDIVIDUAL
     # =========================================================
     with aba_sinc:
-        st.subheader("🗑️ Faxina Segura do Banco de Dados")
-        
-        st.info("""
-            **Como funciona esta limpeza:**
-            1. Você sobe a planilha oficial mais recente.
-            2. O sistema lista alunos que estão no banco de dados mas NÃO estão na planilha.
-            3. **Trava de Segurança:** Se o aluno já tiver qualquer registro de presença, ele não será excluído para não apagar o histórico escolar.
-        """)
-        
-        arquivo_limpeza = st.file_uploader("Suba a planilha oficial para conferência (.xlsx)", type=["xlsx"], key="up_limpeza_segura")
-        
-        if arquivo_limpeza:
-            if st.button("🔍 Iniciar Varredura de Segurança", type="primary"):
-                with st.spinner("Cruzando dados e verificando histórico de presenças..."):
+        st.subheader("🕵️‍♂️ Conferência de Alunos Ativos")
+        st.write("Suba a planilha oficial para identificar quem está 'sobrando' no sistema.")
+
+        arquivo_conferencia = st.file_uploader("Carregar planilha para cruzamento (.xlsx)", type=["xlsx"], key="up_conf")
+
+        if arquivo_conferencia:
+            if st.button("🔍 Cruzar Dados com o Sistema"):
+                with st.spinner("Comparando base de dados..."):
                     # 1. Mapear nomes da PLANILHA
-                    xl = pd.ExcelFile(arquivo_limpeza)
+                    xl = pd.ExcelFile(arquivo_conferencia)
                     nomes_planilha = set()
                     for aba in xl.sheet_names:
                         df_aba = xl.parse(aba)
-                        # Tenta achar a coluna Nome (independente de maiúsculas)
+                        # Busca coluna Nome ou assume a segunda coluna se não houver cabeçalho
                         col_nome = next((c for c in df_aba.columns if str(c).strip().upper() == "NOME"), None)
                         if col_nome:
                             nomes_planilha.update([limpar_texto(n) for n in df_aba[col_nome].dropna()])
                         else:
-                            # Se não tem cabeçalho (caso do 1B), assume a segunda coluna (índice 1)
                             df_aba = xl.parse(aba, header=None)
                             if len(df_aba.columns) > 1:
                                 nomes_planilha.update([limpar_texto(n) for n in df_aba[1].dropna()])
 
-                    # 2. Pegar todos os alunos do BANCO
+                    # 2. Buscar todos os alunos do Supabase
                     res_db = supabase.table("alunos").select("id, nome, turma").execute()
                     alunos_db = res_db.data if res_db.data else []
-                    
-                    # 3. Analisar cada aluno que sobrou no banco
-                    para_excluir = []
-                    preservar_com_historico = []
 
-                    for al in alunos_db:
-                        if limpar_texto(al['nome']) not in nomes_planilha:
-                            # CONSULTA DE PRESENÇA: Verifica se existe o ID do aluno na tabela presencas
-                            # IMPORTANTE: Verifique se o nome da coluna no seu Supabase é 'aluno_id'
-                            res_p = supabase.table("presencas").select("id", count="exact").eq("aluno_id", al['id']).execute()
-                            tem_presenca = res_p.count if res_p.count is not None else 0
-                            
-                            if tem_presenca == 0:
-                                para_excluir.append(al)
-                            else:
-                                al['total_presencas'] = tem_presenca
-                                preservar_com_historico.append(al)
+                    # 3. Filtrar quem NÃO está na planilha
+                    fantasmas = [al for al in alunos_db if limpar_texto(al['nome']) not in nomes_planilha]
 
-                    # 4. EXIBIÇÃO DOS RESULTADOS
-                    if not para_excluir and not preservar_com_historico:
-                        st.success("✅ Tudo limpo! O banco de dados está idêntico à sua planilha.")
-                    
-                    else:
-                        if preservar_com_historico:
-                            st.warning(f"📋 {len(preservar_com_historico)} alunos não estão na planilha, mas possuem histórico de presença e NÃO serão excluídos.")
-                            with st.expander("Ver alunos mantidos por segurança"):
-                                st.table(pd.DataFrame(preservar_com_historico)[['nome', 'turma', 'total_presencas']])
+                    # Guardar na sessão para não perder ao clicar no botão de excluir
+                    st.session_state['fantasmas'] = fantasmas
 
-                        if para_excluir:
-                            st.error(f"🚨 Detectados {len(para_excluir)} alunos que não estão na planilha e não possuem NENHUMA presença.")
-                            df_excluir = pd.DataFrame(para_excluir)
-                            st.dataframe(df_excluir[['nome', 'turma']], use_container_width=True, hide_index=True)
-                            
-                            st.divider()
-                            confirmacao = st.checkbox("Eu confirmo que desejo apagar permanentemente os alunos listados acima.")
-                            
-                            if st.button("🔥 EXCLUIR ALUNOS SEM HISTÓRICO", disabled=not confirmacao):
-                                with st.spinner("Removendo alunos e fotos..."):
-                                    ids_deletar = [str(a['id']) for a in para_excluir]
-                                    mapa_fotos = listar_arquivos_bucket(supabase)
-                                    
-                                    for al_del in para_excluir:
-                                        # Apaga a foto se existir
-                                        chave = limpar_texto(al_del['nome'])
-                                        if chave in mapa_fotos:
-                                            supabase.storage.from_('fotos-alunos').remove([mapa_fotos[chave]])
-                                        
-                                        # Apaga o registro no banco
-                                        supabase.table("alunos").delete().eq("id", al_del['id']).execute()
-                                    
-                                    st.success(f"✅ Faxina concluída! {len(para_excluir)} alunos removidos.")
-                                    time.sleep(2)
-                                    st.rerun()
+            # 4. Exibir a lista para exclusão individual
+            if 'fantasmas' in st.session_state and st.session_state['fantasmas']:
+                st.divider()
+                st.warning(f"⚠️ Encontramos **{len(st.session_state['fantasmas'])}** alunos que estão no sistema mas NÃO aparecem na planilha carregada.")
+                st.info("Confira os nomes abaixo. Clique na lixeira 🗑️ para remover individualmente.")
+
+                for aluno in st.session_state['fantasmas']:
+                    with st.container(border=True):
+                        col_nome_f, col_acao_f = st.columns([4, 1])
+                        
+                        with col_nome_f:
+                            st.markdown(f"**{aluno['nome']}**")
+                            st.caption(f"Turma: {aluno['turma']}")
+                        
+                        with col_acao_f:
+                            # Botão de lixeira individual
+                            if st.button("🗑️", key=f"del_fan_{aluno['id']}", help=f"Excluir {aluno['nome']}"):
+                                # Deletar foto se existir
+                                chave_f = limpar_texto(aluno['nome'])
+                                mapa_f = listar_arquivos_bucket(supabase)
+                                if chave_f in mapa_f:
+                                    supabase.storage.from_('fotos-alunos').remove([mapa_f[chave_f]])
+                                
+                                # Deletar do banco
+                                supabase.table("alunos").delete().eq("id", aluno['id']).execute()
+                                
+                                st.toast(f"{aluno['nome']} removido!")
+                                # Remove da lista da sessão para sumir da tela
+                                st.session_state['fantasmas'] = [a for a in st.session_state['fantasmas'] if a['id'] != aluno['id']]
+                                time.sleep(1)
+                                st.rerun()
+            
+            elif 'fantasmas' in st.session_state:
+                st.success("✅ Nenhum aluno sobrando! O sistema está 100% alinhado com a planilha.")
