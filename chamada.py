@@ -12,10 +12,11 @@ from urllib.parse import quote
 # ==========================================
 st.set_page_config(page_title="Chamada Digital EREMPAM", layout="centered")
 
-# TENTATIVA DE CONEXÃO COM O COFRE (SECRETS)
+# TENTATIVA DE CONEXÃO COM O COFRE (SECRETS) - CORRIGIDA
 try:
-    SUPABASE_URL = st.secrets["SUPABASE_URL_ALUNOS"]
-    SUPABASE_KEY = st.secrets["SUPABASE_KEY_ALUNOS"]
+    # Ajustado para os nomes corretos que estão no seu Streamlit Cloud
+    SUPABASE_URL = st.secrets["SUPABASE_URL"]
+    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 except KeyError as e:
     st.error(f"🚨 Erro: A chave {e} não foi encontrada no cofre do Streamlit (Secrets).")
