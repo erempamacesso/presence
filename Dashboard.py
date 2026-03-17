@@ -77,27 +77,41 @@ elif menu == "📝 Cadastrar Questões":
         if st.button("📥 Importar Todas as Questões em Lote"):
             if json_input:
                 try:
-                    lista_q = json.loads(json_input)
+                    # Carrega o texto como um objeto Python (Lista ou Dicionário)
+                    dados_json = json.loads(json_input)
+                    
+                    # BLINDAGEM: Se a IA gerou só uma questão fora de colchetes (dicionário), 
+                    # colocamos dentro de uma lista para o loop funcionar sem erros.
+                    if isinstance(dados_json, dict):
+                        lista_q = [dados_json]
+                    else:
+                        lista_q = dados_json
+                        
                     for q in lista_q:
                         # Lógica para achar a correta baseada no feedback positivo
-                        letra_correta = "B" # Padrão
+                        letra_correta = "B" # Padrão de segurança
                         for letra, fb in q["justificativas"].items():
-                            if any(word in fb.lower() for word in ["parabéns", "correto", "excelente", "muito bem"]):
+                            # Palavras-chave expandidas para capturar o gabarito
+                            if any(word in fb.lower() for word in ["parabéns", "correto", "correta", "excelente", "muito bem", "exato", "perfeito"]):
                                 letra_correta = letra
                         
+                        # Monta o pacote de dados para enviar ao banco
                         dados_ia = {
                             "enunciado": q["enunciado"],
                             "alternativas": q["alternativas"],
                             "justificativas": q["justificativas"],
                             "resposta_correta": q.get("resposta_correta", letra_correta),
-                            "serie": serie_ctx,
-                            "assunto": assunto_ctx if assunto_ctx else "Geral",
-                            "dificuldade": q.get("nivel_dificuldade", diff_ctx)
+                            "serie": q.get("serie", serie_ctx),
+                            "assunto": q.get("assunto", assunto_ctx if assunto_ctx else "Geral"),
+                            "dificuldade": q.get("dificuldade", diff_ctx)
                         }
+                        
+                        # Insere no Supabase
                         supabase.table("questoes").insert(dados_ia).execute()
-                    st.success(f"🔥 {len(lista_q)} questões importadas com sucesso!")
+                        
+                    st.success(f"🔥 {len(lista_q)} questão(ões) importada(s) com sucesso!")
                 except Exception as e:
-                    st.error(f"Erro no JSON: {e}")
+                    st.error(f"Erro no JSON ou na Inserção: {e}")
             else:
                 st.warning("Cole o código primeiro!")
 
@@ -125,7 +139,7 @@ elif menu == "📝 Cadastrar Questões":
                     "assunto": assunto_ctx, "dificuldade": diff_ctx
                 }
                 supabase.table("questoes").insert(dados_m).execute()
-                st.success("Questão salva!")
+                st.success("Questão salva com sucesso!")
 
 # --- 7. BIBLIOTECA DE QUESTÕES (SISTEMA COM TELA DE EDIÇÃO FOCADA) ---
 elif menu == "📚 Biblioteca de Questões":
