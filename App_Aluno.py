@@ -296,6 +296,7 @@ if st.session_state.etapa == "login":
                 <a href="#" class="help-link">Dúvidas ou problemas? Clique aqui.</a>
             </div>
         """, unsafe_allow_html=True)
+        
 # ==========================================
 # ETAPA 2: ANTE-SALA (TABELA NATIVA BLINDADA - RESOLVE O PRINT 2)
 # ==========================================
