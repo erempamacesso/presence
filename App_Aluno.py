@@ -179,7 +179,7 @@ for key in ['etapa', 'aluno', 'prova_config', 'tempo_final', 'questoes', 'respos
         else: st.session_state[key] = None
 
 # ==========================================
-# ETAPA 1: LOGIN (TUDO UNIFICADO NO CARD)
+# ETAPA 1: LOGIN (BLINDADO COM BUSCA REAL NO BANCO)
 # ==========================================
 if st.session_state.etapa == "login":
     # Supondo que sua função get_base64_image esteja definida
@@ -234,9 +234,6 @@ if st.session_state.etapa == "login":
             </div>
         """, unsafe_allow_html=True)
 
-        # Usamos um container negativo para "subir" os elementos para dentro da caixa
-        # O segredo é que no Streamlit, o CSS acima e este bloco abaixo 
-        # precisam estar muito próximos para o olho humano ver como uma coisa só.
         with st.container():
             # Margem negativa para o conteúdo subir para dentro do card acima
             st.markdown('<div style="margin-top: -100px; padding: 0 30px 40px 30px;">', unsafe_allow_html=True)
@@ -245,21 +242,38 @@ if st.session_state.etapa == "login":
             
             st.write("") # Espaçinho
             
+            # --- AQUI ESTÁ O CORAÇÃO DO SISTEMA CORRIGIDO ---
             if st.button("ACESSAR SISTEMA PRO", use_container_width=True, type="primary"):
                 if matricula:
-                    # Lógica de login
-                    st.success("Acessando...")
-                    st.session_state.etapa = "ante_sala"
-                    st.rerun()
+                    with st.spinner("Buscando dados no servidor..."):
+                        try:
+                            # 1. Limpa espaços invisíveis que o aluno possa ter digitado sem querer
+                            mat_limpa = str(matricula).strip()
+                            
+                            # 2. Faz a busca real no Supabase
+                            res = db_alunos.table("alunos").select("*").eq("matricula", mat_limpa).execute()
+                            
+                            # 3. Verifica se o aluno foi encontrado
+                            if res.data and len(res.data) > 0:
+                                # Sucesso! Salva os dados do aluno no "baú" da sessão
+                                st.session_state.aluno = res.data[0]
+                                st.session_state.etapa = "ante_sala"
+                                st.rerun() # Agora sim, ele vai pra etapa 2 levando os dados!
+                            else:
+                                # Se o banco voltar vazio, ele barra aqui com aviso vermelho
+                                st.error(f"❌ Matrícula '{mat_limpa}' não encontrada. Verifique se digitou corretamente.")
+                                
+                        except Exception as e:
+                            st.error("Erro ao conectar com o banco de dados das matrículas.")
+                            st.code(f"Detalhes do erro: {e}")
                 else:
-                    st.error("Insira a matrícula.")
+                    st.warning("⚠️ Por favor, digite sua matrícula antes de acessar.")
             
             st.markdown("""
                 <br>
                 <a href="#" style="color: #94a3b8; text-decoration: none; font-size: 13px;">Dúvidas ou problemas? Clique aqui.</a>
                 </div>
             """, unsafe_allow_html=True)
-
 
 # ==========================================
 # ETAPA 2: ANTE-SALA (REVISADA E BLINDADA)
