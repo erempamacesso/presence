@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from supabase import create_client, Client
 import time
 import re
+import random # <--- Essencial para o embaralhamento
 
 # ==========================================
 # 1. CONFIGURAÇÕES E ESTILO
@@ -21,13 +22,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. CONEXÃO COM OS DOIS PROJETOS (IMPORTANTÍSSIMO)
+# 2. CONEXÃO COM OS DOIS PROJETOS
 # ==========================================
 @st.cache_resource
 def init_connections():
-    # Conexão 1: Base de Alunos (SIGEREMPAM)
     db_alunos = create_client(st.secrets["SUPABASE_URL_ALUNOS"], st.secrets["SUPABASE_KEY_ALUNOS"])
-    # Conexão 2: Base de Provas (AVALIADOR)
     db_provas = create_client(st.secrets["SUPABASE_URL_PROVAS"], st.secrets["SUPABASE_KEY_PROVAS"])
     return db_alunos, db_provas
 
@@ -43,7 +42,7 @@ for key in ['etapa', 'aluno', 'prova_config', 'tempo_final', 'questoes', 'respos
         else: st.session_state[key] = None
 
 # ==========================================
-# ETAPA 1: LOGIN (Busca no Projeto Alunos)
+# ETAPA 1: LOGIN
 # ==========================================
 if st.session_state.etapa == "login":
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -56,53 +55,39 @@ if st.session_state.etapa == "login":
         if st.button("ACESSAR SISTEMA", use_container_width=True, key="btn_login"):
             if matricula:
                 try:
-                    # 1. Busca aluno na base SIGEREMPAM
                     res = db_alunos.table("alunos").select("*").eq("numero_matricula", matricula).execute()
                     
                     if res.data:
                         aluno_data = res.data[0]
                         st.session_state.aluno = aluno_data
                         
-                        # --- LÓGICA DE TRADUÇÃO DE TURMA PARA SÉRIE ---
                         turma = aluno_data.get('turma', '')
-                        serie_aluno = "1º Ano" # Valor padrão
-                        
+                        serie_aluno = "1º Ano"
                         if "1" in turma: serie_aluno = "1º Ano"
                         elif "2" in turma: serie_aluno = "2º Ano"
                         elif "3" in turma: serie_aluno = "3º Ano"
                         
-                        # 2. Busca prova ativa na base AVALIADOR usando a série traduzida
                         res_p = db_provas.table("modelos_prova").select("*").eq("ativa", True).eq("serie", serie_aluno).limit(1).execute()
                         
                         if res_p.data:
                             prova_ativa = res_p.data[0]
-                            
-                            # --- 🔒 NOVA TRAVA DE SEGURANÇA: Verifica se o aluno já fez a prova ---
-                            # Converte o ID do aluno para string pois na tabela resultados_provas ele é text
-                            ja_fez = db_provas.table("resultados_provas") \
-                                .select("id") \
-                                .eq("aluno_id", str(aluno_data['id'])) \
-                                .eq("prova_id", prova_ativa['id']) \
-                                .limit(1) \
-                                .execute()
+                            ja_fez = db_provas.table("resultados_provas").select("id").eq("aluno_id", str(aluno_data['id'])).eq("prova_id", prova_ativa['id']).limit(1).execute()
                             
                             if ja_fez.data:
-                                # Se encontrou registro, exibe o aviso e bloqueia
-                                st.warning(f"⚠️ Olá, {aluno_data['nome']}! Nosso sistema registra que você já enviou esta avaliação. Não é permitido refazer a prova.")
+                                st.warning(f"⚠️ Olá, {aluno_data['nome']}! Você já enviou esta avaliação.")
                             else:
-                                # Se não encontrou, libera o acesso
                                 st.session_state.prova_config = prova_ativa
                                 st.session_state.etapa = "instrucoes"
                                 st.rerun()
                         else:
-                            st.warning(f"Olá {aluno_data['nome']}, não encontramos provas ativas para o {serie_aluno} ({turma}).")
+                            st.warning(f"Olá {aluno_data['nome']}, sem provas ativas para sua série.")
                     else:
                         st.error("Matrícula não encontrada.")
                 except Exception as e:
                     st.error(f"Erro ao conectar: {e}")
 
 # ==========================================
-# ETAPA 2: INSTRUÇÕES
+# ETAPA 2: INSTRUÇÕES E CARREGAMENTO (EMBARALHADO)
 # ==========================================
 elif st.session_state.etapa == "instrucoes":
     aluno = st.session_state.aluno
@@ -112,70 +97,52 @@ elif st.session_state.etapa == "instrucoes":
     
     with st.container(border=True):
         st.subheader(f"📝 {prova['titulo']}")
-        st.write(f"**Série:** {prova['serie']} | **Duração:** {prova['tempo_duracao']} minutos")
-        st.write(f"**Total de Questões:** {prova.get('qtd_questoes', 10)}")
-        st.write(f"**Valor por Questão:** {prova.get('valor_questao', 1.0)} pontos")
-        
-        st.warning("⚠️ Uma vez iniciada, o tempo não para. Certifique-se de que sua conexão está estável.")
+        st.write(f"**Duração:** {prova['tempo_duracao']} minutos")
         
         if st.button("INICIAR PROVA AGORA", type="primary", use_container_width=True):
             st.session_state.tempo_final = datetime.now() + timedelta(minutes=prova['tempo_duracao'])
-            # Busca as questões reais baseadas nos IDs salvos no modelo
+            
+            # Busca as questões
             ids = prova.get('questoes_ids', [])
             res_q = db_provas.table("questoes").select("*").in_("id", ids).execute()
-            st.session_state.questoes = res_q.data
+            lista_questoes = res_q.data
+            
+            # --- EMBARALHAR ORDEM DAS QUESTÕES ---
+            random.seed(st.session_state.aluno['id']) 
+            random.shuffle(lista_questoes)
+            
+            st.session_state.questoes = lista_questoes
             st.session_state.etapa = "em_prova"
             st.rerun()
 
 # ==========================================
-# ETAPA 3: REALIZAÇÃO DA PROVA
+# ETAPA 3: REALIZAÇÃO DA PROVA (ALTERNATIVAS EMBARALHADAS)
 # ==========================================
 elif st.session_state.etapa == "em_prova":
-    import streamlit.components.v1 as components # Necessário para o cronômetro rodar
+    import streamlit.components.v1 as components
 
-    # Cronômetro
     tempo_restante = st.session_state.tempo_final - datetime.now()
     segundos = int(tempo_restante.total_seconds())
     
     if segundos <= 0:
         st.error("⌛ TEMPO ESGOTADO!")
-        # Lógica de envio automático poderia entrar aqui
         st.stop()
     
-    # Cabeçalho Fixo
     col_a, col_b = st.columns([3, 1])
     with col_a:
         st.markdown(f"### ✍️ {st.session_state.prova_config['titulo']}")
-        st.caption(f"Aluno: {st.session_state.aluno['nome']} | Turma: {st.session_state.aluno.get('turma', 'N/A')}")
     
     with col_b:
-        # Cronômetro Dinâmico com HTML/JS
         html_cronometro = f"""
-        <div style="font-family: sans-serif; text-align: center; background-color: #f8d7da; color: #721c24; padding: 10px; border-radius: 8px; border: 1px solid #f5c6cb;">
-            <div style="font-size: 14px; font-weight: bold;">⏳ Tempo Restante</div>
-            <div id="relogio" style="font-size: 24px; font-weight: bold; margin-top: 5px;"></div>
+        <div style="font-family: sans-serif; text-align: center; background-color: #f8d7da; color: #721c24; padding: 10px; border-radius: 8px;">
+            <div id="relogio" style="font-size: 24px; font-weight: bold;"></div>
         </div>
         <script>
-            // Pega o tempo do Python
-            var segundosTotais = {segundos}; 
-            
-            var x = setInterval(function() {{
-                var mins = Math.floor(segundosTotais / 60);
-                var secs = Math.floor(segundosTotais % 60);
-                
-                // Adiciona o zero à esquerda
-                var minsStr = mins < 10 ? "0" + mins : mins;
-                var secsStr = secs < 10 ? "0" + secs : secs;
-                
-                document.getElementById("relogio").innerHTML = minsStr + ":" + secsStr;
-                
-                if (segundosTotais <= 0) {{
-                    clearInterval(x);
-                    document.getElementById("relogio").innerHTML = "ESGOTADO!";
-                    document.getElementById("relogio").style.color = "red";
-                }} else {{
-                    segundosTotais--;
-                }}
+            var segs = {segundos}; 
+            setInterval(function() {{
+                var m = Math.floor(segs / 60); var s = segs % 60;
+                document.getElementById("relogio").innerHTML = (m<10?"0"+m:m) + ":" + (s<10?"0"+s:s);
+                if (segs > 0) segs--;
             }}, 1000);
         </script>
         """
@@ -183,77 +150,63 @@ elif st.session_state.etapa == "em_prova":
 
     st.divider()
 
-    # Formulário de Questões
     with st.form("form_prova"):
         for i, q in enumerate(st.session_state.questoes):
             st.markdown(f"**QUESTÃO {i+1}**")
             st.markdown(q['enunciado'], unsafe_allow_html=True)
             
-            # --- CORREÇÃO DAS ALTERNATIVAS (CÓDIGO NOVO E BLINDADO) ---
+            # --- LÓGICA DE ALTERNATIVAS EMBARALHADAS ---
             opcoes_dict = q.get('alternativas', {}) 
-            # Pega as letras disponíveis para essa questão específica
-            letras_disponiveis = [letra for letra in ["A", "B", "C", "D", "E"] if opcoes_dict.get(letra)]
+            letras_originais = [l for l in ["A", "B", "C", "D", "E"] if opcoes_dict.get(l)]
             
-            # Função para limpar sujeira (caso o texto no banco já tenha "A) ")
+            ordem_exibicao = letras_originais.copy()
+            # Semente única por questão para o aluno
+            random.seed(int(str(st.session_state.aluno['id']) + str(q['id'])))
+            random.shuffle(ordem_exibicao)
+
             def limpar_texto(texto):
                 return re.sub(r'^[A-Ea-e]\s*[\)\.\-]\s*', '', str(texto)).strip()
 
             escolha = st.radio(
-                f"Selecione a alternativa da Q{i+1}:", 
-                options=letras_disponiveis, 
+                f"Selecione a opção da Q{i+1}:", 
+                options=ordem_exibicao, 
                 format_func=lambda x: limpar_texto(opcoes_dict.get(x, "")),
                 index=None, 
                 key=f"q_id_{q['id']}"
             )
             
             if escolha:
-                # Agora salvamos direto a escolha, que é a letra pura (A, B, C...)
                 st.session_state.respostas[q['id']] = escolha 
-            
             st.write("---")
             
         entregar = st.form_submit_button("✅ FINALIZAR E ENVIAR PROVA", use_container_width=True)
 
     if entregar:
-        # 1. Primeiro, calculamos o total de acertos e a nota final
         acertos_totais = 0
         for q in st.session_state.questoes:
-            resposta_dada = st.session_state.respostas.get(q['id'])
-            if resposta_dada == q['resposta_correta']:
+            if st.session_state.respostas.get(q['id']) == q['resposta_correta']:
                 acertos_totais += 1
                 
         nota_final = acertos_totais * st.session_state.prova_config.get('valor_questao', 1.0)
-        
-        # 2. Preparamos a lista com os resultados questão por questão
         lista_resultados = []
         
         for q in st.session_state.questoes:
-            resposta_dada = st.session_state.respostas.get(q['id'])
-            acertou = (resposta_dada == q['resposta_correta'])
-            
-            linha = {
-                # Transformando o ID do aluno em texto porque na sua tabela aluno_id é text
+            resp = st.session_state.respostas.get(q['id'])
+            lista_resultados.append({
                 "aluno_id": str(st.session_state.aluno['id']), 
                 "prova_id": st.session_state.prova_config['id'],
                 "questao_id": q['id'],
-                "resposta_aluno": resposta_dada,
-                "acertou": acertou,
-                "acertos": acertos_totais # Salvamos o total de acertos da prova aqui também!
-            }
-            lista_resultados.append(linha)
+                "resposta_aluno": resp,
+                "acertou": (resp == q['resposta_correta']),
+                "acertos": acertos_totais
+            })
         
-        # 3. Enviamos tudo de uma vez para o banco de dados
         try:
             db_provas.table("resultados_provas").insert(lista_resultados).execute()
-            
-            st.success(f"🎉 Prova enviada com sucesso! Você acertou {acertos_totais} questões. Nota: {nota_final}")
+            st.success(f"🎉 Enviado! Acertos: {acertos_totais}. Nota: {nota_final}")
             st.balloons()
             time.sleep(5)
-            
-            # Limpa estado e volta pro login para o próximo aluno
-            for key in list(st.session_state.keys()): 
-                del st.session_state[key]
+            for key in list(st.session_state.keys()): del st.session_state[key]
             st.rerun()
-            
         except Exception as e:
-            st.error(f"Erro ao salvar resultado: {e}")
+            st.error(f"Erro ao salvar: {e}")
