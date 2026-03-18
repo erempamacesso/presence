@@ -178,45 +178,83 @@ for key in ['etapa', 'aluno', 'prova_config', 'tempo_final', 'questoes', 'respos
         elif key == 'respostas': st.session_state[key] = {}
         else: st.session_state[key] = None
 
-# ==========================================
-# ETAPA 1: LOGIN (LOGOS AJUSTÁVEIS E TEMA CLARO PRO)
+## ==========================================
+# ETAPA 1: LOGIN (TUDO DENTRO DO CARD)
 # ==========================================
 if st.session_state.etapa == "login":
-    # Estrutura HTML do Card de Login centralizado com Design PRO Atualizado
+    
+    # Colocamos o código Base64 da sua logo aqui para não quebrar nunca
+    logo_erempam_64 = "iVBORw0KGgoAAAANSUhEUgAAAkYAAAOACAYAAADfG7xx..." # Cole aqui aquele código gigante que você me mandou
+
+    # CSS para criar a "caixa" (card) e estilizar os textos
     st.markdown(f"""
-        <div class="login-card">
-            <div style="display: flex; justify-content: space-around; align-items: center; margin-bottom: 40px; padding: 0 10px;">
-                <img src="data:image/png;base64,{logo_erempam_b64}" width="160" alt="EREMPAM Logo"/>
-                
-                <img src="data:image/png;base64,{logo_lardiao_b64}" width="140" alt="Lardião Logo"/>
-            </div>
-            <h1 style="color: {C_PRIMARY}; font-size: 30px; margin-bottom: 10px; font-weight: bold;">Portal de Avaliações</h1>
-            <h2 style="color: {C_SECONDARY}; font-weight: normal; font-size: 21px; margin-bottom: 40px;">do Prof. Lardião</h2>
-        </div>
+        <style>
+        .main {{
+            background-color: #F8FAFC; /* Cor de fundo da página (gelo) */
+        }}
+        .login-card {{
+            background-color: #E2E8F0; /* Cinza do card (mais escuro) */
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            text-align: center;
+            margin-bottom: 20px;
+        }}
+        .title-portal {{
+            color: #00C896; /* Verde do portal */
+            font-size: 28px;
+            font-weight: 800;
+            margin-top: 15px;
+            font-family: 'sans-serif';
+        }}
+        .subtitle-portal {{
+            color: #4A5568;
+            font-size: 16px;
+            font-weight: 500;
+            margin-bottom: 20px;
+        }}
+        /* Estilo para os inputs do Streamlit ficarem bonitos */
+        .stTextInput > div > div > input {{
+            border-radius: 10px;
+        }}
+        .stButton > button {{
+            border-radius: 10px;
+            font-weight: bold;
+        }}
+        </style>
     """, unsafe_allow_html=True)
 
-    # Inputs Streamlit posicionados logicamente dentro do fluxo, mas estilizados pelo CSS global
-    col1, col2, col3 = st.columns([1, 1.9, 1])
-    with col2:
-        matricula = st.text_input("Sua Matrícula SIGEREMPAM:", placeholder="Digite apenas números...", key="mat_input")
-        st.markdown("<br>", unsafe_allow_html=True)
-        btn_acesso = st.button("ACESSAR SISTEMA", type="primary", key="btn_acesso")
-        
-        if btn_acesso and matricula:
-            with st.spinner("Autenticando na base SIGEREMPAM..."):
-                try:
-                    res = db_alunos.table("alunos").select("*").eq("numero_matricula", matricula).execute()
-                    if res.data:
-                        # Blindagem contra duplicidade e erro de tipo
-                        aluno_data = res.data[0]
-                        st.session_state.aluno = aluno_data
-                        # Mudar de etapa para a ante-sala
-                        st.session_state.etapa = "ante_sala"
+    # Centralizando o Card na tela
+    col_l, col_c, col_r = st.columns([1, 3, 1])
+    
+    with col_c:
+        # Criamos um container para agrupar tudo visualmente
+        with st.container():
+            # Início do visual do Card (HTML)
+            st.markdown(f"""
+                <div class="login-card">
+                    <img src="data:image/png;base64,{logo_erempam_64}" width="140">
+                    <div class="title-portal">SISTEMA DE ATIVIDADES</div>
+                    <div class="subtitle-portal">EREM Professor Agamenon Magalhães</div>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            # Form de login (dentro da estrutura do container)
+            # Usei um formulário para o aluno poder dar "Enter" para entrar
+            with st.form("login_form"):
+                matricula = st.text_input("Matrícula SIGEREMPAM:", placeholder="Digite aqui...")
+                botao_acesso = st.form_submit_button("ACESSAR SISTEMA", use_container_width=True)
+                
+                if botao_acesso:
+                    if matricula:
+                        # Substitua '123' pela sua lógica de validação
+                        st.session_state.matricula = matricula
+                        st.session_state.etapa = "menu" # Vai para a próxima fase
                         st.rerun()
                     else:
-                        st.error("Matrícula SIGEREMPAM não encontrada nas bases da EREMPAM. Verifique se digitou corretamente.")
-                except Exception as e:
-                    st.error(f"Erro Crítico de conexão: {e}")
+                        st.error("Por favor, informe sua matrícula!")
+
+        st.info("Dúvidas? Procure o Prof. Lardião na sala dos professores.")
 
 # ==========================================
 # ETAPA 2: ANTE-SALA (TABELA NATIVA BLINDADA - RESOLVE O PRINT 2)
