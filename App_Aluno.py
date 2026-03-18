@@ -179,10 +179,10 @@ for key in ['etapa', 'aluno', 'prova_config', 'tempo_final', 'questoes', 'respos
         else: st.session_state[key] = None
 
 # ==========================================
-# ETAPA 1: LOGIN (BLINDADO COM BUSCA REAL NO BANCO)
+# ETAPA 1: LOGIN (BLINDADO E CORRIGIDO)
 # ==========================================
 if st.session_state.etapa == "login":
-    # Supondo que sua função get_base64_image esteja definida
+    # Supondo que sua função get_base64_image esteja definida no topo do seu script
     logo_lardiao_b64 = get_base64_image("logo_lardiao.png")
 
     # CSS MESTRE PARA UNIFICAR
@@ -190,18 +190,18 @@ if st.session_state.etapa == "login":
         <style>
         /* Container Principal do Card */
         .login-card-unificado {{
-            background-color: #F8FAFC; 
+            background-color: {C_CARD_BG}; 
             max-width: 450px;
             margin: auto;
             padding: 30px;
             border-radius: 25px;
-            border: 1px solid #E2E8F0;
+            border: 1px solid {C_BORDER};
             box-shadow: 0 10px 25px rgba(0,0,0,0.05);
             text-align: center;
         }}
         
         .title-portal {{
-            color: #00C896; 
+            color: {C_PRIMARY}; 
             font-size: 24px;
             font-weight: 800;
             margin-top: 15px;
@@ -211,12 +211,7 @@ if st.session_state.etapa == "login":
         /* Ajuste para o campo de input parecer parte do card */
         div[data-baseweb="input"] {{
             border-radius: 12px !important;
-            border: 1px solid #E2E8F0 !important;
-        }}
-        
-        /* Remove o fundo padrão do Streamlit atrás do card */
-        .stApp {{
-            background-color: #f0f2f6;
+            border: 1px solid {C_BORDER} !important;
         }}
         </style>
     """, unsafe_allow_html=True)
@@ -230,7 +225,7 @@ if st.session_state.etapa == "login":
             <div class="login-card-unificado">
                 <img src="data:image/png;base64,{logo_lardiao_b64}" width="135">
                 <div class="title-portal">SISTEMA DE ATIVIDADES</div>
-                <div style="color: #64748b; margin-bottom: 25px;">do Prof. Lardião</div>
+                <div style="color: {C_TEXT_MUTED}; margin-bottom: 25px;">do Prof. Lardião</div>
             </div>
         """, unsafe_allow_html=True)
 
@@ -242,26 +237,26 @@ if st.session_state.etapa == "login":
             
             st.write("") # Espaçinho
             
-            # --- AQUI ESTÁ O CORAÇÃO DO SISTEMA CORRIGIDO ---
+            # --- O CORAÇÃO DO SISTEMA CORRIGIDO ---
             if st.button("ACESSAR SISTEMA PRO", use_container_width=True, type="primary"):
                 if matricula:
                     with st.spinner("Buscando dados no servidor..."):
                         try:
-                            # 1. Limpa espaços invisíveis que o aluno possa ter digitado sem querer
+                            # 1. Limpa espaços invisíveis
                             mat_limpa = str(matricula).strip()
                             
-                            # 2. Faz a busca real no Supabase
-                            res = db_alunos.table("alunos").select("*").eq("matricula", mat_limpa).execute()
+                            # 2. Faz a busca EXATA na coluna 'numero_matricula'
+                            res = db_alunos.table("alunos").select("*").eq("numero_matricula", mat_limpa).execute()
                             
                             # 3. Verifica se o aluno foi encontrado
                             if res.data and len(res.data) > 0:
-                                # Sucesso! Salva os dados do aluno no "baú" da sessão
+                                # Sucesso! Salva os dados do aluno na sessão
                                 st.session_state.aluno = res.data[0]
                                 st.session_state.etapa = "ante_sala"
-                                st.rerun() # Agora sim, ele vai pra etapa 2 levando os dados!
+                                st.rerun() 
                             else:
-                                # Se o banco voltar vazio, ele barra aqui com aviso vermelho
-                                st.error(f"❌ Matrícula '{mat_limpa}' não encontrada. Verifique se digitou corretamente.")
+                                # Se o banco voltar vazio, ele avisa
+                                st.error(f"❌ Matrícula '{mat_limpa}' não encontrada.")
                                 
                         except Exception as e:
                             st.error("Erro ao conectar com o banco de dados das matrículas.")
