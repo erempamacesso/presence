@@ -1,6 +1,7 @@
 import streamlit as st
 from supabase import create_client
 import pandas as pd
+import re # Importação necessária para a função de limpar o texto
 
 # --- 1. CONFIGURAÇÃO E CONEXÃO ---
 st.set_page_config(page_title="EREMPAM - Avaliação", layout="centered")
@@ -63,27 +64,27 @@ if prova_selecionada_id:
             # Mostra o enunciado (renderiza o HTML do Quill)
             st.markdown(q['enunciado'], unsafe_allow_html=True)
             
-           # Monta as alternativas
+            # --- MONTAGEM CORRIGIDA DAS ALTERNATIVAS ---
             alts = q.get('alternativas', {})
-            opcoes_radio = []
-            for letra in ["A", "B", "C", "D"]:
-                texto_alt = alts.get(letra, "")
-                if texto_alt:
-                    opcoes_radio.append(f"{letra}) {texto_alt}")
+            # Pega apenas as letras que realmente existem naquela questão
+            letras_disponiveis = [letra for letra in ["A", "B", "C", "D", "E"] if alts.get(letra)]
             
-            # Coleta a resposta
-            escolha = st.radio("Selecione sua resposta:", options=opcoes_radio, index=None, key=f"resp_{q['id']}")
+            # Função para remover "A) ", "B.", etc., se o professor salvou sujo no banco
+            def limpa_texto(texto):
+                return re.sub(r'^[A-Ea-e]\s*[\)\.\-]\s*', '', str(texto)).strip()
+            
+            # Coleta a resposta exibindo o texto limpo, mas salvando a letra por trás
+            escolha = st.radio(
+                "Selecione sua resposta:", 
+                options=letras_disponiveis, 
+                format_func=lambda x: limpa_texto(alts.get(x, "")),
+                index=None, 
+                key=f"resp_{q['id']}"
+            )
             
             if escolha:
-                # Salva apenas a letra (A, B, C ou D)
-                respostas_aluno[q['id']] = escolha[0]
-            
-            # Coleta a resposta
-            escolha = st.radio("Selecione sua resposta:", options=opcoes_radio, index=None, key=f"resp_{q['id']}")
-            
-            if escolha:
-                # Salva apenas a letra (A, B, C ou D)
-                respostas_aluno[q['id']] = escolha[0]
+                # Salva apenas a letra (A, B, C, D ou E) para o cálculo da nota funcionar
+                respostas_aluno[q['id']] = escolha
                 
             st.divider()
             

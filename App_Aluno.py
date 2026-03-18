@@ -189,22 +189,26 @@ elif st.session_state.etapa == "em_prova":
             st.markdown(f"**QUESTÃO {i+1}**")
             st.markdown(q['enunciado'], unsafe_allow_html=True)
             
-            # --- CORREÇÃO DAS ALTERNATIVAS ---
-            # Puxa o dicionário/JSON da coluna 'alternativas'
+            # --- CORREÇÃO DAS ALTERNATIVAS (CÓDIGO NOVO E BLINDADO) ---
             opcoes_dict = q.get('alternativas', {}) 
+            # Pega as letras disponíveis para essa questão específica
+            letras_disponiveis = [letra for letra in ["A", "B", "C", "D", "E"] if opcoes_dict.get(letra)]
             
-            # Transforma o dicionário em uma lista para o st.radio
-            opcoes_lista = [f"{letra}) {texto}" for letra, texto in opcoes_dict.items()]
-            
+            # Função para limpar sujeira (caso o texto no banco já tenha "A) ")
+            def limpar_texto(texto):
+                return re.sub(r'^[A-Ea-e]\s*[\)\.\-]\s*', '', str(texto)).strip()
+
             escolha = st.radio(
                 f"Selecione a alternativa da Q{i+1}:", 
-                options=opcoes_lista, 
+                options=letras_disponiveis, 
+                format_func=lambda x: limpar_texto(opcoes_dict.get(x, "")),
                 index=None, 
                 key=f"q_id_{q['id']}"
             )
             
             if escolha:
-                st.session_state.respostas[q['id']] = escolha[0] # Salva só a letra (A, B...)
+                # Agora salvamos direto a escolha, que é a letra pura (A, B, C...)
+                st.session_state.respostas[q['id']] = escolha 
             
             st.write("---")
             
