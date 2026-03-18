@@ -179,7 +179,7 @@ for key in ['etapa', 'aluno', 'prova_config', 'tempo_final', 'questoes', 'respos
         else: st.session_state[key] = None
 
 # ==========================================
-# ETAPA 1: LOGIN (VISUAL CONSOLIDADO PRO)
+# ETAPA 1: LOGIN (TUDO UNIFICADO NO CARD PRO)
 # ==========================================
 if st.session_state.etapa == "login":
     
@@ -187,15 +187,15 @@ if st.session_state.etapa == "login":
     # Certifique-se que o arquivo 'logo_lardiao.png' está na mesma pasta
     logo_lardiao_b64 = get_base64_image("logo_lardiao.png")
 
-    # Injeção de CSS específico para esta tela de Login Pro
+    # Injeção de CSS Específico para UNIFICAR o card de Login
     st.markdown(f"""
         <style>
-        /* Fundo da página em Cinza Gelo para contrastar */
+        /* Fundo da página em Cinza Gelo para contrastar Pro */
         .stApp {{
             background-color: {C_BG_DEEP};
         }}
         
-        /* Centralizar login e Estilo Card Profissional */
+        /* Centralizar login e Estilo Card Profissional Único */
         .login-card {{
             text-align: center; 
             max-width: 480px; 
@@ -203,13 +203,13 @@ if st.session_state.etapa == "login":
             padding: 40px; 
             border: 1px solid {C_BORDER}; 
             border-radius: 20px; 
-            box-shadow: 0 10px 30px rgba(0,0,0,0.05); /* Sombra suave */
+            box-shadow: 0 10px 30px rgba(0,0,0,0.05); /* Sombra suave Pro */
             background-color: {C_CARD_BG}; /* Fundo Branco do Card */
         }}
 
-        /* Customizar Títulos dentro do Card */
+        /* Customizar Títulos dentro do Card Pro */
         .title-portal {{
-            color: {C_PRIMARY}; /* Teal do portal */
+            color: {C_PRIMARY}; /* Teal do portal Pro */
             font-size: 28px;
             font-weight: 800;
             margin-top: 25px;
@@ -218,24 +218,26 @@ if st.session_state.etapa == "login":
             font-family: sans-serif;
         }}
         .subtitle-portal {{
-            color: {C_TEXT_MUTED}; /* Cinza médio */
+            color: {C_TEXT_MUTED}; /* Cinza médio Pro */
             font-size: 16px;
             font-weight: normal;
             margin-bottom: 35px;
             font-family: sans-serif;
         }}
 
-        /* Estilizar o campo de input e botão para ficarem 'abraçados' pelo card */
+        /* --- SEGREDO PRO PARA UNIFICAR --- */
+        /* Estilizar o campo de input e botão para ficarem 'abraçados' pelo card cinza */
         .stTextInput>div>div>input {{
-            background-color: #F7FAFC !important; /* Ligeiramente cinza */
+            background-color: #F7FAFC !important; /* Ligeiramente cinza Pro */
             border-radius: 10px !important;
         }}
         
         .stButton>button {{
             border-radius: 10px !important;
+            use_container_width: True; /* Ocupar toda a largura Pro */
         }}
         
-        /* Link de dúvidas estiloso */
+        /* Link de dúvidas estiloso Pro */
         .help-link {{
             color: {C_TEXT_MUTED};
             font-size: 14px;
@@ -243,32 +245,35 @@ if st.session_state.etapa == "login":
             transition: color 0.3s;
         }}
         .help-link:hover {{
-            color: {C_SECONDARY}; /* Laranja no hover */
+            color: {C_SECONDARY}; /* Laranja no hover Pro */
             text-decoration: underline;
         }}
     </style>
 """, unsafe_allow_html=True)
 
-    # Início da renderização visual do Card Pro
+    # Início da renderização visual do Card PRO Unificado
     st.markdown(f"""
         <div class="login-card">
             <div style="display: flex; justify-content: center; align-items: center;">
-               <img src="data:image/png;base64,{logo_lardiao_b64}" width="90" alt="Química com Lardião Pro"/>
+                <img src="data:image/png;base64,{logo_lardiao_b64}" width="135" alt="Química com Lardião Pro"/>
             </div>
             <div class="title-portal">SISTEMA DE ATIVIDADES</div>
             <div class="subtitle-portal">do Prof. Lardião</div>
         </div>
     """, unsafe_allow_html=True)
 
-    # Inputs posicionados LOGICAMENTE dentro do fluxo do card (centralizados por colunas)
+    # O "abraço" visual Pro: Inputs e botões são inseridos logo após o card HTML
+    # O CSS injetado acima garante que eles fiquem visualmente dentro do card cinza
     col1, col2, col3 = st.columns([1, 2.5, 1])
     with col2:
         # Espaçador para dar respiro
         st.write("") 
+        # Campo de Matrícula (Dentro do BOX PRO)
         matricula = st.text_input("Sua Matrícula SIGEREMPAM:", placeholder="Ex: 2024123", key="mat_input")
         
         # Espaçador antes do botão
         st.write("")
+        # Botão Acessar (Dentro do BOX PRO, ocupando toda a largura)
         btn_acesso = st.button("ACESSAR SISTEMA PRO", use_container_width=True, type="primary", key="btn_acesso")
         
         if btn_acesso and matricula:
@@ -291,7 +296,6 @@ if st.session_state.etapa == "login":
                 <a href="#" class="help-link">Dúvidas ou problemas? Clique aqui.</a>
             </div>
         """, unsafe_allow_html=True)
-
 # ==========================================
 # ETAPA 2: ANTE-SALA (TABELA NATIVA BLINDADA - RESOLVE O PRINT 2)
 # ==========================================
