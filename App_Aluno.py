@@ -178,83 +178,119 @@ for key in ['etapa', 'aluno', 'prova_config', 'tempo_final', 'questoes', 'respos
         elif key == 'respostas': st.session_state[key] = {}
         else: st.session_state[key] = None
 
-## ==========================================
-# ETAPA 1: LOGIN (TUDO DENTRO DO CARD)
+# ==========================================
+# ETAPA 1: LOGIN (VISUAL CONSOLIDADO PRO)
 # ==========================================
 if st.session_state.etapa == "login":
     
-    # Colocamos o código Base64 da sua logo aqui para não quebrar nunca
-    logo_erempam_64 = "iVBORw0KGgoAAAANSUhEUgAAAkYAAAOACAYAAADfG7xx..." # Cole aqui aquele código gigante que você me mandou
+    # Gerar Base64 da sua logo (Química com Lardião)
+    # Certifique-se que o arquivo 'logo_lardiao.png' está na mesma pasta
+    logo_lardiao_b64 = get_base64_image("logo_lardiao.png")
 
-    # CSS para criar a "caixa" (card) e estilizar os textos
+    # Injeção de CSS específico para esta tela de Login Pro
     st.markdown(f"""
         <style>
-        .main {{
-            background-color: #F8FAFC; /* Cor de fundo da página (gelo) */
+        /* Fundo da página em Cinza Gelo para contrastar */
+        .stApp {{
+            background-color: {C_BG_DEEP};
         }}
+        
+        /* Centralizar login e Estilo Card Profissional */
         .login-card {{
-            background-color: #E2E8F0; /* Cinza do card (mais escuro) */
-            padding: 30px;
-            border-radius: 20px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-            text-align: center;
-            margin-bottom: 20px;
+            text-align: center; 
+            max-width: 480px; 
+            margin: 5rem auto; 
+            padding: 40px; 
+            border: 1px solid {C_BORDER}; 
+            border-radius: 20px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.05); /* Sombra suave */
+            background-color: {C_CARD_BG}; /* Fundo Branco do Card */
         }}
+
+        /* Customizar Títulos dentro do Card */
         .title-portal {{
-            color: #00C896; /* Verde do portal */
+            color: {C_PRIMARY}; /* Teal do portal */
             font-size: 28px;
             font-weight: 800;
-            margin-top: 15px;
-            font-family: 'sans-serif';
+            margin-top: 25px;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            font-family: sans-serif;
         }}
         .subtitle-portal {{
-            color: #4A5568;
+            color: {C_TEXT_MUTED}; /* Cinza médio */
             font-size: 16px;
-            font-weight: 500;
-            margin-bottom: 20px;
+            font-weight: normal;
+            margin-bottom: 35px;
+            font-family: sans-serif;
         }}
-        /* Estilo para os inputs do Streamlit ficarem bonitos */
-        .stTextInput > div > div > input {{
-            border-radius: 10px;
+
+        /* Estilizar o campo de input e botão para ficarem 'abraçados' pelo card */
+        .stTextInput>div>div>input {{
+            background-color: #F7FAFC !important; /* Ligeiramente cinza */
+            border-radius: 10px !important;
         }}
-        .stButton > button {{
-            border-radius: 10px;
-            font-weight: bold;
+        
+        .stButton>button {{
+            border-radius: 10px !important;
         }}
-        </style>
+        
+        /* Link de dúvidas estiloso */
+        .help-link {{
+            color: {C_TEXT_MUTED};
+            font-size: 14px;
+            text-decoration: none;
+            transition: color 0.3s;
+        }}
+        .help-link:hover {{
+            color: {C_SECONDARY}; /* Laranja no hover */
+            text-decoration: underline;
+        }}
+    </style>
+""", unsafe_allow_html=True)
+
+    # Início da renderização visual do Card Pro
+    st.markdown(f"""
+        <div class="login-card">
+            <div style="display: flex; justify-content: center; align-items: center;">
+                <img src="data:image/png;base64,{logo_lardiao_b64}" width="180" alt="Química com Lardião Pro"/>
+            </div>
+            <div class="title-portal">SISTEMA DE ATIVIDADES</div>
+            <div class="subtitle-portal">do Prof. Lardião</div>
+        </div>
     """, unsafe_allow_html=True)
 
-    # Centralizando o Card na tela
-    col_l, col_c, col_r = st.columns([1, 3, 1])
-    
-    with col_c:
-        # Criamos um container para agrupar tudo visualmente
-        with st.container():
-            # Início do visual do Card (HTML)
-            st.markdown(f"""
-                <div class="login-card">
-                    <img src="data:image/png;base64,{logo_erempam_64}" width="140">
-                    <div class="title-portal">SISTEMA DE ATIVIDADES</div>
-                    <div class="subtitle-portal">EREM Professor Agamenon Magalhães</div>
-                </div>
-            """, unsafe_allow_html=True)
-            
-            # Form de login (dentro da estrutura do container)
-            # Usei um formulário para o aluno poder dar "Enter" para entrar
-            with st.form("login_form"):
-                matricula = st.text_input("Matrícula SIGEREMPAM:", placeholder="Digite aqui...")
-                botao_acesso = st.form_submit_button("ACESSAR SISTEMA", use_container_width=True)
-                
-                if botao_acesso:
-                    if matricula:
-                        # Substitua '123' pela sua lógica de validação
-                        st.session_state.matricula = matricula
-                        st.session_state.etapa = "menu" # Vai para a próxima fase
+    # Inputs posicionados LOGICAMENTE dentro do fluxo do card (centralizados por colunas)
+    col1, col2, col3 = st.columns([1, 2.5, 1])
+    with col2:
+        # Espaçador para dar respiro
+        st.write("") 
+        matricula = st.text_input("Sua Matrícula SIGEREMPAM:", placeholder="Ex: 2024123", key="mat_input")
+        
+        # Espaçador antes do botão
+        st.write("")
+        btn_acesso = st.button("ACESSAR SISTEMA PRO", use_container_width=True, type="primary", key="btn_acesso")
+        
+        if btn_acesso and matricula:
+            with st.spinner("Autenticando..."):
+                try:
+                    res = db_alunos.table("alunos").select("*").eq("numero_matricula", matricula).execute()
+                    if res.data:
+                        st.session_state.aluno = res.data[0]
+                        st.session_state.etapa = "ante_sala"
                         st.rerun()
                     else:
-                        st.error("Por favor, informe sua matrícula!")
+                        st.error("Matrícula não encontrada nas bases da EREMPAM.")
+                except Exception as e:
+                    st.error(f"Erro na conexão com a base de alunos: {e}")
 
-        st.info("Dúvidas? Procure o Prof. Lardião na sala dos professores.")
+        # Espaçador final e Link de Dúvidas
+        st.write("")
+        st.markdown("""
+            <div style="text-align: center; margin-top: 20px;">
+                <a href="#" class="help-link">Dúvidas ou problemas? Clique aqui.</a>
+            </div>
+        """, unsafe_allow_html=True)
 
 # ==========================================
 # ETAPA 2: ANTE-SALA (TABELA NATIVA BLINDADA - RESOLVE O PRINT 2)
