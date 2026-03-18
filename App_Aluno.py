@@ -124,16 +124,15 @@ for key in ['etapa', 'aluno', 'prova_config', 'tempo_final', 'questoes', 'respos
 # ==========================================
 if st.session_state.etapa == "login":
     st.markdown(f"""
-        <div class="login-card">
-            <div style="display: flex; justify-content: space-around; align-items: center; margin-bottom: 40px; padding: 0 10px;">
-                <img src="data:image/png;base64,{logo_erempam_b64}" width="160" alt="EREMPAM Logo"/>
-                
-                <img src="data:image/png;base64,{logo_lardiao_b64}" width="140" alt="Lardião Logo"/>
-            </div>
-            <h1 style="color: {C_PRIMARY}; font-size: 30px; margin-bottom: 10px; font-weight: bold;">Portal de Avaliações</h1>
-            <h2 style="color: {C_SECONDARY}; font-weight: normal; font-size: 21px; margin-bottom: 40px;">do Prof. Lardião</h2>
+    <div class="login-card">
+        <div style="display: flex; justify-content: space-around; align-items: center; margin-bottom: 40px; padding: 0 10px;">
+            <img src="data:image/png;base64,{logo_erempam_b64}" width="160" alt="EREMPAM Logo"/>
+            <img src="data:image/png;base64,{logo_lardiao_b64}" width="140" alt="Lardião Logo"/>
         </div>
-    """, unsafe_allow_html=True)
+        <h1 style="color: {C_PRIMARY}; font-size: 30px; margin-bottom: 10px; font-weight: bold;">Portal de Avaliações</h1>
+        <h2 style="color: {C_SECONDARY}; font-weight: normal; font-size: 21px; margin-bottom: 40px;">do Prof. Lardião</h2>
+    </div>
+""", unsafe_allow_html=True)
 
     col1, col2, col3 = st.columns([1, 1.9, 1])
     with col2:
