@@ -262,64 +262,77 @@ if st.session_state.etapa == "login":
 
 
 # ==========================================
-# ETAPA 2: ANTE-SALA (VERSÃO BLINDADA PRO)
+# ETAPA 2: ANTE-SALA (REVISADA E BLINDADA)
 # ==========================================
 elif st.session_state.etapa == "ante_sala":
-    # --- SEGURANÇA ANTIFALHA ---
-    if 'aluno' not in st.session_state or st.session_state.aluno is None:
+    
+    # 1. VERIFICAÇÃO DE SESSÃO COM AVISO VISUAL (O "Rebatedor")
+    # Agora, se ele for jogar pro login, ele avisa na tela primeiro.
+    if 'aluno' not in st.session_state or not st.session_state.aluno:
+        st.warning("⚠️ Sessão de aluno não encontrada. Voltando ao login em 2 segundos...")
+        import time
+        time.sleep(2)
         st.session_state.etapa = "login"
         st.rerun()
 
+    # 2. PUXANDO DADOS DO ALUNO COM SEGURANÇA
     aluno = st.session_state.aluno
     
-    # Lógica de tradução de turma para série
+    # 3. IDENTIFICANDO A SÉRIE
+    # Usamos o .get() para não dar erro se a coluna 'turma' vier vazia do Supabase
     turma_bruta = str(aluno.get('turma', ''))
     serie_aluno = "1º Ano"
     if "2" in turma_bruta: serie_aluno = "2º Ano"
     elif "3" in turma_bruta: serie_aluno = "3º Ano"
 
-    # Título com Destaque (Sem códigos HTML soltos)
+    # 4. CABEÇALHO PRO (Sem HTML quebrado)
     st.markdown(f"""
-        <div style="margin-bottom: 25px; padding: 10px; border-left: 5px solid {C_PRIMARY};">
-            <h2 style="margin: 0;">👋 Olá, <span style="color: {C_PRIMARY};">{aluno['nome']}</span>!</h2>
-            <p style="color: #64748b; font-size: 16px; margin: 5px 0 0 0;">Sua série: <strong>{serie_aluno}</strong></p>
+        <div style="margin-bottom: 25px; padding: 15px; background-color: #F8FAFC; border-left: 5px solid #00C896; border-radius: 5px;">
+            <h2 style="margin: 0; color: #1E293B;">👋 Olá, <span style="color: #00C896;">{aluno.get('nome', 'Aluno')}</span>!</h2>
+            <p style="color: #64748b; font-size: 16px; margin: 5px 0 0 0;">Sua série: <strong>{serie_aluno}</strong> ({turma_bruta})</p>
         </div>
     """, unsafe_allow_html=True)
 
-    with st.spinner("Buscando avaliações..."):
+    with st.spinner("Buscando suas atividades..."):
         try:
-            # 1. Busca Provas Ativas
+            # 5. BUSCANDO PROVAS ATIVAS NO BANCO
             res_p = db_provas.table("modelos_prova").select("*").eq("ativa", True).eq("serie", serie_aluno).execute()
             provas_ativas = res_p.data
             
-            # 2. Verifica o que já foi feito
-            ids_ativas = [p['id'] for p in provas_ativas]
+            # 6. VERIFICANDO O QUE JÁ FOI FEITO
             ja_fez_dict = {}
-            if ids_ativas:
-                res_JF = db_provas.table("resultados_provas").select("prova_id").eq("aluno_id", str(aluno['id'])).in_("prova_id", ids_ativas).execute()
+            if provas_ativas:
+                ids_ativas = [p['id'] for p in provas_ativas]
+                res_JF = db_provas.table("resultados_provas").select("prova_id").eq("aluno_id", str(aluno.get('id', ''))).in_("prova_id", ids_ativas).execute()
                 ja_fez_dict = {x['prova_id']: True for x in res_JF.data}
 
-            # 3. Lista de Atividades (Visual em Cards)
+            # 7. EXIBINDO OS CARDS DE ATIVIDADES
             if provas_ativas:
-                st.subheader("📋 Atividades Disponíveis")
+                st.subheader("📋 Suas Atividades Disponíveis")
                 ha_pendentes = False
                 
                 for p in provas_ativas:
-                    # Cálculos de pontos
                     q_sorteio = p.get('qtd_sorteio', p.get('qtd_questoes', 1))
                     valor_total = q_sorteio * p.get('valor_questao', 1.0)
-                    dt_limite = datetime.fromisoformat(p['data_limite']).strftime("%d/%m/%Y às %H:%M")
+                    
+                    # Formatação de data à prova de falhas (evita o erro do fromisoformat)
+                    dt_limite = p.get('data_limite', '')
+                    if dt_limite:
+                        # Pega só a parte "YYYY-MM-DDTHH:MM" e formata de forma simples
+                        dt_limite = dt_limite[:16].replace("T", " às ")
+                    else:
+                        dt_limite = "Sem limite"
                     
                     foi_feita = ja_fez_dict.get(p['id'], False)
                     status_texto = "✅ Concluída" if foi_feita else "🔵 Pendente"
                     status_cor = "green" if foi_feita else "orange"
                     if not foi_feita: ha_pendentes = True
 
-                    # CARD DA ATIVIDADE (Substitui a tabela com erro HTML)
+                    # CARD NATIVO DO STREAMLIT
                     with st.container(border=True):
                         c1, c2, c3 = st.columns([3, 1, 1.5])
                         with c1:
-                            st.markdown(f"**{p['titulo']}**")
+                            st.markdown(f"**{p.get('titulo', 'Atividade')}**")
                             st.caption(f"Assunto: {p.get('assunto','Geral')}")
                         with c2:
                             st.markdown(f"**Nota Máx.**\n\n{valor_total:.1f}")
@@ -327,12 +340,11 @@ elif st.session_state.etapa == "ante_sala":
                             st.markdown(f"**Status**\n\n:{status_cor}[{status_texto}]")
                             st.caption(f"Até: {dt_limite}")
 
-                # 4. Botões de Início
+                # 8. BOTÕES DE INÍCIO DA PROVA
                 if ha_pendentes:
                     st.divider()
                     st.markdown("### ✍️ Iniciar Agora")
                     
-                    # Filtra apenas as que o aluno não fez para mostrar os botões
                     pendentes = [p for p in provas_ativas if not ja_fez_dict.get(p['id'], False)]
                     cols_btn = st.columns(len(pendentes) if pendentes else 1)
                     
@@ -343,10 +355,12 @@ elif st.session_state.etapa == "ante_sala":
                                 st.session_state.etapa = "instrucoes"
                                 st.rerun()
             else:
-                st.info(f"Nenhuma atividade ativa para o {serie_aluno} no momento.")
+                st.info(f"🎉 Nenhuma atividade ativa encontrada para o {serie_aluno} no momento.")
                 
         except Exception as e:
-            st.error(f"Erro ao carregar atividades: {e}")
+            st.error("Erro interno ao carregar a lista de atividades.")
+            # Essa linha abaixo vai imprimir o erro exato para nós, caso falhe na busca do Supabase!
+            st.code(f"Detalhes do Erro: {str(e)}")
 
 
 # ==========================================
