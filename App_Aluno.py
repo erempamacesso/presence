@@ -253,7 +253,7 @@ if st.session_state.etapa == "login":
     st.markdown(f"""
         <div class="login-card">
             <div style="display: flex; justify-content: center; align-items: center;">
-                <img src="data:image/png;base64,{logo_lardiao_b64}" width="180" alt="Química com Lardião Pro"/>
+               <img src="data:image/png;base64,{logo_lardiao_b64}" width="90" alt="Química com Lardião Pro"/>
             </div>
             <div class="title-portal">SISTEMA DE ATIVIDADES</div>
             <div class="subtitle-portal">do Prof. Lardião</div>
