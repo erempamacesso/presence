@@ -260,100 +260,94 @@ if st.session_state.etapa == "login":
                 </div>
             """, unsafe_allow_html=True)
 
+
 # ==========================================
-# ETAPA 2: ANTE-SALA (TABELA NATIVA BLINDADA - RESOLVE O PRINT 2)
+# ETAPA 2: ANTE-SALA (VERSÃO BLINDADA PRO)
 # ==========================================
 elif st.session_state.etapa == "ante_sala":
+    # --- SEGURANÇA ANTIFALHA ---
+    if 'aluno' not in st.session_state or st.session_state.aluno is None:
+        st.session_state.etapa = "login"
+        st.rerun()
+
     aluno = st.session_state.aluno
-    # Lógica de tradução de turma para sérieSIGEREMPAM
+    
+    # Lógica de tradução de turma para série
     turma_bruta = str(aluno.get('turma', ''))
     serie_aluno = "1º Ano"
     if "2" in turma_bruta: serie_aluno = "2º Ano"
     elif "3" in turma_bruta: serie_aluno = "3º Ano"
 
-    # Título com Destaque Vibrante React-style
+    # Título com Destaque (Sem códigos HTML soltos)
     st.markdown(f"""
-        <div style="margin-bottom: 30px;">
-            <h1 style="color: {C_TEXT}; margin-bottom: 8px;">👋 Olá, <span style="color: {C_SECONDARY};">{aluno['nome']}</span>!</h1>
-            <p style="color: {C_TEXT_MUTED}; font-size: 16px;">Sua série é o <strong>{serie_aluno}</strong>. Confira suas atividades pendentes.</p>
+        <div style="margin-bottom: 25px; padding: 10px; border-left: 5px solid {C_PRIMARY};">
+            <h2 style="margin: 0;">👋 Olá, <span style="color: {C_PRIMARY};">{aluno['nome']}</span>!</h2>
+            <p style="color: #64748b; font-size: 16px; margin: 5px 0 0 0;">Sua série: <strong>{serie_aluno}</strong></p>
         </div>
     """, unsafe_allow_html=True)
 
-    with st.spinner("Buscando avaliações disponíveis..."):
+    with st.spinner("Buscando avaliações..."):
         try:
-            # 1. Provas Ativas para a série
+            # 1. Busca Provas Ativas
             res_p = db_provas.table("modelos_prova").select("*").eq("ativa", True).eq("serie", serie_aluno).execute()
             provas_ativas = res_p.data
             
-            # 2. Verificar o que já foi feito (CORREÇÃO res_JF blindada do Pylance)
+            # 2. Verifica o que já foi feito
             ids_ativas = [p['id'] for p in provas_ativas]
             ja_fez_dict = {}
             if ids_ativas:
                 res_JF = db_provas.table("resultados_provas").select("prova_id").eq("aluno_id", str(aluno['id'])).in_("prova_id", ids_ativas).execute()
                 ja_fez_dict = {x['prova_id']: True for x in res_JF.data}
 
-            # 3. CONSTRUÇÃO DA LISTA DE PROVAS USANDO ELEMENTOS NATIVOS (RESOLVE CÓDIGO ESTRANHO)
+            # 3. Lista de Atividades (Visual em Cards)
             if provas_ativas:
-                # Cabeçalho React-style nativo
-                st.markdown(f"### 📋 Lista de Atividades")
+                st.subheader("📋 Atividades Disponíveis")
                 ha_pendentes = False
                 
                 for p in provas_ativas:
-                    # Cálculos baseados na regra de sorteio PRO
+                    # Cálculos de pontos
                     q_sorteio = p.get('qtd_sorteio', p.get('qtd_questoes', 1))
                     valor_total = q_sorteio * p.get('valor_questao', 1.0)
-                    
-                    # Data formatada para mobile
                     dt_limite = datetime.fromisoformat(p['data_limite']).strftime("%d/%m/%Y às %H:%M")
                     
-                    # Status e Lógica
                     foi_feita = ja_fez_dict.get(p['id'], False)
                     status_texto = "✅ Concluída" if foi_feita else "🔵 Pendente"
                     status_cor = "green" if foi_feita else "orange"
-
                     if not foi_feita: ha_pendentes = True
 
-                    # Container nativo Streamlit que agora segue o tema PRO
+                    # CARD DA ATIVIDADE (Substitui a tabela com erro HTML)
                     with st.container(border=True):
-                        # Layout PRO nativo em colunas
-                        col1, col2, col3 = st.columns([3, 1, 1.5])
-                        
-                        with col1:
-                            st.markdown(f"**<span style='color:{C_PRIMARY}; font-size:18px;'>{p['titulo']}</span>**", unsafe_allow_html=True)
-                            st.caption(f"Assunto: {p.get('assunto','Química Pro')}")
-                            
-                        with col2:
-                            st.markdown("**Pontos:**")
-                            st.write(f"{valor_total:.1f}")
-                            
-                        with col3:
-                            st.markdown("**Status / Limite:**")
-                            # Usa a marcação nativa do Streamlit para cor
-                            st.markdown(f":{status_cor}[**{status_texto}**]")
-                            st.caption(dt_limite)
-                
-                # 4. Botões Streamlit nativos para iniciar (abaixo da lista)
+                        c1, c2, c3 = st.columns([3, 1, 1.5])
+                        with c1:
+                            st.markdown(f"**{p['titulo']}**")
+                            st.caption(f"Assunto: {p.get('assunto','Geral')}")
+                        with c2:
+                            st.markdown(f"**Nota Máx.**\n\n{valor_total:.1f}")
+                        with c3:
+                            st.markdown(f"**Status**\n\n:{status_cor}[{status_texto}]")
+                            st.caption(f"Até: {dt_limite}")
+
+                # 4. Botões de Início
                 if ha_pendentes:
                     st.divider()
-                    st.markdown("### ✍️ Iniciar Atividade Avaliativa")
-                    # Cria colunas dinâmicas para os botões de início Pro
-                    num_btn = len([x for x in provas_ativas if not ja_fez_dict.get(x['id'], False)])
-                    cols_btn = st.columns(max(num_btn, 1))
+                    st.markdown("### ✍️ Iniciar Agora")
                     
-                    idx_col = 0
-                    for p in provas_ativas:
-                        if not ja_fez_dict.get(p['id'], False):
-                            with cols_btn[idx_col]:
-                                if st.button(f"Iniciar {p['titulo']}", key=f"btn_init_{p['id']}", type="primary", use_container_width=True):
-                                    st.session_state.prova_config = p
-                                    st.session_state.etapa = "instrucoes"
-                                    st.rerun()
-                            idx_col += 1
+                    # Filtra apenas as que o aluno não fez para mostrar os botões
+                    pendentes = [p for p in provas_ativas if not ja_fez_dict.get(p['id'], False)]
+                    cols_btn = st.columns(len(pendentes) if pendentes else 1)
+                    
+                    for idx, p in enumerate(pendentes):
+                        with cols_btn[idx]:
+                            if st.button(f"🚀 Iniciar {p['titulo']}", key=f"btn_{p['id']}", type="primary", use_container_width=True):
+                                st.session_state.prova_config = p
+                                st.session_state.etapa = "instrucoes"
+                                st.rerun()
             else:
-                st.success("🎉 Excelente! Você concluiu todas as atividades avaliativas disponíveis para o {serie_aluno}.")
+                st.info(f"Nenhuma atividade ativa para o {serie_aluno} no momento.")
                 
         except Exception as e:
-            st.error(f"Erro Crítico ao renderizar ante-sala: {e}")
+            st.error(f"Erro ao carregar atividades: {e}")
+
 
 # ==========================================
 # ETAPA 3: INSTRUÇÕES E SORTEIO
