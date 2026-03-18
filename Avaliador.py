@@ -63,13 +63,20 @@ if prova_selecionada_id:
             # Mostra o enunciado (renderiza o HTML do Quill)
             st.markdown(q['enunciado'], unsafe_allow_html=True)
             
-            # Monta as alternativas
+           # Monta as alternativas
             alts = q.get('alternativas', {})
             opcoes_radio = []
             for letra in ["A", "B", "C", "D"]:
                 texto_alt = alts.get(letra, "")
                 if texto_alt:
                     opcoes_radio.append(f"{letra}) {texto_alt}")
+            
+            # Coleta a resposta
+            escolha = st.radio("Selecione sua resposta:", options=opcoes_radio, index=None, key=f"resp_{q['id']}")
+            
+            if escolha:
+                # Salva apenas a letra (A, B, C ou D)
+                respostas_aluno[q['id']] = escolha[0]
             
             # Coleta a resposta
             escolha = st.radio("Selecione sua resposta:", options=opcoes_radio, index=None, key=f"resp_{q['id']}")
