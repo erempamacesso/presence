@@ -359,7 +359,8 @@ elif st.session_state.etapa == "em_prova":
                 escolha = st.radio(
                     f"Radio_Q{i+1}", 
                     options=ordem, 
-                    format_func=lambda x: f"{x}) {limpar_alternativa(opcoes_dict.get(x, ''))}",
+                    # Agora ele pega APENAS o texto limpo da alternativa 👇
+                    format_func=lambda x: f"{limpar_alternativa(opcoes_dict.get(x, ''))}",
                     index=None, 
                     key=f"q_{q['id']}", 
                     label_visibility="collapsed" 
