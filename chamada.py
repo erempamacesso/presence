@@ -49,6 +49,7 @@ def listar_arquivos_bucket():
     except: return {}
 
 def descobrir_aula_atual(hora_agora):
+    # Comparação direta com objetos dt_time
     if hora_agora < dt_time(7, 30): return "Pré-aula"
     elif hora_agora < dt_time(8, 20): return "1º Aula"
     elif hora_agora < dt_time(9, 10): return "2º Aula"
