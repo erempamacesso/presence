@@ -115,9 +115,67 @@ if menu == "📊 Análise de Dados":
             )
             
         else:
-            st.info("📌 Nenhum dado de resposta encontrado ainda no banco de dados.")
+            st.info("📌 Nenhum dado de resposta geral encontrado ainda no banco de dados.")
+
+        # --- SEÇÃO 4: DESEMPENHO INDIVIDUAL (PONTUAÇÃO DOS ALUNOS) ---
+        st.divider()
+        st.subheader("🏆 Desempenho Individual por Prova")
+        
+        # 1. Buscar todas as provas ativas/elaboradas
+        res_provas = supabase.table("modelos_prova").select("id, titulo").order("id", desc=True).execute()
+        
+        if res_provas.data:
+            dic_provas = {p['titulo']: p['id'] for p in res_provas.data}
+            prova_escolhida = st.selectbox("Selecione a Avaliação para ver as notas:", list(dic_provas.keys()))
+            id_prova_sel = dic_provas[prova_escolhida]
+            
+            # 2. Buscar as notas dessa prova no banco
+            try:
+                # ⚠️ NOTA: Estamos assumindo que a coluna se chama 'pontos'. 
+                # Se for 'nota' ou 'acertou', mude a palavra 'pontos' na linha abaixo e na linha 103!
+                res_notas = supabase.table("respostas_alunos").select("aluno_id, pontos").eq("prova_id", id_prova_sel).execute()
+                
+                if res_notas.data:
+                    df_notas = pd.DataFrame(res_notas.data)
+                    
+                    # Agrupar por aluno somando os pontos
+                    df_notas_agrupadas = df_notas.groupby("aluno_id")["pontos"].sum().reset_index()
+                    
+                    # 3. Buscar os Nomes e Turmas no banco de ALUNOS
+                    lista_ids = df_notas_agrupadas["aluno_id"].tolist()
+                    res_alunos_bd = supabase_alunos.table("alunos").select("id, nome, turma").in_("id", lista_ids).execute()
+                    
+                    if res_alunos_bd.data:
+                        df_alunos = pd.DataFrame(res_alunos_bd.data)
+                        df_alunos = df_alunos.rename(columns={"id": "aluno_id"})
+                        
+                        # 4. Cruzar os dados
+                        df_final = pd.merge(df_alunos, df_notas_agrupadas, on="aluno_id")
+                        
+                        # Organizar do maior pro menor ponto
+                        df_final = df_final[["nome", "turma", "pontos"]].sort_values(by="pontos", ascending=False)
+                        df_final.columns = ["Nome do Estudante", "Turma", "Pontuação Alcançada"]
+                        
+                        # 5. Exibir na tela com degrade azul
+                        st.dataframe(
+                            df_final.style.background_gradient(cmap='Blues', subset=['Pontuação Alcançada']),
+                            use_container_width=True,
+                            hide_index=True
+                        )
+                    else:
+                        st.warning("Não foi possível carregar os nomes dos alunos vinculados a essas respostas.")
+                else:
+                    st.info("Nenhum aluno finalizou esta avaliação ainda.")
+                    
+            except Exception as erro_notas:
+                st.error(f"Erro ao processar as notas: {erro_notas}")
+                st.warning("⚠️ Dica: O sistema tentou ler a coluna chamada 'pontos' na tabela 'respostas_alunos'. Se a sua coluna de nota tiver outro nome, atualize o código.")
+                
+        else:
+            st.info("Nenhuma prova cadastrada no sistema.")
+
     except Exception as e:
-        st.error(f"Erro ao carregar a análise de dados: {e}")
+        st.error(f"Erro ao carregar a análise de dados do Dashboard: {e}")
         st.warning("Verifique se a View SQL 'dashboard_diagnostico' está retornando os dados corretamente no Supabase.")
 
 # --- 6. CADASTRO DE QUESTÕES (MANUAL + IA) ---
