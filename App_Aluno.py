@@ -150,7 +150,7 @@ if st.session_state.etapa == "login":
 
         with st.container():
             st.markdown('<div style="margin-top: -100px; padding: 0 30px 40px 30px;">', unsafe_allow_html=True)
-            matricula = st.text_input("Digite sua matrícula:", label_visibility="collapsed", placeholder="Sua Matrícula SIGEREMPAM")
+            matricula = st.text_input("Digite sua matrícula:", label_visibility="collapsed", placeholder="Digite Sua Matrícula")
             st.write("") 
             
             if st.button("ACESSAR SISTEMA PRO", use_container_width=True, type="primary"):
