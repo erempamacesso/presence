@@ -35,7 +35,8 @@ menu = st.sidebar.radio("Navegação", [
     "📝 Cadastrar Questões", 
     "📚 Biblioteca de Questões", 
     "📜 Gerar Modelo de Prova",
-    "🧹 Limpeza de Testes"  # <-- ADICIONE ESTA LINHA
+    "📂 Provas Elaboradas",  # <-- ADICIONE ESTA LINHA AQUI
+    "🧹 Limpeza de Testes" 
 ])
 
 # --- 5. LOGICA DO DASHBOARD DIAGNÓSTICO ---
@@ -394,7 +395,7 @@ elif menu == "📜 Gerar Modelo de Prova":
                         "data_limite": data_hora_iso,
                         "tempo_duracao": tempo_duracao,
                         "qtd_questoes": qtd_questoes,
-                        "qtd_sorteio": qtd_sorteio, # <-- SALVANDO A REGRA DE SORTEIO
+                        "qtd_sorteio": qtd_sorteio, 
                         "valor_questao": valor_questao
                     }).execute()
                 
@@ -404,3 +405,64 @@ elif menu == "📜 Gerar Modelo de Prova":
                 st.rerun()
     else:
         st.warning("Nenhuma questão cadastrada para gerar provas.")
+
+# --- 9. GERENCIAMENTO DE PROVAS ELABORADAS ---
+elif menu == "📂 Provas Elaboradas":
+    st.title("📂 Gerenciar Provas Elaboradas")
+    st.markdown("Aqui você visualiza, ativa, desativa ou exclui as provas que já foram publicadas para os alunos.")
+    
+    # Busca todas as provas no banco
+    res_provas = supabase.table("modelos_prova").select("*").order("id", desc=True).execute()
+    
+    if res_provas.data:
+        st.write(f"🔍 Total de avaliações cadastradas: **{len(res_provas.data)}**")
+        st.divider()
+        
+        for prova in res_provas.data:
+            with st.container(border=True):
+                c1, c2, c3, c4 = st.columns([3, 1.5, 1.5, 1.5], gap="small")
+                
+                # Identidade visual do Status
+                status_cor = "green" if prova.get('ativa') else "red"
+                status_texto = "🟢 ATIVA (Alunos podem fazer)" if prova.get('ativa') else "🔴 INATIVA (Fechada)"
+                
+                # Formatação da data limite
+                dt_limite = prova.get('data_limite', 'Sem limite')
+                if dt_limite != 'Sem limite':
+                    dt_limite = dt_limite[:16].replace("T", " às ")
+                
+                # Coluna 1: Título e Série
+                c1.markdown(f"### {prova.get('titulo', 'Sem título')}")
+                c1.markdown(f"**Série:** {prova.get('serie', 'Geral')} | **Prazo:** {dt_limite}")
+                
+                # Coluna 2: Status atual
+                c2.markdown(f"**Status:**")
+                c2.markdown(f"*{status_texto}*")
+                
+                # Coluna 3: Info do Sorteio
+                q_total = prova.get('qtd_questoes', 0)
+                q_sorteio = prova.get('qtd_sorteio', q_total)
+                c3.markdown("**Formato:**")
+                c3.caption(f"Banco: {q_total} | Sorteio: {q_sorteio}")
+                
+                # Coluna 4: Botões de Ação
+                with c4:
+                    # Botão Ativar/Desativar
+                    texto_btn_status = "⏸️ Desativar" if prova.get('ativa') else "▶️ Ativar"
+                    if st.button(texto_btn_status, key=f"status_{prova['id']}", use_container_width=True):
+                        novo_status = not prova.get('ativa')
+                        supabase.table("modelos_prova").update({"ativa": novo_status}).eq("id", prova['id']).execute()
+                        st.rerun()
+                    
+                    # Botão Excluir
+                    if st.button("🗑️ Excluir Prova", key=f"del_{prova['id']}", type="primary", use_container_width=True):
+                        supabase.table("modelos_prova").delete().eq("id", prova['id']).execute()
+                        st.rerun()
+                        
+    else:
+        st.info("📌 Nenhuma prova foi elaborada ainda. Vá na aba 'Gerar Modelo de Prova' para criar a primeira!")
+
+# --- 10. LIMPEZA DE TESTES ---
+elif menu == "🧹 Limpeza de Testes":
+    st.title("🧹 Limpeza de Testes")
+    st.info("Área em construção ou coloque aqui sua lógica de limpeza atual.")
