@@ -36,6 +36,7 @@ menu = st.sidebar.radio("Navegação", [
     "📚 Biblioteca de Questões", 
     "📜 Gerar Modelo de Prova",
     "📂 Provas Elaboradas",  # <-- ADICIONE ESTA LINHA AQUI
+    "🖨️ Lista de Matrículas", # <-- NOVA LINHA AQUI
     "🧹 Limpeza de Testes" 
 ])
 
@@ -495,3 +496,59 @@ elif menu == "📂 Provas Elaboradas":
                         
     else:
         st.info("📌 Nenhuma prova foi elaborada ainda. Vá na aba 'Gerar Modelo de Prova' para criar a primeira!")
+
+        # --- 10. LISTA DE MATRÍCULAS PARA IMPRESSÃO ---
+elif menu == "🖨️ Lista de Matrículas":
+    st.title("🖨️ Impressão de Matrículas por Turma")
+    st.markdown("Gere a lista de alunos em ordem alfabética para afixar no mural da sala.")
+
+    # 1. Busca dinamicamente as turmas que existem no banco para criar o seletor
+    try:
+        res_turmas = supabase.table("alunos").select("turma").execute()
+        if res_turmas.data:
+            # Pega as turmas, remove duplicadas e coloca em ordem alfabética (Ex: 1º A, 1º B, 2º A...)
+            lista_turmas = sorted(list(set([t['turma'] for t in res_turmas.data if t['turma']])))
+        else:
+            lista_turmas = ["3º A", "3º B", "3º C"] # Fallback caso o banco esteja vazio
+    except Exception as e:
+        st.warning(f"Erro ao buscar turmas: {e}")
+        lista_turmas = ["Turma não encontrada"]
+
+    # Seletor de turma
+    turma_selecionada = st.selectbox("Selecione a Turma:", lista_turmas)
+
+    if st.button("📄 Gerar Lista para Impressão", type="primary"):
+        with st.spinner("Gerando lista..."):
+            # 2. Busca os alunos daquela turma específica, já ordenando pelo NOME no próprio banco
+            res_alunos = supabase.table("alunos").select("nome, matricula").eq("turma", turma_selecionada).order("nome").execute()
+            
+            if res_alunos.data:
+                # 3. Monta os dados com o Número de Ordem (01, 02, 03...)
+                dados_tabela = []
+                for index, aluno in enumerate(res_alunos.data, start=1):
+                    dados_tabela.append({
+                        "Nº ORDEM": f"{index:02d}", # Formata o número com zero à esquerda (01 ao invés de 1)
+                        "Nº MATRÍCULA": str(aluno.get('matricula', 'S/N')),
+                        "NOME DO ESTUDANTE": str(aluno.get('nome', '')).upper() # Nome todo em maiúsculo
+                    })
+                
+                # Converte para um DataFrame do Pandas
+                df_lista = pd.DataFrame(dados_tabela)
+                
+                # 4. Exibe a tabela pronta para impressão
+                st.divider()
+                st.subheader(f"ALUNOS DO {turma_selecionada.upper()}")
+                
+                # Usamos st.table porque ele renderiza perfeito para o Ctrl+P do navegador
+                # set_index oculta a coluna de índice padrão (0, 1, 2...) do Pandas
+                st.table(df_lista.set_index("Nº ORDEM"))
+                
+                st.success("✅ Lista gerada com sucesso!")
+                st.info("🖨️ **Dica de Impressão:** Pressione `Ctrl + P` (ou `Cmd + P` no Mac) no seu teclado. O navegador vai abrir a tela de impressão já com a tabela formatada. Você pode escolher 'Salvar como PDF' ou mandar direto para a impressora.")
+            else:
+                st.warning(f"Nenhum aluno encontrado cadastrado na turma {turma_selecionada}.")
+
+# --- 11. LIMPEZA DE TESTES ---
+elif menu == "🧹 Limpeza de Testes":
+    st.title("🧹 Limpeza de Testes")
+    st.info("Área em construção.")
