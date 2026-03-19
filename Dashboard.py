@@ -420,11 +420,12 @@ elif menu == "📂 Provas Elaboradas":
         
         for prova in res_provas.data:
             with st.container(border=True):
-                c1, c2, c3, c4 = st.columns([3, 1.5, 1.5, 1.5], gap="small")
+                # Ajustei as colunas para caber a nova informação de engajamento
+                c1, c2, c3, c4, c5 = st.columns([2.5, 1.5, 1.5, 2, 1.5], gap="small")
                 
                 # Identidade visual do Status
                 status_cor = "green" if prova.get('ativa') else "red"
-                status_texto = "🟢 ATIVA (Alunos podem fazer)" if prova.get('ativa') else "🔴 INATIVA (Fechada)"
+                status_texto = "🟢 ATIVA" if prova.get('ativa') else "🔴 INATIVA"
                 
                 # Formatação da data limite
                 dt_limite = prova.get('data_limite', 'Sem limite')
@@ -445,24 +446,52 @@ elif menu == "📂 Provas Elaboradas":
                 c3.markdown("**Formato:**")
                 c3.caption(f"Banco: {q_total} | Sorteio: {q_sorteio}")
                 
-                # Coluna 4: Botões de Ação
-                with c4:
-                    # Botão Ativar/Desativar
+                # ==========================================
+                # 📊 NOVA LÓGICA: COLUNA 4 - ENGAJAMENTO
+                # ==========================================
+                serie_atual = prova.get('serie')
+                prova_id = prova.get('id')
+                
+                try:
+                    # 1. Pega o total de alunos da série (Ex: Todos do 3º Ano)
+                    # ATENÇÃO: Verifique se o nome da sua tabela é "alunos" e a coluna é "serie"
+                    res_alunos = supabase.table("alunos").select("id").eq("serie", serie_atual).execute()
+                    total_alunos = len(res_alunos.data) if res_alunos.data else 0
+                    
+                    # 2. Pega quantos alunos únicos fizeram esta prova
+                    # ATENÇÃO: Verifique se sua tabela se chama "respostas" e tem "prova_id" e "aluno_id"
+                    res_respostas = supabase.table("respostas").select("aluno_id").eq("prova_id", prova_id).execute()
+                    # Usamos set() para garantir que se o aluno fez a prova 2 vezes, ele conte só como 1
+                    alunos_que_fizeram = len(set([r['aluno_id'] for r in res_respostas.data])) if res_respostas.data else 0
+                    
+                    # 3. Calcula a porcentagem
+                    if total_alunos > 0:
+                        porcentagem = (alunos_que_fizeram / total_alunos) * 100
+                    else:
+                        porcentagem = 0.0
+                        
+                    c4.markdown("**Engajamento:**")
+                    c4.markdown(f"**{alunos_que_fizeram} / {total_alunos}** alunos")
+                    # Usamos HTML para colocar uma corzinha na porcentagem baseada no engajamento
+                    cor_perc = "green" if porcentagem >= 70 else ("orange" if porcentagem >= 40 else "red")
+                    c4.markdown(f"<span style='color:{cor_perc}; font-weight:bold;'>{porcentagem:.1f}% concluído</span>", unsafe_allow_html=True)
+                    
+                except Exception as e:
+                    c4.markdown("**Engajamento:**")
+                    c4.caption("Dados de alunos não encontrados.")
+                # ==========================================
+                
+                # Coluna 5: Botões de Ação
+                with c5:
                     texto_btn_status = "⏸️ Desativar" if prova.get('ativa') else "▶️ Ativar"
                     if st.button(texto_btn_status, key=f"status_{prova['id']}", use_container_width=True):
                         novo_status = not prova.get('ativa')
                         supabase.table("modelos_prova").update({"ativa": novo_status}).eq("id", prova['id']).execute()
                         st.rerun()
                     
-                    # Botão Excluir
-                    if st.button("🗑️ Excluir Prova", key=f"del_{prova['id']}", type="primary", use_container_width=True):
+                    if st.button("🗑️ Excluir", key=f"del_{prova['id']}", type="primary", use_container_width=True):
                         supabase.table("modelos_prova").delete().eq("id", prova['id']).execute()
                         st.rerun()
                         
     else:
         st.info("📌 Nenhuma prova foi elaborada ainda. Vá na aba 'Gerar Modelo de Prova' para criar a primeira!")
-
-# --- 10. LIMPEZA DE TESTES ---
-elif menu == "🧹 Limpeza de Testes":
-    st.title("🧹 Limpeza de Testes")
-    st.info("Área em construção ou coloque aqui sua lógica de limpeza atual.")
