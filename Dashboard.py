@@ -108,8 +108,13 @@ if menu == "📊 Análise de Dados":
             
             # --- SEÇÃO 3: TABELA DE DADOS ---
             st.subheader("📋 Tabela de Dados Analíticos")
+            
+            df_view = df.copy()
+            if 'perc_acerto' in df_view.columns:
+                df_view['perc_acerto'] = df_view['perc_acerto'].apply(lambda x: f"{x:.1f}%")
+
             st.dataframe(
-                df.style.format({'perc_acerto': '{:.1f}%'}).background_gradient(cmap='Greens', subset=['perc_acerto']),
+                df_view,
                 use_container_width=True,
                 hide_index=True
             )
@@ -129,47 +134,50 @@ if menu == "📊 Análise de Dados":
             prova_escolhida = st.selectbox("Selecione a Avaliação para ver as notas:", list(dic_provas.keys()))
             id_prova_sel = dic_provas[prova_escolhida]
             
-            # 2. Buscar as notas dessa prova no banco
+            # 2. Buscar as notas dessa prova no banco (CORRIGIDO PARA RESULTADOS_PROVAS)
             try:
-                # ⚠️ NOTA: Estamos assumindo que a coluna se chama 'pontos'. 
-                # Se for 'nota' ou 'acertou', mude a palavra 'pontos' na linha abaixo e na linha 103!
-                res_notas = supabase.table("respostas_alunos").select("aluno_id, pontos").eq("prova_id", id_prova_sel).execute()
+                res_notas = supabase.table("resultados_provas").select("aluno_id, acertou").eq("prova_id", id_prova_sel).execute()
                 
                 if res_notas.data:
                     df_notas = pd.DataFrame(res_notas.data)
                     
-                    # Agrupar por aluno somando os pontos
+                    # Converte acertos de True/False para 1/0
+                    df_notas["pontos"] = df_notas["acertou"].astype(int)
                     df_notas_agrupadas = df_notas.groupby("aluno_id")["pontos"].sum().reset_index()
                     
-                    # 3. Buscar os Nomes e Turmas no banco de ALUNOS
-                    lista_ids = df_notas_agrupadas["aluno_id"].tolist()
-                    res_alunos_bd = supabase_alunos.table("alunos").select("id, nome, turma").in_("id", lista_ids).execute()
+                    # 3. Buscar os Nomes e Turmas no banco de ALUNOS (CHAMADAESCOLAR)
+                    # Convertendo a lista de IDs para inteiros para o banco de alunos
+                    lista_ids_int = [int(i) for i in df_notas_agrupadas["aluno_id"].tolist() if str(i).isdigit()]
+                    
+                    res_alunos_bd = supabase_alunos.table("alunos").select("id, nome, turma").in_("id", lista_ids_int).execute()
                     
                     if res_alunos_bd.data:
                         df_alunos = pd.DataFrame(res_alunos_bd.data)
-                        df_alunos = df_alunos.rename(columns={"id": "aluno_id"})
                         
-                        # 4. Cruzar os dados
-                        df_final = pd.merge(df_alunos, df_notas_agrupadas, on="aluno_id")
+                        # Padroniza tudo como texto (String) para cruzar sem erro
+                        df_alunos["id"] = df_alunos["id"].astype(str)
+                        df_notas_agrupadas["aluno_id"] = df_notas_agrupadas["aluno_id"].astype(str)
+                        
+                        # 4. Cruzar os dados (Merge)
+                        df_final = pd.merge(df_alunos, df_notas_agrupadas, left_on="id", right_on="aluno_id")
                         
                         # Organizar do maior pro menor ponto
                         df_final = df_final[["nome", "turma", "pontos"]].sort_values(by="pontos", ascending=False)
-                        df_final.columns = ["Nome do Estudante", "Turma", "Pontuação Alcançada"]
+                        df_final.columns = ["Nome do Estudante", "Turma", "Total de Acertos"]
                         
-                        # 5. Exibir na tela com degrade azul
+                        # 5. Exibir na tela (CORRIGIDO: Sem matplotlib)
                         st.dataframe(
-                            df_final.style.background_gradient(cmap='Blues', subset=['Pontuação Alcançada']),
+                            df_final,
                             use_container_width=True,
                             hide_index=True
                         )
                     else:
-                        st.warning("Não foi possível carregar os nomes dos alunos vinculados a essas respostas.")
+                        st.warning("Não foi possível carregar os nomes dos alunos vinculados a essas respostas no banco escolar.")
                 else:
                     st.info("Nenhum aluno finalizou esta avaliação ainda.")
                     
             except Exception as erro_notas:
                 st.error(f"Erro ao processar as notas: {erro_notas}")
-                st.warning("⚠️ Dica: O sistema tentou ler a coluna chamada 'pontos' na tabela 'respostas_alunos'. Se a sua coluna de nota tiver outro nome, atualize o código.")
                 
         else:
             st.info("Nenhuma prova cadastrada no sistema.")
@@ -496,7 +504,8 @@ elif menu == "📂 Provas Elaboradas":
                     res_alunos = supabase_alunos.table("alunos").select("id").eq("serie", serie_atual).execute()
                     total_alunos = len(res_alunos.data) if res_alunos.data else 0
                     
-                    res_respostas = supabase.table("respostas_alunos").select("aluno_id").eq("prova_id", prova_id).execute()
+                    # Correção sugerida aqui também: usar resultados_provas ao invés de respostas_alunos para checar engajamento
+                    res_respostas = supabase.table("resultados_provas").select("aluno_id").eq("prova_id", prova_id).execute()
                     alunos_que_fizeram = len(set([r['aluno_id'] for r in res_respostas.data])) if res_respostas.data else 0
                     
                     if total_alunos > 0:
