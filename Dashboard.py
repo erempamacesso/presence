@@ -501,19 +501,19 @@ elif menu == "📂 Provas Elaboradas":
 elif menu == "🖨️ Lista de Matrículas":
     st.title("🖨️ Impressão de Matrículas por Turma")
     
-    # BOTÃO DE DIAGNÓSTICO (Só para a gente testar se ele vê a tabela)
+    # BOTÃO DE DIAGNÓSTICO
     if st.button("🔍 Testar Conexão com Tabelas"):
         try:
-            # Esse comando tenta listar as tabelas que a API consegue ver
-            res = supabase.table("alunos").select("count", count="exact").limit(1).execute()
-            st.success("✅ O sistema conseguiu encontrar a tabela 'alunos'!")
+            # TROCADO AQUI: supabase_alunos
+            res = supabase_alunos.table("alunos").select("count", count="exact").limit(1).execute()
+            st.success("✅ O sistema conseguiu encontrar a tabela 'alunos' no projeto da Chamada!")
         except Exception as e:
             st.error(f"❌ Erro Real: {e}")
 
     # --- Lógica de Busca ---
     try:
-        # Tenta buscar as turmas
-        res_turmas = supabase.table("alunos").select("turma").execute()
+        # TROCADO AQUI: supabase_alunos
+        res_turmas = supabase_alunos.table("alunos").select("turma").execute()
         if res_turmas.data:
             lista_turmas = sorted(list(set([t['turma'] for t in res_turmas.data if t['turma']])))
         else:
@@ -526,8 +526,8 @@ elif menu == "🖨️ Lista de Matrículas":
     if st.button("📄 Gerar Lista para Impressão", type="primary"):
         with st.spinner("Gerando lista..."):
             try:
-                # Mudamos aqui para garantir a busca correta
-                res_alunos = supabase.from_("alunos").select("nome, numero_matricula").eq("turma", turma_selecionada).order("nome").execute()
+                # TROCADO AQUI: supabase_alunos
+                res_alunos = supabase_alunos.from_("alunos").select("nome, numero_matricula").eq("turma", turma_selecionada).order("nome").execute()
                 
                 if res_alunos.data:
                     dados_tabela = []
