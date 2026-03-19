@@ -4,13 +4,13 @@ from streamlit_quill import st_quill
 import plotly.express as px
 import pandas as pd
 import json
-from fpdf import FPDF # <-- NOVO
-import base64         # <-- NOVO
+from fpdf import FPDF
+import base64
 
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Gestão EREMPAM - Provas", layout="wide")
 
-# --- 2. CONEXÃO COM SUPABASE (DUPLA CONEXÃO CORRIGIDA) ---
+# --- 2. CONEXÃO COM SUPABASE ---
 # Conexão 1: PROVAS (Avaliador-Provas)
 URL_P = st.secrets["SUPABASE_URL_PROVAS"]
 KEY_P = st.secrets["SUPABASE_KEY_PROVAS"]
@@ -29,7 +29,7 @@ if not st.session_state.autenticado:
     st.title("🔐 Acesso Administrativo - EREMPAM")
     senha = st.text_input("Digite a senha de gestão:", type="password")
     if st.button("Entrar"):
-        if senha == "erempam2024": # Sua senha
+        if senha == "erempam2024": 
             st.session_state.autenticado = True
             st.rerun()
         else:
@@ -39,35 +39,86 @@ if not st.session_state.autenticado:
 # --- 4. MENU LATERAL ---
 st.sidebar.title("🎮 Painel do Professor")
 menu = st.sidebar.radio("Navegação", [
-    "📊 Dashboard Diagnóstico", 
+    "📊 Análise de Dados", 
     "📝 Cadastrar Questões", 
     "📚 Biblioteca de Questões", 
     "📜 Gerar Modelo de Prova",
     "📂 Provas Elaboradas",  
-    "🖨️ Lista de Matrículas", 
-    "🧹 Limpeza de Testes" 
+    "🖨️ Lista de Matrículas"
 ])
 
-# --- 5. LOGICA DO DASHBOARD DIAGNÓSTICO ---
-if menu == "📊 Dashboard Diagnóstico":
-    st.title("📊 Diagnóstico em Tempo Real")
+# --- 5. LÓGICA DO DASHBOARD (NOVA ANÁLISE DE DADOS) ---
+if menu == "📊 Análise de Dados":
+    st.title("📊 Análise de Dados e Diagnóstico")
+    st.markdown("Acompanhe o engajamento e o desempenho das turmas em tempo real.")
+    
     try:
         res = supabase.table("dashboard_diagnostico").select("*").execute()
         df = pd.DataFrame(res.data)
+        
         if not df.empty:
+            # --- SEÇÃO 1: KPIs (Visão Geral) ---
+            st.markdown("### 🎯 Visão Geral")
+            kpi1, kpi2, kpi3 = st.columns(3)
+            
+            total_resp = df['total_respostas'].sum()
+            media_geral = df['perc_acerto'].mean()
+            melhor_assunto = df.loc[df['perc_acerto'].idxmax()]['assunto'] if not df.empty else "N/A"
+            
+            with kpi1:
+                st.metric(label="Total de Respostas Coletadas", value=int(total_resp))
+            with kpi2:
+                st.metric(label="Média de Acertos Geral", value=f"{media_geral:.1f}%")
+            with kpi3:
+                st.metric(label="Assunto com Maior Domínio", value=str(melhor_assunto).upper())
+            
+            st.divider()
+            
+            # --- SEÇÃO 2: GRÁFICOS INTERATIVOS ---
             col1, col2 = st.columns(2)
+            
             with col1:
-                st.subheader("Acertos por Assunto")
-                fig = px.bar(df, x="assunto", y="perc_acerto", color="serie", barmode="group", text_auto='.1f')
+                st.subheader("Desempenho: Acertos por Assunto")
+                fig = px.bar(
+                    df, 
+                    x="assunto", 
+                    y="perc_acerto", 
+                    color="serie", 
+                    barmode="group", 
+                    text_auto='.1f',
+                    labels={'perc_acerto': '% de Acerto', 'assunto': 'Assunto', 'serie': 'Série'},
+                    color_discrete_sequence=px.colors.qualitative.Pastel
+                )
+                fig.update_layout(xaxis_tickangle=-45, yaxis_title="% de Acertos")
                 st.plotly_chart(fig, use_container_width=True)
+                
             with col2:
-                st.subheader("Engajamento por Turma")
-                fig2 = px.pie(df, values='total_respostas', names='serie', hole=.4)
+                st.subheader("Engajamento: Respostas por Série")
+                fig2 = px.pie(
+                    df, 
+                    values='total_respostas', 
+                    names='serie', 
+                    hole=.4,
+                    color_discrete_sequence=px.colors.sequential.Teal
+                )
+                fig2.update_traces(textposition='inside', textinfo='percent+label')
                 st.plotly_chart(fig2, use_container_width=True)
+                
+            st.divider()
+            
+            # --- SEÇÃO 3: TABELA DE DADOS ---
+            st.subheader("📋 Tabela de Dados Analíticos")
+            st.dataframe(
+                df.style.format({'perc_acerto': '{:.1f}%'}).background_gradient(cmap='Greens', subset=['perc_acerto']),
+                use_container_width=True,
+                hide_index=True
+            )
+            
         else:
-            st.info("Nenhum dado de resposta encontrado ainda.")
-    except:
-        st.warning("Aguardando dados ou View SQL...")
+            st.info("📌 Nenhum dado de resposta encontrado ainda no banco de dados.")
+    except Exception as e:
+        st.error(f"Erro ao carregar a análise de dados: {e}")
+        st.warning("Verifique se a View SQL 'dashboard_diagnostico' está retornando os dados corretamente no Supabase.")
 
 # --- 6. CADASTRO DE QUESTÕES (MANUAL + IA) ---
 elif menu == "📝 Cadastrar Questões":
@@ -380,16 +431,13 @@ elif menu == "📂 Provas Elaboradas":
                 c3.markdown("**Formato:**")
                 c3.caption(f"Banco: {q_total} | Sorteio: {q_sorteio}")
                 
-                # --- CORRIGIDO AQUI: USANDO supabase_alunos para buscar os alunos ---
                 serie_atual = prova.get('serie')
                 prova_id = prova.get('id')
                 
                 try:
-                    # Usando supabase_alunos para ler do projeto Chamada
                     res_alunos = supabase_alunos.table("alunos").select("id").eq("serie", serie_atual).execute()
                     total_alunos = len(res_alunos.data) if res_alunos.data else 0
                     
-                    # Usando supabase para ler do projeto de Provas
                     res_respostas = supabase.table("respostas_alunos").select("aluno_id").eq("prova_id", prova_id).execute()
                     alunos_que_fizeram = len(set([r['aluno_id'] for r in res_respostas.data])) if res_respostas.data else 0
                     
@@ -425,7 +473,6 @@ elif menu == "📂 Provas Elaboradas":
 elif menu == "🖨️ Lista de Matrículas":
     st.title("🖨️ Impressão de Matrículas por Turma")
     
-    # Busca as turmas
     try:
         res_turmas = supabase_alunos.table("alunos").select("turma").execute()
         if res_turmas.data:
@@ -440,7 +487,6 @@ elif menu == "🖨️ Lista de Matrículas":
     if st.button("📄 Gerar Lista", type="primary"):
         with st.spinner("Buscando alunos..."):
             try:
-                # Busca os alunos da turma
                 res_alunos = supabase_alunos.from_("alunos").select("nome, numero_matricula").eq("turma", turma_selecionada).order("nome").execute()
                 
                 if res_alunos.data:
@@ -454,48 +500,36 @@ elif menu == "🖨️ Lista de Matrículas":
                     
                     df_lista = pd.DataFrame(dados_tabela)
                     
-                    # -----------------------------------------------------
-                    # LÓGICA DE CRIAÇÃO DO PDF (DESIGN DO DOCUMENTO)
-                    # -----------------------------------------------------
                     pdf = FPDF()
                     pdf.add_page()
                     
-                    # Título do Documento
                     pdf.set_font("Arial", 'B', 14)
                     pdf.cell(0, 10, f"ESCOLA EREMPAM - LISTA DE FREQUENCIA", ln=True, align='C')
                     pdf.set_font("Arial", 'B', 12)
                     pdf.cell(0, 10, f"Turma: {turma_selecionada.upper()}", ln=True, align='C')
                     pdf.ln(5)
                     
-                    # Cabeçalho da Tabela
                     pdf.set_font("Arial", 'B', 10)
                     pdf.cell(15, 8, "N", border=1, align='C')
                     pdf.cell(35, 8, "MATRICULA", border=1, align='C')
                     pdf.cell(140, 8, "NOME DO ESTUDANTE", border=1, align='C')
                     pdf.ln()
                     
-                    # Linhas da Tabela
                     pdf.set_font("Arial", '', 10)
                     for _, row in df_lista.iterrows():
                         pdf.cell(15, 8, str(row["Nº ORDEM"]), border=1, align='C')
                         pdf.cell(35, 8, str(row["Nº MATRÍCULA"]), border=1, align='C')
                         
-                        # Tratamento para evitar erro com acentos no PDF
                         nome_aluno = str(row["NOME DO ESTUDANTE"])
                         nome_seguro = nome_aluno.encode('latin-1', 'replace').decode('latin-1')
                         
                         pdf.cell(140, 8, f" {nome_seguro}", border=1, align='L')
                         pdf.ln()
                     
-                    # Gera os bytes do PDF
                     pdf_bytes = pdf.output(dest='S').encode('latin-1')
                     
-                    # -----------------------------------------------------
-                    # EXIBIÇÃO NA TELA
-                    # -----------------------------------------------------
                     st.success(f"✅ Lista da turma {turma_selecionada} gerada com {len(df_lista)} alunos!")
                     
-                    # Botão Mágico de Download
                     st.download_button(
                         label="📥 Baixar Documento em PDF",
                         data=pdf_bytes,
@@ -504,7 +538,6 @@ elif menu == "🖨️ Lista de Matrículas":
                         use_container_width=True
                     )
                     
-                    # Mostra a prévia na tela também
                     with st.expander("👀 Ver prévia na tela"):
                         st.table(df_lista.set_index("Nº ORDEM"))
                         
