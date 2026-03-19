@@ -12,20 +12,20 @@ from urllib.parse import quote
 # ==========================================
 st.set_page_config(page_title="Chamada Digital EREMPAM", layout="centered")
 
-# TENTATIVA DE CONEXÃO COM O COFRE (SECRETS) - CORRIGIDA PARA NOMES DO SEU SECRETS
+# CONEXÃO CORRIGIDA COM OS NOMES DO SEU SECRETS
 try:
-    # Ajustado para os nomes exatos que estão no seu secrets.toml
+    # Usando os nomes exatos que você enviou no secrets.toml
     SUPABASE_URL = st.secrets["SUPABASE_URL_ALUNOS"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY_ALUNOS"]
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 except KeyError as e:
-    st.error(f"🚨 Erro: A chave {e} não foi encontrada no cofre do Streamlit (Secrets). Verifique se o nome está correto.")
+    st.error(f"🚨 Erro: A chave {e} não foi encontrada no Secrets do Streamlit.")
     st.stop()
 except Exception as e:
     st.error(f"🚨 Erro de conexão: {e}")
     st.stop()
 
-# --- ESTILIZAÇÃO PARA LISTA HORIZONTAL ---
+# --- ESTILIZAÇÃO CSS ---
 st.markdown("""
     <style>
         .aluno-row {
@@ -38,11 +38,7 @@ st.markdown("""
             margin-bottom: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         }
-        .foto-container { flex: 0 0 60px; margin-right: 15px; }
-        .foto-container img { width: 60px; height: 60px; border-radius: 50%; object-fit: cover; border: 2px solid #ff4b4b; }
-        .info-container { flex-grow: 1; }
         .nome-aluno { font-weight: bold; font-size: 14px; color: #333; text-transform: uppercase; }
-        .stCheckbox { background-color: #e8f5e9; padding: 5px 10px; border-radius: 8px; border: 1px solid #2e7d32; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -55,7 +51,6 @@ MAPA_TURMAS = {
 def limpar_texto_absoluto(texto):
     if not texto: return ""
     texto = str(texto).strip().lower()
-    if "." in texto: texto = texto.rsplit(".", 1)[0]
     nfkd = unicodedata.normalize('NFKD', texto)
     sem_acento = "".join([c for c in nfkd if not unicodedata.combining(c)])
     return "".join(filter(str.isalnum, sem_acento))
@@ -73,9 +68,6 @@ def listar_arquivos_bucket():
         return mapa
     except: return {}
 
-# ==========================================
-# 2. FUNÇÃO DE DETECÇÃO DE HORÁRIOS
-# ==========================================
 def descobrir_aula_atual(hora_agora):
     if hora_agora < dt_time(7, 30): return "Pré-aula"
     elif hora_agora < dt_time(8, 20): return "1º Aula"
@@ -93,15 +85,11 @@ def descobrir_aula_atual(hora_agora):
     else: return "Encerrado"
 
 # ==========================================
-# 3. CAPTURA DO LINK (BLINDADA)
+# 3. LOGICA PRINCIPAL
 # ==========================================
 token_url = st.query_params.get("t", None)
-if isinstance(token_url, list):
-    token_url = token_url[0]
+if isinstance(token_url, list): token_url = token_url[0]
 
-# ==========================================
-# 4. APLICATIVO PRINCIPAL E ABAS
-# ==========================================
 if token_url and token_url in MAPA_TURMAS:
     turma_real = MAPA_TURMAS[token_url]
     st.title(f"📱 Painel: {turma_real}")
@@ -112,31 +100,25 @@ if token_url and token_url in MAPA_TURMAS:
     data_hoje = agora.strftime('%Y-%m-%d')
     hora_atual = agora.time()
     
-    st.caption(f"📅 {agora.strftime('%d/%m/%Y')} | ⏰ {agora.strftime('%H:%M')}")
-    
-    # TRAVA 17:00
-    if hora_atual >= dt_time(17, 0):
-        st.error("🔒 **Sistema Bloqueado.** O expediente foi encerrado às 17:00.")
-        st.stop()
-    
+    # BUSCA DE ALUNOS - TABELA CORRIGIDA PARA 'alunos'
     try:
-        # ALTERADO PARA 'respostas_alunos' conforme o erro do banco de dados
-        response = supabase.table("respostas_alunos").select("nome").eq("turma", turma_real).order("nome").execute()
+        # Usando a tabela 'alunos' que existe no banco ykbw... (ChamadaEscolar)
+        response = supabase.table("alunos").select("nome").eq("turma", turma_real).order("nome").execute()
         alunos = response.data
     except Exception as e:
-        st.error(f"Erro ao conectar com a tabela respostas_alunos: {e}"); st.stop()
+        st.error(f"Erro ao carregar tabela 'alunos': {e}")
+        st.stop()
 
     if alunos:
         tab1, tab2 = st.tabs(["📝 Chamada Manhã", "🏃 Registro de Evasão"])
         cache_buster = int(time.time())
 
-        # --- ABA 1: CHAMADA MATINAL ---
         with tab1:
             presencas_salvas = {}
             try:
-                res_chamada_hoje = supabase.table("frequencia").select("aluno_nome, status").eq("turma", turma_real).eq("data_chamada", data_hoje).execute()
-                if res_chamada_hoje.data:
-                    presencas_salvas = {registro['aluno_nome']: registro['status'] for registro in res_chamada_hoje.data}
+                res_chamada = supabase.table("frequencia").select("aluno_nome, status").eq("turma", turma_real).eq("data_chamada", data_hoje).execute()
+                if res_chamada.data:
+                    presencas_salvas = {r['aluno_nome']: r['status'] for r in res_chamada.data}
             except: pass
 
             with st.form("form_chamada"):
@@ -154,8 +136,7 @@ if token_url and token_url in MAPA_TURMAS:
                         st.markdown(f"<div style='padding-top:15px'><b>{aluno['nome']}</b></div>", unsafe_allow_html=True)
                     
                     with col_check:
-                        status_atual = presencas_salvas.get(aluno['nome'])
-                        marcado = False if status_atual == "F" else True
+                        marcado = False if presencas_salvas.get(aluno['nome']) == "F" else True
                         presencas[aluno['nome']] = st.checkbox("Presente", value=marcado, key=f"c_{i}")
 
                 if st.form_submit_button("🚀 FINALIZAR CHAMADA", use_container_width=True):
@@ -167,33 +148,23 @@ if token_url and token_url in MAPA_TURMAS:
                         st.balloons()
                         time.sleep(1)
                         st.rerun()
-                    except Exception as e: st.error(f"Erro ao salvar frequência: {e}")
+                    except Exception as e: st.error(f"Erro ao salvar: {e}")
 
-        # --- ABA 2: REGISTRO DE EVASÃO ---
         with tab2:
-            st.write("Registro de saída sem autorização.")
             aula_sug = descobrir_aula_atual(hora_atual)
             lista_aulas = ["1º Aula", "2º Aula", "3º Aula", "4º Aula", "5º Aula", "6º Aula", "7º Aula", "8º Aula", "9º Aula"]
-            
             idx_aula = lista_aulas.index(aula_sug) if aula_sug in lista_aulas else 0
             aula_sel = st.selectbox("Selecione a Aula:", lista_aulas, index=idx_aula)
             
             try:
-                res_evasoes = supabase.table("evasoes").select("aluno_nome").eq("data_registro", data_hoje).eq("aula_periodo", aula_sel).eq("turma", turma_real).execute()
-                fugoes = [r['aluno_nome'] for r in res_evasoes.data] if res_evasoes.data else []
+                res_ev = supabase.table("evasoes").select("aluno_nome").eq("data_registro", data_hoje).eq("aula_periodo", aula_sel).eq("turma", turma_real).execute()
+                fugoes = [r['aluno_nome'] for r in res_ev.data] if res_ev.data else []
             except: fugoes = []
 
             for i, aluno in enumerate(alunos):
                 c1, c2, c3 = st.columns([1, 3, 2])
-                nome_limpo = limpar_texto_absoluto(aluno['nome'])
-                nome_arq = mapa_fotos.get(nome_limpo)
-                
-                with c1: 
-                    url_img = f"{SUPABASE_URL}/storage/v1/object/public/fotos-alunos/{quote(nome_arq)}?t={cache_buster}" if nome_arq else "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png"
-                    st.image(url_img, width=50)
-
+                with c1: st.write("") # Espaço para foto se quiser repetir a lógica
                 with c2: st.markdown(f"<div style='padding-top:10px'><b>{aluno['nome']}</b></div>", unsafe_allow_html=True)
-                
                 with c3:
                     if aluno['nome'] in fugoes:
                         st.error("🚨 Ausente")
@@ -204,8 +175,8 @@ if token_url and token_url in MAPA_TURMAS:
                                 st.toast(f"Registrado: {aluno['nome']}")
                                 time.sleep(0.5)
                                 st.rerun()
-                            except Exception as e: st.error(f"Erro ao registrar evasão: {e}")
+                            except Exception as e: st.error(f"Erro: {e}")
     else:
-        st.info(f"Nenhum aluno encontrado na turma {turma_real} (Tabela: respostas_alunos).")
+        st.info(f"Nenhum aluno em {turma_real}.")
 else:
     st.error("🚫 Use o QR Code da sala.")
