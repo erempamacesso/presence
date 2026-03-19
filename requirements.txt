@@ -7,8 +7,8 @@ pytz
 streamlit-option-menu
 openpyxl
 streamlit-calendar 
-fpdf
 simple-icd-10
 streamlit-quill
 plotly
 fpdf
+matplotlib
