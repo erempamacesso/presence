@@ -66,7 +66,7 @@ def descobrir_aula_atual(hora_agora):
     else: return "Encerrado"
 
 # ==========================================
-# 2. LÓGICA DO APLICATIVO
+# 2. LÓGICA DO APLICATIVO (ATUALIZADA)
 # ==========================================
 token_url = st.query_params.get("t", None)
 if isinstance(token_url, list): token_url = token_url[0]
@@ -75,15 +75,20 @@ if token_url and token_url in MAPA_TURMAS:
     turma_real = MAPA_TURMAS[token_url]
     st.title(f"📱 Painel: {turma_real}")
     
+    # --- CONFIGURAÇÃO DE TEMPO REAL ---
     mapa_fotos = listar_arquivos_bucket()
     fuso = pytz.timezone('America/Recife')
     agora = datetime.now(fuso)
     data_hoje = agora.strftime('%Y-%m-%d')
-    hora_atual = agora.time()
+    # Garantimos que a hora atual seja comparável e precisa
+    hora_atual = dt_time(agora.hour, agora.minute) 
     cache_buster = int(time.time())
 
+    # Barra de status para conferência do professor
+    st.info(f"🕒 **Relógio do Sistema:** {agora.strftime('%H:%M')} | **Data:** {agora.strftime('%d/%m/%Y')}")
+
     try:
-        # Busca da tabela 'alunos' que existe no projeto ykbw... (ChamadaEscolar)
+        # Busca da tabela 'alunos' (Projeto ChamadaEscolar)
         response = supabase.table("alunos").select("nome").eq("turma", turma_real).order("nome").execute()
         alunos = response.data
     except Exception as e:
@@ -94,6 +99,7 @@ if token_url and token_url in MAPA_TURMAS:
         tab1, tab2 = st.tabs(["📝 Chamada Manhã", "🏃 Registro de Evasão"])
 
         with tab1:
+            # Mantive sua lógica de formulário para a chamada
             with st.form("form_chamada"):
                 presencas = {}
                 for i, aluno in enumerate(alunos):
@@ -107,20 +113,38 @@ if token_url and token_url in MAPA_TURMAS:
 
                 if st.form_submit_button("🚀 FINALIZAR CHAMADA", use_container_width=True):
                     dados = [{"turma": turma_real, "aluno_nome": n, "status": "P" if p else "F", "data_chamada": data_hoje} for n, p in presencas.items()]
-                    supabase.table("frequencia").delete().match({"turma": turma_real, "data_chamada": data_hoje}).execute()
-                    supabase.table("frequencia").insert(dados).execute()
-                    st.success("Chamada salva!")
-                    st.rerun()
+                    try:
+                        supabase.table("frequencia").delete().match({"turma": turma_real, "data_chamada": data_hoje}).execute()
+                        supabase.table("frequencia").insert(dados).execute()
+                        st.success("Chamada salva com sucesso!")
+                        time.sleep(1)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao salvar: {e}")
 
         with tab2:
+            # --- LÓGICA DE AULA AUTOMÁTICA CORRIGIDA ---
             aula_sug = descobrir_aula_atual(hora_atual)
             lista_aulas = ["1º Aula", "2º Aula", "3º Aula", "4º Aula", "5º Aula", "6º Aula", "7º Aula", "8º Aula", "9º Aula"]
-            idx_aula = lista_aulas.index(aula_sug) if aula_sug in lista_aulas else 0
-            aula_sel = st.selectbox("Selecione a Aula:", lista_aulas, index=idx_aula)
             
-            # Busca quem já fugiu
-            res_ev = supabase.table("evasoes").select("aluno_nome").eq("data_registro", data_hoje).eq("aula_periodo", aula_sel).eq("turma", turma_real).execute()
-            fugoes = [r['aluno_nome'] for r in res_ev.data] if res_ev.data else []
+            # Se o retorno da função não estiver na lista (ex: "Intervalo"), ele volta para a 1ª aula ou mantém a sugestão
+            if aula_sug in lista_aulas:
+                idx_aula = lista_aulas.index(aula_sug)
+            else:
+                # Caso seja intervalo, você pode decidir se ele marca a última aula ou a primeira
+                idx_aula = 0 
+
+            aula_sel = st.selectbox("Selecione a Aula para Registro:", lista_aulas, index=idx_aula)
+            st.write(f"📌 *Sugestão atual baseada no horário:* **{aula_sug}**")
+            
+            # Busca quem já fugiu na aula selecionada
+            try:
+                res_ev = supabase.table("evasoes").select("aluno_nome").eq("data_registro", data_hoje).eq("aula_periodo", aula_sel).eq("turma", turma_real).execute()
+                fugoes = [r['aluno_nome'] for r in res_ev.data] if res_ev.data else []
+            except:
+                fugoes = []
+
+            st.divider()
 
             for i, aluno in enumerate(alunos):
                 c1, c2, c3 = st.columns([1, 3, 2])
@@ -134,9 +158,17 @@ if token_url and token_url in MAPA_TURMAS:
                     c3.error("🚨 Ausente")
                 else:
                     if c3.button("🏃 Registrar", key=f"fuga_{i}", use_container_width=True):
-                        supabase.table("evasoes").insert({"data_registro": data_hoje, "turma": turma_real, "aluno_nome": aluno['nome'], "aula_periodo": aula_sel}).execute()
-                        st.toast(f"Registrado: {aluno['nome']}")
-                        time.sleep(0.5)
-                        st.rerun()
+                        try:
+                            supabase.table("evasoes").insert({
+                                "data_registro": data_hoje, 
+                                "turma": turma_real, 
+                                "aluno_nome": aluno['nome'], 
+                                "aula_periodo": aula_sel
+                            }).execute()
+                            st.toast(f"Evasão registrada: {aluno['nome']}")
+                            time.sleep(0.5)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao registrar: {e}")
 else:
-    st.error("🚫 Use o QR Code da sala.")
+    st.error("🚫 Por favor, acesse o sistema através de um QR Code válido.")
