@@ -461,7 +461,7 @@ elif menu == "📂 Provas Elaboradas":
                     
                     # 2. Pega quantos alunos únicos fizeram esta prova
                     # ATENÇÃO: Verifique se sua tabela se chama "respostas" e tem "prova_id" e "aluno_id"
-                    res_respostas = supabase.table("respostas").select("aluno_id").eq("prova_id", prova_id).execute()
+                    res_respostas = supabase.table("respostas_alunos").select("aluno_id").eq("prova_id", prova_id).execute()
                     # Usamos set() para garantir que se o aluno fez a prova 2 vezes, ele conte só como 1
                     alunos_que_fizeram = len(set([r['aluno_id'] for r in res_respostas.data])) if res_respostas.data else 0
                     
