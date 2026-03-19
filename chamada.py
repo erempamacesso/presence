@@ -12,14 +12,14 @@ from urllib.parse import quote
 # ==========================================
 st.set_page_config(page_title="Chamada Digital EREMPAM", layout="centered")
 
-# TENTATIVA DE CONEXÃO COM O COFRE (SECRETS) - CORRIGIDA
+# TENTATIVA DE CONEXÃO COM O COFRE (SECRETS) - CORRIGIDA PARA NOMES DO SEU SECRETS
 try:
-    # Ajustado para os nomes corretos que estão no seu Streamlit Cloud
-    SUPABASE_URL = st.secrets["SUPABASE_URL"]
-    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+    # Ajustado para os nomes exatos que estão no seu secrets.toml
+    SUPABASE_URL = st.secrets["SUPABASE_URL_ALUNOS"]
+    SUPABASE_KEY = st.secrets["SUPABASE_KEY_ALUNOS"]
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 except KeyError as e:
-    st.error(f"🚨 Erro: A chave {e} não foi encontrada no cofre do Streamlit (Secrets).")
+    st.error(f"🚨 Erro: A chave {e} não foi encontrada no cofre do Streamlit (Secrets). Verifique se o nome está correto.")
     st.stop()
 except Exception as e:
     st.error(f"🚨 Erro de conexão: {e}")
@@ -120,10 +120,11 @@ if token_url and token_url in MAPA_TURMAS:
         st.stop()
     
     try:
-        response = supabase.table("alunos").select("nome").eq("turma", turma_real).order("nome").execute()
+        # ALTERADO PARA 'respostas_alunos' conforme o erro do banco de dados
+        response = supabase.table("respostas_alunos").select("nome").eq("turma", turma_real).order("nome").execute()
         alunos = response.data
     except Exception as e:
-        st.error(f"Erro ao conectar com o banco: {e}"); st.stop()
+        st.error(f"Erro ao conectar com a tabela respostas_alunos: {e}"); st.stop()
 
     if alunos:
         tab1, tab2 = st.tabs(["📝 Chamada Manhã", "🏃 Registro de Evasão"])
@@ -166,7 +167,7 @@ if token_url and token_url in MAPA_TURMAS:
                         st.balloons()
                         time.sleep(1)
                         st.rerun()
-                    except Exception as e: st.error(f"Erro: {e}")
+                    except Exception as e: st.error(f"Erro ao salvar frequência: {e}")
 
         # --- ABA 2: REGISTRO DE EVASÃO ---
         with tab2:
@@ -203,8 +204,8 @@ if token_url and token_url in MAPA_TURMAS:
                                 st.toast(f"Registrado: {aluno['nome']}")
                                 time.sleep(0.5)
                                 st.rerun()
-                            except Exception as e: st.error(f"Erro: {e}")
+                            except Exception as e: st.error(f"Erro ao registrar evasão: {e}")
     else:
-        st.info(f"Nenhum aluno em {turma_real}.")
+        st.info(f"Nenhum aluno encontrado na turma {turma_real} (Tabela: respostas_alunos).")
 else:
     st.error("🚫 Use o QR Code da sala.")
