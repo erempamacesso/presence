@@ -8,10 +8,16 @@ import json
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Gestão EREMPAM - Provas", layout="wide")
 
-# --- 2. CONEXÃO COM SUPABASE ---
-URL = st.secrets["SUPABASE_URL_PROVAS"]
-KEY = st.secrets["SUPABASE_KEY_PROVAS"]
-supabase = create_client(URL, KEY)
+# --- 2. CONEXÃO COM SUPABASE (DUPLA CONEXÃO CORRIGIDA) ---
+# Conexão 1: PROVAS (Avaliador-Provas)
+URL_P = st.secrets["SUPABASE_URL_PROVAS"]
+KEY_P = st.secrets["SUPABASE_KEY_PROVAS"]
+supabase = create_client(URL_P, KEY_P)
+
+# Conexão 2: ALUNOS (Chamada Escolar)
+URL_A = st.secrets["SUPABASE_URL_ALUNOS"]
+KEY_A = st.secrets["SUPABASE_KEY_ALUNOS"]
+supabase_alunos = create_client(URL_A, KEY_A)
 
 # --- 3. SISTEMA DE LOGIN ---
 if 'autenticado' not in st.session_state:
@@ -35,8 +41,8 @@ menu = st.sidebar.radio("Navegação", [
     "📝 Cadastrar Questões", 
     "📚 Biblioteca de Questões", 
     "📜 Gerar Modelo de Prova",
-    "📂 Provas Elaboradas",  # <-- ADICIONE ESTA LINHA AQUI
-    "🖨️ Lista de Matrículas", # <-- NOVA LINHA AQUI
+    "📂 Provas Elaboradas",  
+    "🖨️ Lista de Matrículas", 
     "🧹 Limpeza de Testes" 
 ])
 
@@ -65,13 +71,11 @@ if menu == "📊 Dashboard Diagnóstico":
 elif menu == "📝 Cadastrar Questões":
     st.title("🖊️ Criador de Atv. online do Prof. Lardião")
     
-    # SELETOR DE CONTEXTO (Serve para o manual e para o Importador)
     col_c1, col_c2, col_c3 = st.columns(3)
     with col_c1: serie_ctx = st.selectbox("Série/Ano", ["1º Ano", "2º Ano", "3º Ano"])
     with col_c2: assunto_ctx = st.text_input("Assunto (ex: Química Orgânica)")
     with col_c3: diff_ctx = st.select_slider("Dificuldade Padrão", options=["Fácil", "Média", "Difícil"])
 
-    # --- SUB-ABA: IMPORTADOR IA ---
     with st.expander("🚀 IMPORTADOR FLASH (COLE O JSON DA IA AQUI)", expanded=True):
         st.write("Gere as questões na IA, copie o JSON e cole abaixo:")
         json_input = st.text_area("Área do JSON:", height=250, placeholder='[ { "enunciado": "...", ... } ]')
@@ -79,25 +83,18 @@ elif menu == "📝 Cadastrar Questões":
         if st.button("📥 Importar Todas as Questões em Lote"):
             if json_input:
                 try:
-                    # Carrega o texto como um objeto Python (Lista ou Dicionário)
                     dados_json = json.loads(json_input)
-                    
-                    # BLINDAGEM: Se a IA gerou só uma questão fora de colchetes (dicionário), 
-                    # colocamos dentro de uma lista para o loop funcionar sem erros.
                     if isinstance(dados_json, dict):
                         lista_q = [dados_json]
                     else:
                         lista_q = dados_json
                         
                     for q in lista_q:
-                        # Lógica para achar a correta baseada no feedback positivo
-                        letra_correta = "B" # Padrão de segurança
+                        letra_correta = "B" 
                         for letra, fb in q["justificativas"].items():
-                            # Palavras-chave expandidas para capturar o gabarito
                             if any(word in fb.lower() for word in ["parabéns", "correto", "correta", "excelente", "muito bem", "exato", "perfeito"]):
                                 letra_correta = letra
                         
-                        # Monta o pacote de dados para enviar ao banco
                         dados_ia = {
                             "enunciado": q["enunciado"],
                             "alternativas": q["alternativas"],
@@ -107,8 +104,6 @@ elif menu == "📝 Cadastrar Questões":
                             "assunto": q.get("assunto", assunto_ctx if assunto_ctx else "Geral"),
                             "dificuldade": q.get("dificuldade", diff_ctx)
                         }
-                        
-                        # Insere no Supabase
                         supabase.table("questoes").insert(dados_ia).execute()
                         
                     st.success(f"🔥 {len(lista_q)} questão(ões) importada(s) com sucesso!")
@@ -119,7 +114,6 @@ elif menu == "📝 Cadastrar Questões":
 
     st.divider()
 
-    # --- SUB-ABA: CADASTRO MANUAL ---
     with st.expander("📝 Cadastro Manual Individual"):
         with st.form("manual_q", clear_on_submit=True):
             st.write("### Enunciado")
@@ -143,25 +137,18 @@ elif menu == "📝 Cadastrar Questões":
                 supabase.table("questoes").insert(dados_m).execute()
                 st.success("Questão salva com sucesso!")
 
-# --- 7. BIBLIOTECA DE QUESTÕES (SISTEMA COM TELA DE EDIÇÃO FOCADA) ---
+# --- 7. BIBLIOTECA DE QUESTÕES ---
 elif menu == "📚 Biblioteca de Questões":
-    
-    # 1. Variável de controle de estado (saber se estamos na Lista ou na Edição)
     if 'editando_id' not in st.session_state:
         st.session_state.editando_id = None
 
-    # ==========================================
-    # 🟢 MODO 1: TELA DE EDIÇÃO DA QUESTÃO
-    # ==========================================
     if st.session_state.editando_id is not None:
         st.title("✏️ Editar Questão")
         
-        # Botão para cancelar e voltar
         if st.button("⬅️ Voltar para a Biblioteca", type="secondary"):
             st.session_state.editando_id = None
             st.rerun()
             
-        # Buscar a questão selecionada no banco
         res_q = supabase.table("questoes").select("*").eq("id", st.session_state.editando_id).execute()
         
         if res_q.data:
@@ -181,7 +168,7 @@ elif menu == "📚 Biblioteca de Questões":
                 with c4: edit_diff = st.selectbox("Dificuldade", ["Fácil", "Média", "Difícil"], index=idx_diff)
                 
                 st.markdown("---")
-                st.markdown("📝 **Enunciado da Questão** (Cole textos ou imagens aqui)")
+                st.markdown("📝 **Enunciado da Questão**")
                 edit_enunciado = st_quill(value=q.get('enunciado', ''), html=True, key=f"q_editor_{q['id']}")
                 
                 st.markdown("---")
@@ -201,27 +188,18 @@ elif menu == "📚 Biblioteca de Questões":
                 
                 if btn_salvar:
                     dados_upd = {
-                        "serie": edit_serie,
-                        "assunto": edit_assunto,
-                        "resposta_correta": edit_gabarito,
-                        "dificuldade": edit_diff,
-                        "enunciado": edit_enunciado,
-                        "alternativas": edit_alts,
-                        "justificativas": edit_justs
+                        "serie": edit_serie, "assunto": edit_assunto, "resposta_correta": edit_gabarito,
+                        "dificuldade": edit_diff, "enunciado": edit_enunciado,
+                        "alternativas": edit_alts, "justificativas": edit_justs
                     }
                     supabase.table("questoes").update(dados_upd).eq("id", q['id']).execute()
-                    # Zera o estado para voltar à lista
                     st.session_state.editando_id = None
                     st.success("Alterações salvas com sucesso!")
                     st.rerun()
 
-    # ==========================================
-    # 🔵 MODO 2: TELA DE LISTAGEM (BIBLIOTECA)
-    # ==========================================
     else:
         st.title("📚 Biblioteca de Questões")
         
-        # Filtros
         col1, col2, col3 = st.columns(3)
         with col1: f_serie = st.multiselect("Série", ["1º Ano", "2º Ano", "3º Ano"])
         with col2:
@@ -242,7 +220,6 @@ elif menu == "📚 Biblioteca de Questões":
             st.write(f"🔍 Encontradas: **{len(data)}** questões")
             st.divider()
             
-            # Cabeçalho da Lista
             h_c1, h_c2, h_c3, h_c4, h_c5, h_c6 = st.columns([0.6, 0.8, 1.2, 4, 0.5, 0.8])
             h_c1.caption("ID")
             h_c2.caption("STATUS")
@@ -257,39 +234,24 @@ elif menu == "📚 Biblioteca de Questões":
                 
                 with st.container(border=True):
                     c1, c2, c3, c4, c5, c6 = st.columns([0.6, 0.8, 1.2, 4, 0.5, 0.8], gap="small")
-                    
-                    # ID curto
                     id_curto = str(q['id']).split('-')[0][:4] 
                     c1.write(f"#{id_curto}")
-                    
-                    # Status
                     c2.markdown('<span style="color: #28a745; background-color: #d4edda; padding: 4px; border-radius: 4px; font-size: 11px;">✅ Pronta</span>', unsafe_allow_html=True)
-                    
-                    # Classificação
                     c3.markdown(f"**{q['serie']}**<br><span style='color:#28a745; font-size:11px;'>{q['assunto'].upper()}</span>", unsafe_allow_html=True)
-                    
-                    # Enunciado
                     c4.write(previa)
-                    
-                    # Gabarito
                     c5.markdown(f"**{q['resposta_correta']}**")
                     
-                    # Botões de Ação
                     bc1, bc2 = c6.columns(2)
-                    
-                    # Botão Editar
                     if bc1.button("✏️", key=f"edit_{q['id']}", help="Editar questão"):
                         st.session_state.editando_id = q['id']
                         st.rerun()
-                        
-                    # Botão Excluir
                     if bc2.button("🗑️", key=f"del_{q['id']}", help="Excluir questão"):
                         supabase.table("questoes").delete().eq("id", q['id']).execute()
                         st.rerun()
         else:
             st.info("Nenhuma questão encontrada.")
 
-# --- 8. GERADOR DE MODELOS (ESTILO CARDS PROFISSIONAIS) E CONFIGURAÇÃO ---
+# --- 8. GERADOR DE MODELOS ---
 elif menu == "📜 Gerar Modelo de Prova":
     st.title("📜 Publicar Prova para Alunos")
     
@@ -301,9 +263,6 @@ elif menu == "📜 Gerar Modelo de Prova":
     df_q = pd.DataFrame(res_q.data)
     
     if not df_q.empty:
-        # ==========================================
-        # 🟢 ÁREA DE CONFIGURAÇÃO DA PROVA
-        # ==========================================
         st.subheader("⚙️ Configurações Gerais")
         with st.container(border=True):
             col_t1, col_t2 = st.columns([2, 1])
@@ -315,32 +274,20 @@ elif menu == "📜 Gerar Modelo de Prova":
             st.write("---")
             st.write("**Regras de Acesso e Tempo**")
             col_c1, col_c2, col_c3 = st.columns(3)
-            
-            with col_c1:
-                data_limite = st.date_input("📅 Data Limite")
-            with col_c2:
-                hora_limite = st.time_input("⏰ Hora Limite (Brasília)")
-            with col_c3:
-                tempo_duracao = st.number_input("⏳ Duração (Minutos)", min_value=10, max_value=300, value=60, step=10)
+            with col_c1: data_limite = st.date_input("📅 Data Limite")
+            with col_c2: hora_limite = st.time_input("⏰ Hora Limite (Brasília)")
+            with col_c3: tempo_duracao = st.number_input("⏳ Duração (Minutos)", min_value=10, max_value=300, value=60, step=10)
 
             st.write("---")
             st.write("**Pontuação e Sorteio**")
             col_p1, col_p2 = st.columns(2)
-            
-            with col_p1:
-                qtd_questoes = st.number_input("🔢 Banco de Questões (Total Selecionado)", min_value=1, max_value=100, value=10)
-            
+            with col_p1: qtd_questoes = st.number_input("🔢 Banco de Questões (Total)", min_value=1, max_value=100, value=10)
             with col_p2:
-                valor_questao = st.number_input("⭐ Valor de cada Questão (Pontos)", min_value=0.1, max_value=10.0, value=1.0, step=0.5)
-                # NOVO: Campo para definir quantas questões o aluno de fato verá (Sorteio)
-                qtd_sorteio = st.number_input("🎲 Sorteio: Questões por Aluno", 
-                                               min_value=1, 
-                                               max_value=int(qtd_questoes), 
-                                               value=int(qtd_questoes),
-                                               help="Ex: Selecione 20 questões abaixo, mas defina 8 aqui para que cada aluno receba 8 questões aleatórias das 20.")
+                valor_questao = st.number_input("⭐ Valor de cada Questão", min_value=0.1, max_value=10.0, value=1.0, step=0.5)
+                qtd_sorteio = st.number_input("🎲 Sorteio: Questões por Aluno", min_value=1, max_value=int(qtd_questoes), value=int(qtd_questoes))
         
         st.divider()
-        st.subheader("📋 Selecione as Questões para a Prova")
+        st.subheader("📋 Selecione as Questões")
         
         qs_disp = df_q[df_q['serie'] == ser]
         
@@ -359,7 +306,7 @@ elif menu == "📜 Gerar Modelo de Prova":
             
             with st.container(border=True):
                 c1, c2, c3, c4, c5 = st.columns([0.8, 1.2, 5, 0.5, 0.5])
-                c1.markdown('<span style="color: #28a745; background-color: #d4edda; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">✅ Pronta</span>', unsafe_allow_html=True)
+                c1.markdown('<span style="color: #28a745; font-size: 12px; font-weight: bold;">✅ Pronta</span>', unsafe_allow_html=True)
                 c2.markdown(f"**{row['serie']}**\n\n<span style='color: #28a745; font-size: 11px; font-weight: bold;'>{row['assunto'].upper()}</span>", unsafe_allow_html=True)
                 c3.write(previa)
                 with c3.expander("🔍 Ver questão completa"):
@@ -376,7 +323,7 @@ elif menu == "📜 Gerar Modelo de Prova":
         if qtd_selecionada == qtd_questoes:
             col_fim1.success(f"📂 Perfeito! Você selecionou {qtd_selecionada} de {qtd_questoes} questões para o banco da prova.")
         else:
-            col_fim1.warning(f"📂 Atenção: Você selecionou {qtd_selecionada} questões. O banco configurado exige {qtd_questoes}.")
+            col_fim1.warning(f"📂 Atenção: Você selecionou {qtd_selecionada} questões. O banco exige {qtd_questoes}.")
         
         if col_fim2.button("🚀 Publicar Prova", type="primary", use_container_width=True):
             if not tit:
@@ -389,15 +336,9 @@ elif menu == "📜 Gerar Modelo de Prova":
                     data_hora_iso = data_hora_combinada.isoformat()
 
                     supabase.table("modelos_prova").insert({
-                        "titulo": tit, 
-                        "serie": ser, 
-                        "questoes_ids": questoes_selecionadas, 
-                        "ativa": True,
-                        "data_limite": data_hora_iso,
-                        "tempo_duracao": tempo_duracao,
-                        "qtd_questoes": qtd_questoes,
-                        "qtd_sorteio": qtd_sorteio, 
-                        "valor_questao": valor_questao
+                        "titulo": tit, "serie": ser, "questoes_ids": questoes_selecionadas, 
+                        "ativa": True, "data_limite": data_hora_iso, "tempo_duracao": tempo_duracao,
+                        "qtd_questoes": qtd_questoes, "qtd_sorteio": qtd_sorteio, "valor_questao": valor_questao
                     }).execute()
                 
                 st.success(f"Prova '{tit}' publicada com sucesso!")
@@ -405,14 +346,12 @@ elif menu == "📜 Gerar Modelo de Prova":
                 time.sleep(2)
                 st.rerun()
     else:
-        st.warning("Nenhuma questão cadastrada para gerar provas.")
+        st.warning("Nenhuma questão cadastrada.")
 
 # --- 9. GERENCIAMENTO DE PROVAS ELABORADAS ---
 elif menu == "📂 Provas Elaboradas":
     st.title("📂 Gerenciar Provas Elaboradas")
-    st.markdown("Aqui você visualiza, ativa, desativa ou exclui as provas que já foram publicadas para os alunos.")
     
-    # Busca todas as provas no banco
     res_provas = supabase.table("modelos_prova").select("*").order("id", desc=True).execute()
     
     if res_provas.data:
@@ -421,51 +360,37 @@ elif menu == "📂 Provas Elaboradas":
         
         for prova in res_provas.data:
             with st.container(border=True):
-                # Ajustei as colunas para caber a nova informação de engajamento
                 c1, c2, c3, c4, c5 = st.columns([2.5, 1.5, 1.5, 2, 1.5], gap="small")
                 
-                # Identidade visual do Status
-                status_cor = "green" if prova.get('ativa') else "red"
                 status_texto = "🟢 ATIVA" if prova.get('ativa') else "🔴 INATIVA"
-                
-                # Formatação da data limite
                 dt_limite = prova.get('data_limite', 'Sem limite')
                 if dt_limite != 'Sem limite':
                     dt_limite = dt_limite[:16].replace("T", " às ")
                 
-                # Coluna 1: Título e Série
                 c1.markdown(f"### {prova.get('titulo', 'Sem título')}")
                 c1.markdown(f"**Série:** {prova.get('serie', 'Geral')} | **Prazo:** {dt_limite}")
                 
-                # Coluna 2: Status atual
                 c2.markdown(f"**Status:**")
                 c2.markdown(f"*{status_texto}*")
                 
-                # Coluna 3: Info do Sorteio
                 q_total = prova.get('qtd_questoes', 0)
                 q_sorteio = prova.get('qtd_sorteio', q_total)
                 c3.markdown("**Formato:**")
                 c3.caption(f"Banco: {q_total} | Sorteio: {q_sorteio}")
                 
-                # ==========================================
-                # 📊 NOVA LÓGICA: COLUNA 4 - ENGAJAMENTO
-                # ==========================================
+                # --- CORRIGIDO AQUI: USANDO supabase_alunos para buscar os alunos ---
                 serie_atual = prova.get('serie')
                 prova_id = prova.get('id')
                 
                 try:
-                    # 1. Pega o total de alunos da série (Ex: Todos do 3º Ano)
-                    # ATENÇÃO: Verifique se o nome da sua tabela é "alunos" e a coluna é "serie"
-                    res_alunos = supabase.table("alunos").select("id").eq("serie", serie_atual).execute()
+                    # Usando supabase_alunos para ler do projeto Chamada
+                    res_alunos = supabase_alunos.table("alunos").select("id").eq("serie", serie_atual).execute()
                     total_alunos = len(res_alunos.data) if res_alunos.data else 0
                     
-                    # 2. Pega quantos alunos únicos fizeram esta prova
-                    # ATENÇÃO: Verifique se sua tabela se chama "respostas" e tem "prova_id" e "aluno_id"
+                    # Usando supabase para ler do projeto de Provas
                     res_respostas = supabase.table("respostas_alunos").select("aluno_id").eq("prova_id", prova_id).execute()
-                    # Usamos set() para garantir que se o aluno fez a prova 2 vezes, ele conte só como 1
                     alunos_que_fizeram = len(set([r['aluno_id'] for r in res_respostas.data])) if res_respostas.data else 0
                     
-                    # 3. Calcula a porcentagem
                     if total_alunos > 0:
                         porcentagem = (alunos_que_fizeram / total_alunos) * 100
                     else:
@@ -473,16 +398,13 @@ elif menu == "📂 Provas Elaboradas":
                         
                     c4.markdown("**Engajamento:**")
                     c4.markdown(f"**{alunos_que_fizeram} / {total_alunos}** alunos")
-                    # Usamos HTML para colocar uma corzinha na porcentagem baseada no engajamento
                     cor_perc = "green" if porcentagem >= 70 else ("orange" if porcentagem >= 40 else "red")
                     c4.markdown(f"<span style='color:{cor_perc}; font-weight:bold;'>{porcentagem:.1f}% concluído</span>", unsafe_allow_html=True)
                     
                 except Exception as e:
                     c4.markdown("**Engajamento:**")
-                    c4.caption("Dados de alunos não encontrados.")
-                # ==========================================
+                    c4.caption("Dados não encontrados.")
                 
-                # Coluna 5: Botões de Ação
                 with c5:
                     texto_btn_status = "⏸️ Desativar" if prova.get('ativa') else "▶️ Ativar"
                     if st.button(texto_btn_status, key=f"status_{prova['id']}", use_container_width=True):
@@ -495,24 +417,20 @@ elif menu == "📂 Provas Elaboradas":
                         st.rerun()
                         
     else:
-        st.info("📌 Nenhuma prova foi elaborada ainda. Vá na aba 'Gerar Modelo de Prova' para criar a primeira!")
+        st.info("📌 Nenhuma prova foi elaborada ainda.")
 
 # --- 10. LISTA DE MATRÍCULAS PARA IMPRESSÃO ---
 elif menu == "🖨️ Lista de Matrículas":
     st.title("🖨️ Impressão de Matrículas por Turma")
     
-    # BOTÃO DE DIAGNÓSTICO
     if st.button("🔍 Testar Conexão com Tabelas"):
         try:
-            # TROCADO AQUI: supabase_alunos
             res = supabase_alunos.table("alunos").select("count", count="exact").limit(1).execute()
             st.success("✅ O sistema conseguiu encontrar a tabela 'alunos' no projeto da Chamada!")
         except Exception as e:
             st.error(f"❌ Erro Real: {e}")
 
-    # --- Lógica de Busca ---
     try:
-        # TROCADO AQUI: supabase_alunos
         res_turmas = supabase_alunos.table("alunos").select("turma").execute()
         if res_turmas.data:
             lista_turmas = sorted(list(set([t['turma'] for t in res_turmas.data if t['turma']])))
@@ -526,7 +444,6 @@ elif menu == "🖨️ Lista de Matrículas":
     if st.button("📄 Gerar Lista para Impressão", type="primary"):
         with st.spinner("Gerando lista..."):
             try:
-                # TROCADO AQUI: supabase_alunos
                 res_alunos = supabase_alunos.from_("alunos").select("nome, numero_matricula").eq("turma", turma_selecionada).order("nome").execute()
                 
                 if res_alunos.data:
@@ -547,3 +464,11 @@ elif menu == "🖨️ Lista de Matrículas":
                     st.warning(f"Nenhum aluno encontrado na turma {turma_selecionada}.")
             except Exception as e:
                 st.error(f"Erro na geração: {e}")
+
+# --- 11. LIMPEZA ---
+elif menu == "🧹 Limpeza de Testes":
+    st.title("🧹 Limpeza do Banco (Apenas testes)")
+    st.warning("Aqui você pode apagar todas as questões do projeto de Provas.")
+    if st.button("Apagar TODAS as questões", type="primary"):
+        supabase.table("questoes").delete().neq("id", "0").execute()
+        st.success("Tudo apagado!")
