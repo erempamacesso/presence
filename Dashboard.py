@@ -500,26 +500,34 @@ elif menu == "📂 Provas Elaboradas":
 # --- 10. LISTA DE MATRÍCULAS PARA IMPRESSÃO ---
 elif menu == "🖨️ Lista de Matrículas":
     st.title("🖨️ Impressão de Matrículas por Turma")
-    st.markdown("Gere a lista de alunos em ordem alfabética para afixar no mural da sala.")
+    
+    # BOTÃO DE DIAGNÓSTICO (Só para a gente testar se ele vê a tabela)
+    if st.button("🔍 Testar Conexão com Tabelas"):
+        try:
+            # Esse comando tenta listar as tabelas que a API consegue ver
+            res = supabase.table("alunos").select("count", count="exact").limit(1).execute()
+            st.success("✅ O sistema conseguiu encontrar a tabela 'alunos'!")
+        except Exception as e:
+            st.error(f"❌ Erro Real: {e}")
 
-    # Busca as turmas com proteção contra erros
+    # --- Lógica de Busca ---
     try:
+        # Tenta buscar as turmas
         res_turmas = supabase.table("alunos").select("turma").execute()
         if res_turmas.data:
             lista_turmas = sorted(list(set([t['turma'] for t in res_turmas.data if t['turma']])))
         else:
             lista_turmas = ["3º A", "3º B", "3º C"] 
-    except Exception as e:
-        st.error(f"Erro ao buscar turmas no banco. O Supabase respondeu: {e}")
-        lista_turmas = ["Turma Padrão"]
+    except:
+        lista_turmas = ["Erro ao carregar turmas"]
 
     turma_selecionada = st.selectbox("Selecione a Turma:", lista_turmas)
 
     if st.button("📄 Gerar Lista para Impressão", type="primary"):
         with st.spinner("Gerando lista..."):
             try:
-                # Busca os alunos com proteção contra erros
-                res_alunos = supabase.table("alunos").select("nome, numero_matricula").eq("turma", turma_selecionada).order("nome").execute()
+                # Mudamos aqui para garantir a busca correta
+                res_alunos = supabase.from_("alunos").select("nome, numero_matricula").eq("turma", turma_selecionada).order("nome").execute()
                 
                 if res_alunos.data:
                     dados_tabela = []
@@ -531,19 +539,11 @@ elif menu == "🖨️ Lista de Matrículas":
                         })
                     
                     df_lista = pd.DataFrame(dados_tabela)
-                    
                     st.divider()
                     st.subheader(f"ALUNOS DO {turma_selecionada.upper()}")
-                    
                     st.table(df_lista.set_index("Nº ORDEM"))
-                    
-                    st.success("✅ Lista gerada com sucesso!")
-                    st.info("🖨️ **Dica de Impressão:** Pressione `Ctrl + P` (ou `Cmd + P` no Mac) no seu teclado.")
+                    st.info("🖨️ Pressione `Ctrl + P` para imprimir.")
                 else:
-                    st.warning(f"Nenhum aluno encontrado cadastrado na turma {turma_selecionada}.")
-                    
-            except Exception as erro_busca:
-                # Se der erro de novo, ele não trava a tela vermelha, ele mostra o erro real aqui:
-                st.error("🚨 Opa! O banco de dados recusou a busca.")
-                st.code(f"Detalhe do erro para o Mestre: {erro_busca}")
-                st.info("Dica: Se o erro for 'PGRST205', vá no painel do Supabase, crie uma coluna falsa na tabela alunos e exclua logo em seguida para destravar o cache.")
+                    st.warning(f"Nenhum aluno encontrado na turma {turma_selecionada}.")
+            except Exception as e:
+                st.error(f"Erro na geração: {e}")
