@@ -497,11 +497,12 @@ elif menu == "📂 Provas Elaboradas":
     else:
         st.info("📌 Nenhuma prova foi elaborada ainda. Vá na aba 'Gerar Modelo de Prova' para criar a primeira!")
 
-       # --- 10. LISTA DE MATRÍCULAS PARA IMPRESSÃO ---
+# --- 10. LISTA DE MATRÍCULAS PARA IMPRESSÃO ---
 elif menu == "🖨️ Lista de Matrículas":
     st.title("🖨️ Impressão de Matrículas por Turma")
     st.markdown("Gere a lista de alunos em ordem alfabética para afixar no mural da sala.")
 
+    # Busca as turmas com proteção contra erros
     try:
         res_turmas = supabase.table("alunos").select("turma").execute()
         if res_turmas.data:
@@ -509,34 +510,40 @@ elif menu == "🖨️ Lista de Matrículas":
         else:
             lista_turmas = ["3º A", "3º B", "3º C"] 
     except Exception as e:
-        st.warning(f"Erro ao buscar turmas: {e}")
-        lista_turmas = ["Turma não encontrada"]
+        st.error(f"Erro ao buscar turmas no banco. O Supabase respondeu: {e}")
+        lista_turmas = ["Turma Padrão"]
 
     turma_selecionada = st.selectbox("Selecione a Turma:", lista_turmas)
 
     if st.button("📄 Gerar Lista para Impressão", type="primary"):
         with st.spinner("Gerando lista..."):
-            # CORREÇÃO AQUI: Mudamos 'matricula' para 'numero_matricula'
-            res_alunos = supabase.table("alunos").select("nome, numero_matricula").eq("turma", turma_selecionada).order("nome").execute()
-            
-            if res_alunos.data:
-                dados_tabela = []
-                for index, aluno in enumerate(res_alunos.data, start=1):
-                    dados_tabela.append({
-                        "Nº ORDEM": f"{index:02d}", 
-                        # CORREÇÃO AQUI TAMBÉM:
-                        "Nº MATRÍCULA": str(aluno.get('numero_matricula', 'S/N')),
-                        "NOME DO ESTUDANTE": str(aluno.get('nome', '')).upper()
-                    })
+            try:
+                # Busca os alunos com proteção contra erros
+                res_alunos = supabase.table("alunos").select("nome, numero_matricula").eq("turma", turma_selecionada).order("nome").execute()
                 
-                df_lista = pd.DataFrame(dados_tabela)
-                
-                st.divider()
-                st.subheader(f"ALUNOS DO {turma_selecionada.upper()}")
-                
-                st.table(df_lista.set_index("Nº ORDEM"))
-                
-                st.success("✅ Lista gerada com sucesso!")
-                st.info("🖨️ **Dica de Impressão:** Pressione `Ctrl + P` (ou `Cmd + P` no Mac) no seu teclado.")
-            else:
-                st.warning(f"Nenhum aluno encontrado cadastrado na turma {turma_selecionada}.")
+                if res_alunos.data:
+                    dados_tabela = []
+                    for index, aluno in enumerate(res_alunos.data, start=1):
+                        dados_tabela.append({
+                            "Nº ORDEM": f"{index:02d}", 
+                            "Nº MATRÍCULA": str(aluno.get('numero_matricula', 'S/N')),
+                            "NOME DO ESTUDANTE": str(aluno.get('nome', '')).upper()
+                        })
+                    
+                    df_lista = pd.DataFrame(dados_tabela)
+                    
+                    st.divider()
+                    st.subheader(f"ALUNOS DO {turma_selecionada.upper()}")
+                    
+                    st.table(df_lista.set_index("Nº ORDEM"))
+                    
+                    st.success("✅ Lista gerada com sucesso!")
+                    st.info("🖨️ **Dica de Impressão:** Pressione `Ctrl + P` (ou `Cmd + P` no Mac) no seu teclado.")
+                else:
+                    st.warning(f"Nenhum aluno encontrado cadastrado na turma {turma_selecionada}.")
+                    
+            except Exception as erro_busca:
+                # Se der erro de novo, ele não trava a tela vermelha, ele mostra o erro real aqui:
+                st.error("🚨 Opa! O banco de dados recusou a busca.")
+                st.code(f"Detalhe do erro para o Mestre: {erro_busca}")
+                st.info("Dica: Se o erro for 'PGRST205', vá no painel do Supabase, crie uma coluna falsa na tabela alunos e exclua logo em seguida para destravar o cache.")
