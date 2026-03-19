@@ -4,6 +4,8 @@ from streamlit_quill import st_quill
 import plotly.express as px
 import pandas as pd
 import json
+from fpdf import FPDF # <-- NOVO
+import base64         # <-- NOVO
 
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Gestão EREMPAM - Provas", layout="wide")
@@ -419,17 +421,11 @@ elif menu == "📂 Provas Elaboradas":
     else:
         st.info("📌 Nenhuma prova foi elaborada ainda.")
 
-# --- 10. LISTA DE MATRÍCULAS PARA IMPRESSÃO ---
+# --- 10. LISTA DE MATRÍCULAS PARA IMPRESSÃO (COM PDF) ---
 elif menu == "🖨️ Lista de Matrículas":
     st.title("🖨️ Impressão de Matrículas por Turma")
     
-    if st.button("🔍 Testar Conexão com Tabelas"):
-        try:
-            res = supabase_alunos.table("alunos").select("count", count="exact").limit(1).execute()
-            st.success("✅ O sistema conseguiu encontrar a tabela 'alunos' no projeto da Chamada!")
-        except Exception as e:
-            st.error(f"❌ Erro Real: {e}")
-
+    # Busca as turmas
     try:
         res_turmas = supabase_alunos.table("alunos").select("turma").execute()
         if res_turmas.data:
@@ -441,9 +437,10 @@ elif menu == "🖨️ Lista de Matrículas":
 
     turma_selecionada = st.selectbox("Selecione a Turma:", lista_turmas)
 
-    if st.button("📄 Gerar Lista para Impressão", type="primary"):
-        with st.spinner("Gerando lista..."):
+    if st.button("📄 Gerar Lista", type="primary"):
+        with st.spinner("Buscando alunos..."):
             try:
+                # Busca os alunos da turma
                 res_alunos = supabase_alunos.from_("alunos").select("nome, numero_matricula").eq("turma", turma_selecionada).order("nome").execute()
                 
                 if res_alunos.data:
@@ -456,19 +453,62 @@ elif menu == "🖨️ Lista de Matrículas":
                         })
                     
                     df_lista = pd.DataFrame(dados_tabela)
-                    st.divider()
-                    st.subheader(f"ALUNOS DO {turma_selecionada.upper()}")
-                    st.table(df_lista.set_index("Nº ORDEM"))
-                    st.info("🖨️ Pressione `Ctrl + P` para imprimir.")
+                    
+                    # -----------------------------------------------------
+                    # LÓGICA DE CRIAÇÃO DO PDF (DESIGN DO DOCUMENTO)
+                    # -----------------------------------------------------
+                    pdf = FPDF()
+                    pdf.add_page()
+                    
+                    # Título do Documento
+                    pdf.set_font("Arial", 'B', 14)
+                    pdf.cell(0, 10, f"ESCOLA EREMPAM - LISTA DE FREQUENCIA", ln=True, align='C')
+                    pdf.set_font("Arial", 'B', 12)
+                    pdf.cell(0, 10, f"Turma: {turma_selecionada.upper()}", ln=True, align='C')
+                    pdf.ln(5)
+                    
+                    # Cabeçalho da Tabela
+                    pdf.set_font("Arial", 'B', 10)
+                    pdf.cell(15, 8, "N", border=1, align='C')
+                    pdf.cell(35, 8, "MATRICULA", border=1, align='C')
+                    pdf.cell(140, 8, "NOME DO ESTUDANTE", border=1, align='C')
+                    pdf.ln()
+                    
+                    # Linhas da Tabela
+                    pdf.set_font("Arial", '', 10)
+                    for _, row in df_lista.iterrows():
+                        pdf.cell(15, 8, str(row["Nº ORDEM"]), border=1, align='C')
+                        pdf.cell(35, 8, str(row["Nº MATRÍCULA"]), border=1, align='C')
+                        
+                        # Tratamento para evitar erro com acentos no PDF
+                        nome_aluno = str(row["NOME DO ESTUDANTE"])
+                        nome_seguro = nome_aluno.encode('latin-1', 'replace').decode('latin-1')
+                        
+                        pdf.cell(140, 8, f" {nome_seguro}", border=1, align='L')
+                        pdf.ln()
+                    
+                    # Gera os bytes do PDF
+                    pdf_bytes = pdf.output(dest='S').encode('latin-1')
+                    
+                    # -----------------------------------------------------
+                    # EXIBIÇÃO NA TELA
+                    # -----------------------------------------------------
+                    st.success(f"✅ Lista da turma {turma_selecionada} gerada com {len(df_lista)} alunos!")
+                    
+                    # Botão Mágico de Download
+                    st.download_button(
+                        label="📥 Baixar Documento em PDF",
+                        data=pdf_bytes,
+                        file_name=f"Frequencia_{turma_selecionada}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
+                    
+                    # Mostra a prévia na tela também
+                    with st.expander("👀 Ver prévia na tela"):
+                        st.table(df_lista.set_index("Nº ORDEM"))
+                        
                 else:
                     st.warning(f"Nenhum aluno encontrado na turma {turma_selecionada}.")
             except Exception as e:
                 st.error(f"Erro na geração: {e}")
-
-# --- 11. LIMPEZA ---
-elif menu == "🧹 Limpeza de Testes":
-    st.title("🧹 Limpeza do Banco (Apenas testes)")
-    st.warning("Aqui você pode apagar todas as questões do projeto de Provas.")
-    if st.button("Apagar TODAS as questões", type="primary"):
-        supabase.table("questoes").delete().neq("id", "0").execute()
-        st.success("Tudo apagado!")
