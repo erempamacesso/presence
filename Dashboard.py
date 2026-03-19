@@ -501,10 +501,17 @@ elif menu == "📂 Provas Elaboradas":
                 prova_id = prova.get('id')
                 
                 try:
-                    res_alunos = supabase_alunos.table("alunos").select("id").eq("serie", serie_atual).execute()
+                    # ==========================================
+                    # 🎯 NOVA LÓGICA DE BUSCA DE ALUNOS AQUI
+                    # ==========================================
+                    # 1. Limpa a string da série (Transforma "3º Ano" em "3º")
+                    prefixo_turma = str(serie_atual).replace(" Ano", "").strip()
+                    
+                    # 2. Busca na tabela de alunos pela coluna 'turma' usando LIKE (qualquer turma que comece com o prefixo)
+                    res_alunos = supabase_alunos.table("alunos").select("id").ilike("turma", f"{prefixo_turma}%").execute()
                     total_alunos = len(res_alunos.data) if res_alunos.data else 0
                     
-                    # Correção sugerida aqui também: usar resultados_provas ao invés de respostas_alunos para checar engajamento
+                    # Checar engajamento na tabela de resultados de provas
                     res_respostas = supabase.table("resultados_provas").select("aluno_id").eq("prova_id", prova_id).execute()
                     alunos_que_fizeram = len(set([r['aluno_id'] for r in res_respostas.data])) if res_respostas.data else 0
                     
@@ -521,6 +528,7 @@ elif menu == "📂 Provas Elaboradas":
                 except Exception as e:
                     c4.markdown("**Engajamento:**")
                     c4.caption("Dados não encontrados.")
+                    # st.error(f"Erro: {e}") # Descomente essa linha temporariamente se ainda der erro para debugar
                 
                 with c5:
                     texto_btn_status = "⏸️ Desativar" if prova.get('ativa') else "▶️ Ativar"
