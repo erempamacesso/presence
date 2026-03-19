@@ -47,26 +47,34 @@ menu = st.sidebar.radio("Navegação", [
     "🖨️ Lista de Matrículas"
 ])
 
+
 # --- 5. LÓGICA DO DASHBOARD (NOVA ANÁLISE DE DADOS) ---
 if menu == "📊 Análise de Dados":
     st.title("📊 Análise de Dados e Diagnóstico")
     st.markdown("Acompanhe o engajamento e o desempenho das turmas em tempo real.")
     
     try:
-        res = supabase.table("dashboard_diagnostico").select("*").execute()
-        df = pd.DataFrame(res.data)
+        # 1. Buscar dados da View para Gráficos de Assunto
+        res_view = supabase.table("dashboard_diagnostico").select("*").execute()
+        df = pd.DataFrame(res_view.data)
         
-        if not df.empty:
+        # 2. Buscar dados Brutos para calcular o total de ESTUDANTES ÚNICOS (KPI)
+        res_raw = supabase.table("resultados_provas").select("aluno_id").execute()
+        
+        if not df.empty and res_raw.data:
             # --- SEÇÃO 1: KPIs (Visão Geral) ---
             st.markdown("### 🎯 Visão Geral")
             kpi1, kpi2, kpi3 = st.columns(3)
             
-            total_resp = df['total_respostas'].sum()
+            # Lógica de Estudantes Únicos (Corrige o erro de 50 para 10)
+            df_raw = pd.DataFrame(res_raw.data)
+            total_estudantes_unicos = df_raw['aluno_id'].nunique()
+            
             media_geral = df['perc_acerto'].mean()
             melhor_assunto = df.loc[df['perc_acerto'].idxmax()]['assunto'] if not df.empty else "N/A"
             
             with kpi1:
-                st.metric(label="Total de Respostas Coletadas", value=int(total_resp))
+                st.metric(label="Total de Estudantes que Responderam", value=int(total_estudantes_unicos))
             with kpi2:
                 st.metric(label="Média de Acertos Geral", value=f"{media_geral:.1f}%")
             with kpi3:
@@ -93,11 +101,16 @@ if menu == "📊 Análise de Dados":
                 st.plotly_chart(fig, use_container_width=True)
                 
             with col2:
-                st.subheader("Engajamento: Respostas por Série")
+                # Aqui o gráfico de pizza agora conta Alunos Únicos por Série
+                st.subheader("Engajamento: Estudantes por Série")
+                
+                # Buscamos a série de cada aluno para o gráfico de pizza ser preciso
+                res_pizza = supabase.table("resultados_provas").select("aluno_id, serie_estudante").execute()
+                df_pizza = pd.DataFrame(res_pizza.data).drop_duplicates(subset=['aluno_id'])
+                
                 fig2 = px.pie(
-                    df, 
-                    values='total_respostas', 
-                    names='serie', 
+                    df_pizza, 
+                    names='serie_estudante', 
                     hole=.4,
                     color_discrete_sequence=px.colors.sequential.Teal
                 )
@@ -107,7 +120,7 @@ if menu == "📊 Análise de Dados":
             st.divider()
             
             # --- SEÇÃO 3: TABELA DE DADOS ---
-            st.subheader("📋 Tabela de Dados Analíticos")
+            st.subheader("📋 Tabela de Dados Analíticos (Por Assunto)")
             
             df_view = df.copy()
             if 'perc_acerto' in df_view.columns:
@@ -122,69 +135,50 @@ if menu == "📊 Análise de Dados":
         else:
             st.info("📌 Nenhum dado de resposta geral encontrado ainda no banco de dados.")
 
-        # --- SEÇÃO 4: DESEMPENHO INDIVIDUAL (PONTUAÇÃO DOS ALUNOS) ---
+        # --- SEÇÃO 4: DESEMPENHO INDIVIDUAL ---
         st.divider()
-        st.subheader("🏆 Desempenho Individual por Prova")
+        st.subheader("🏆 Notas Individuais por Aluno")
         
-        # 1. Buscar todas as provas ativas/elaboradas
         res_provas = supabase.table("modelos_prova").select("id, titulo").order("id", desc=True).execute()
         
         if res_provas.data:
             dic_provas = {p['titulo']: p['id'] for p in res_provas.data}
-            prova_escolhida = st.selectbox("Selecione a Avaliação para ver as notas:", list(dic_provas.keys()))
+            prova_escolhida = st.selectbox("Selecione a Avaliação:", list(dic_provas.keys()))
             id_prova_sel = dic_provas[prova_escolhida]
             
-            # 2. Buscar as notas dessa prova no banco (CORRIGIDO PARA RESULTADOS_PROVAS)
             try:
+                # Busca resultados
                 res_notas = supabase.table("resultados_provas").select("aluno_id, acertou").eq("prova_id", id_prova_sel).execute()
                 
                 if res_notas.data:
                     df_notas = pd.DataFrame(res_notas.data)
-                    
-                    # Converte acertos de True/False para 1/0
                     df_notas["pontos"] = df_notas["acertou"].astype(int)
+                    # Agrupa por aluno somando os acertos
                     df_notas_agrupadas = df_notas.groupby("aluno_id")["pontos"].sum().reset_index()
                     
-                    # 3. Buscar os Nomes e Turmas no banco de ALUNOS (CHAMADAESCOLAR)
-                    # Convertendo a lista de IDs para inteiros para o banco de alunos
-                    lista_ids_int = [int(i) for i in df_notas_agrupadas["aluno_id"].tolist() if str(i).isdigit()]
-                    
-                    res_alunos_bd = supabase_alunos.table("alunos").select("id, nome, turma").in_("id", lista_ids_int).execute()
+                    # Busca nomes no banco de alunos
+                    lista_ids = [int(i) for i in df_notas_agrupadas["aluno_id"].tolist() if str(i).isdigit()]
+                    res_alunos_bd = supabase_alunos.table("alunos").select("id, nome, turma").in_("id", lista_ids).execute()
                     
                     if res_alunos_bd.data:
                         df_alunos = pd.DataFrame(res_alunos_bd.data)
-                        
-                        # Padroniza tudo como texto (String) para cruzar sem erro
                         df_alunos["id"] = df_alunos["id"].astype(str)
                         df_notas_agrupadas["aluno_id"] = df_notas_agrupadas["aluno_id"].astype(str)
                         
-                        # 4. Cruzar os dados (Merge)
                         df_final = pd.merge(df_alunos, df_notas_agrupadas, left_on="id", right_on="aluno_id")
-                        
-                        # Organizar do maior pro menor ponto
                         df_final = df_final[["nome", "turma", "pontos"]].sort_values(by="pontos", ascending=False)
                         df_final.columns = ["Nome do Estudante", "Turma", "Total de Acertos"]
                         
-                        # 5. Exibir na tela (CORRIGIDO: Sem matplotlib)
-                        st.dataframe(
-                            df_final,
-                            use_container_width=True,
-                            hide_index=True
-                        )
+                        st.dataframe(df_final, use_container_width=True, hide_index=True)
                     else:
-                        st.warning("Não foi possível carregar os nomes dos alunos vinculados a essas respostas no banco escolar.")
+                        st.warning("Alunos não encontrados no banco de dados escolar.")
                 else:
-                    st.info("Nenhum aluno finalizou esta avaliação ainda.")
-                    
-            except Exception as erro_notas:
-                st.error(f"Erro ao processar as notas: {erro_notas}")
-                
-        else:
-            st.info("Nenhuma prova cadastrada no sistema.")
+                    st.info("Ninguém respondeu esta prova ainda.")
+            except Exception as e:
+                st.error(f"Erro ao processar: {e}")
 
     except Exception as e:
-        st.error(f"Erro ao carregar a análise de dados do Dashboard: {e}")
-        st.warning("Verifique se a View SQL 'dashboard_diagnostico' está retornando os dados corretamente no Supabase.")
+        st.error(f"Erro geral: {e}")
 
 # --- 6. CADASTRO DE QUESTÕES (MANUAL + IA) ---
 elif menu == "📝 Cadastrar Questões":
