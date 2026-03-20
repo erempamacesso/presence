@@ -54,11 +54,11 @@ if menu == "📊 Análise de Dados":
     st.markdown("Acompanhe o engajamento e o desempenho das turmas em tempo real.")
     
     try:
-        # 1. Buscar dados da View para Gráficos de Assunto
+        # 1. Buscar dados da View para Gráficos e KPIs
         res_view = supabase.table("dashboard_diagnostico").select("*").execute()
         df = pd.DataFrame(res_view.data)
         
-        # 2. Buscar dados Brutos para calcular o total de ESTUDANTES ÚNICOS (KPI)
+        # 2. Buscar dados Brutos para o KPI de Estudantes Únicos
         res_raw = supabase.table("resultados_provas").select("aluno_id").execute()
         
         if not df.empty and res_raw.data:
@@ -66,7 +66,6 @@ if menu == "📊 Análise de Dados":
             st.markdown("### 🎯 Visão Geral")
             kpi1, kpi2, kpi3 = st.columns(3)
             
-            # Lógica de Estudantes Únicos (Corrige o erro de 50 para 10)
             df_raw = pd.DataFrame(res_raw.data)
             total_estudantes_unicos = df_raw['aluno_id'].nunique()
             
@@ -101,16 +100,17 @@ if menu == "📊 Análise de Dados":
                 st.plotly_chart(fig, use_container_width=True)
                 
             with col2:
-                # Aqui o gráfico de pizza agora conta Alunos Únicos por Série
-                st.subheader("Engajamento: Estudantes por Série")
+                # CORREÇÃO AQUI: Usamos o 'df' da View que já contém a coluna 'serie' 
+                # e o 'total_respostas' (ou podemos agrupar para evitar duplicatas de assunto)
+                st.subheader("Engajamento: Respostas por Série")
                 
-                # Buscamos a série de cada aluno para o gráfico de pizza ser preciso
-                res_pizza = supabase.table("resultados_provas").select("aluno_id, serie_estudante").execute()
-                df_pizza = pd.DataFrame(res_pizza.data).drop_duplicates(subset=['aluno_id'])
+                # Agrupamos por série para o gráfico de pizza não repetir fatias por assunto
+                df_pizza = df.groupby("serie")["total_respostas"].sum().reset_index()
                 
                 fig2 = px.pie(
                     df_pizza, 
-                    names='serie_estudante', 
+                    values='total_respostas',
+                    names='serie', 
                     hole=.4,
                     color_discrete_sequence=px.colors.sequential.Teal
                 )
@@ -121,19 +121,14 @@ if menu == "📊 Análise de Dados":
             
             # --- SEÇÃO 3: TABELA DE DADOS ---
             st.subheader("📋 Tabela de Dados Analíticos (Por Assunto)")
-            
             df_view = df.copy()
             if 'perc_acerto' in df_view.columns:
                 df_view['perc_acerto'] = df_view['perc_acerto'].apply(lambda x: f"{x:.1f}%")
 
-            st.dataframe(
-                df_view,
-                use_container_width=True,
-                hide_index=True
-            )
+            st.dataframe(df_view, use_container_width=True, hide_index=True)
             
         else:
-            st.info("📌 Nenhum dado de resposta geral encontrado ainda no banco de dados.")
+            st.info("📌 Nenhum dado de resposta encontrado no banco de dados.")
 
         # --- SEÇÃO 4: DESEMPENHO INDIVIDUAL ---
         st.divider()
@@ -147,16 +142,13 @@ if menu == "📊 Análise de Dados":
             id_prova_sel = dic_provas[prova_escolhida]
             
             try:
-                # Busca resultados
                 res_notas = supabase.table("resultados_provas").select("aluno_id, acertou").eq("prova_id", id_prova_sel).execute()
                 
                 if res_notas.data:
                     df_notas = pd.DataFrame(res_notas.data)
                     df_notas["pontos"] = df_notas["acertou"].astype(int)
-                    # Agrupa por aluno somando os acertos
                     df_notas_agrupadas = df_notas.groupby("aluno_id")["pontos"].sum().reset_index()
                     
-                    # Busca nomes no banco de alunos
                     lista_ids = [int(i) for i in df_notas_agrupadas["aluno_id"].tolist() if str(i).isdigit()]
                     res_alunos_bd = supabase_alunos.table("alunos").select("id, nome, turma").in_("id", lista_ids).execute()
                     
@@ -175,7 +167,7 @@ if menu == "📊 Análise de Dados":
                 else:
                     st.info("Ninguém respondeu esta prova ainda.")
             except Exception as e:
-                st.error(f"Erro ao processar: {e}")
+                st.error(f"Erro ao processar notas: {e}")
 
     except Exception as e:
         st.error(f"Erro geral: {e}")
