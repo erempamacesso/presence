@@ -6,6 +6,9 @@ import pandas as pd
 import json
 from fpdf import FPDF
 import base64
+import re
+from datetime import datetime
+import time
 
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Gestão EREMPAM - Provas", layout="wide")
@@ -47,7 +50,6 @@ menu = st.sidebar.radio("Navegação", [
     "🖨️ Lista de Matrículas"
 ])
 
-
 # --- 5. LÓGICA DO DASHBOARD (NOVA ANÁLISE DE DADOS) ---
 if menu == "📊 Análise de Dados":
     st.title("📊 Análise de Dados e Diagnóstico")
@@ -63,11 +65,8 @@ if menu == "📊 Análise de Dados":
         
         if not df.empty and res_raw.data:
             # --- TRATAMENTO DE DADOS (EXTRAÇÃO DE SÉRIE E TURMA) ---
-            # Isola o "1º", "2º" ou "3º"
             df['serie_curta'] = df['serie'].str.extract(r'(1º|2º|3º)')
-            # Isola a letra da turma (A, B, C, D ou E)
             df['letra_turma'] = df['serie'].str.extract(r'([A-E])')
-            # Garante que valores vazios não quebrem o código
             df['serie_curta'] = df['serie_curta'].fillna("N/A")
             df['letra_turma'] = df['letra_turma'].fillna("Geral")
 
@@ -91,7 +90,6 @@ if menu == "📊 Análise de Dados":
             st.divider()
             
             # --- SEÇÃO 2: GRÁFICOS INTERATIVOS ---
-            # Filtro para o Professor focar em uma série específica
             lista_series_filtro = sorted([s for s in df['serie_curta'].unique() if s != "N/A"])
             serie_foco = st.selectbox("🎯 Selecione a Série para detalhar:", ["Todas"] + lista_series_filtro)
             
@@ -107,7 +105,7 @@ if menu == "📊 Análise de Dados":
                     df_filtrado, 
                     x="assunto", 
                     y="perc_acerto", 
-                    color="letra_turma",  # <--- CORES DIFERENTES POR TURMA (A, B, C...)
+                    color="letra_turma",
                     barmode="group", 
                     text_auto='.1f',
                     labels={'perc_acerto': '% de Acerto', 'assunto': 'Assunto', 'letra_turma': 'Turma'},
@@ -118,7 +116,6 @@ if menu == "📊 Análise de Dados":
                 
             with col2:
                 st.subheader("Engajamento Total por Série")
-                # Agrupamos pelo "1º, 2º, 3º" extraído
                 df_pizza = df.groupby("serie_curta")["total_respostas"].sum().reset_index()
                 
                 fig2 = px.pie(
@@ -146,10 +143,8 @@ if menu == "📊 Análise de Dados":
             )
             
         else:
-            st.info("📌 Nenhum dado de resposta encontrado no banco de dados.")
+            st.info("📌 Nenhum dado de resposta de turmas encontrado no banco de dados.")
 
-    except Exception as e:
-        st.error(f"Erro geral no Dashboard: {e}")
         # --- SEÇÃO 4: DESEMPENHO INDIVIDUAL ---
         st.divider()
         st.subheader("🏆 Notas Individuais por Aluno")
@@ -158,7 +153,7 @@ if menu == "📊 Análise de Dados":
         
         if res_provas.data:
             dic_provas = {p['titulo']: p['id'] for p in res_provas.data}
-            prova_escolhida = st.selectbox("Selecione a Avaliação:", list(dic_provas.keys()))
+            prova_escolhida = st.selectbox("Selecione a Avaliação para ver as notas:", list(dic_provas.keys()))
             id_prova_sel = dic_provas[prova_escolhida]
             
             try:
@@ -190,7 +185,7 @@ if menu == "📊 Análise de Dados":
                 st.error(f"Erro ao processar notas: {e}")
 
     except Exception as e:
-        st.error(f"Erro geral: {e}")
+        st.error(f"Erro geral no Dashboard: {e}")
 
 # --- 6. CADASTRO DE QUESTÕES (MANUAL + IA) ---
 elif menu == "📝 Cadastrar Questões":
@@ -341,7 +336,6 @@ elif menu == "📚 Biblioteca de Questões":
         data = query.execute().data
         
         if data:
-            import re
             st.write(f"🔍 Encontradas: **{len(data)}** questões")
             st.divider()
             
@@ -380,10 +374,6 @@ elif menu == "📚 Biblioteca de Questões":
 elif menu == "📜 Gerar Modelo de Prova":
     st.title("📜 Publicar Prova para Alunos")
     
-    import re
-    from datetime import datetime
-    import time
-
     res_q = supabase.table("questoes").select("id, assunto, serie, dificuldade, enunciado, resposta_correta").execute()
     df_q = pd.DataFrame(res_q.data)
     
@@ -507,17 +497,11 @@ elif menu == "📂 Provas Elaboradas":
                 prova_id = prova.get('id')
                 
                 try:
-                    # ==========================================
-                    # 🎯 NOVA LÓGICA DE BUSCA DE ALUNOS AQUI
-                    # ==========================================
-                    # 1. Limpa a string da série (Transforma "3º Ano" em "3º")
+                    # NOVA LÓGICA DE BUSCA DE ALUNOS
                     prefixo_turma = str(serie_atual).replace(" Ano", "").strip()
-                    
-                    # 2. Busca na tabela de alunos pela coluna 'turma' usando LIKE (qualquer turma que comece com o prefixo)
                     res_alunos = supabase_alunos.table("alunos").select("id").ilike("turma", f"{prefixo_turma}%").execute()
                     total_alunos = len(res_alunos.data) if res_alunos.data else 0
                     
-                    # Checar engajamento na tabela de resultados de provas
                     res_respostas = supabase.table("resultados_provas").select("aluno_id").eq("prova_id", prova_id).execute()
                     alunos_que_fizeram = len(set([r['aluno_id'] for r in res_respostas.data])) if res_respostas.data else 0
                     
@@ -534,7 +518,6 @@ elif menu == "📂 Provas Elaboradas":
                 except Exception as e:
                     c4.markdown("**Engajamento:**")
                     c4.caption("Dados não encontrados.")
-                    # st.error(f"Erro: {e}") # Descomente essa linha temporariamente se ainda der erro para debugar
                 
                 with c5:
                     texto_btn_status = "⏸️ Desativar" if prova.get('ativa') else "▶️ Ativar"
