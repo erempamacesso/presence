@@ -72,7 +72,7 @@ def descobrir_aula_atual(hora_agora):
     else: return "Encerrado"
 
 # ==========================================
-# 2. LÓGICA DO APLICATIVO (ATUALIZADA)
+# 2. LÓGICA DO APLICATIVO
 # ==========================================
 token_url = st.query_params.get("t", None)
 if isinstance(token_url, list): token_url = token_url[0]
@@ -86,11 +86,10 @@ if token_url and token_url in MAPA_TURMAS:
     fuso = pytz.timezone('America/Recife')
     agora = datetime.now(fuso)
     data_hoje = agora.strftime('%Y-%m-%d')
-    # Garantimos que a hora atual seja comparável e precisa
     hora_atual = dt_time(agora.hour, agora.minute) 
     cache_buster = int(time.time())
 
-    # Barra de status para conferência do professor
+    # Barra de status para conferência do professor/aluno
     st.info(f"🕒 **Relógio do Sistema:** {agora.strftime('%H:%M')} | **Data:** {agora.strftime('%d/%m/%Y')}")
 
     try:
@@ -104,46 +103,95 @@ if token_url and token_url in MAPA_TURMAS:
     if alunos:
         tab1, tab2 = st.tabs(["📝 Chamada Manhã", "🏃 Registro de Evasão"])
 
+        # ==========================================
+        # ABA 1: CHAMADA DA MANHÃ (TOTALMENTE REVISADA)
+        # ==========================================
         with tab1:
-            # Mantive sua lógica de formulário para a chamada
+            st.markdown("### 📋 Registro de Presença")
+            st.caption("Desmarque os alunos ausentes e clique em Finalizar.")
+
+            # 1. VERIFICAR SE A CHAMADA JÁ FOI FEITA HOJE
+            try:
+                res_freq = supabase.table("frequencia").select("aluno_nome, status").eq("turma", turma_real).eq("data_chamada", data_hoje).execute()
+                dados_freq_hoje = res_freq.data
+                status_banco = {f['aluno_nome']: f['status'] for f in dados_freq_hoje}
+            except Exception as e:
+                st.warning(f"Aviso ao verificar chamada anterior: {e}")
+                status_banco = {}
+
+            # Mensagem de status visual para o usuário
+            if status_banco:
+                st.success("✅ A chamada de hoje já foi registrada! Você pode alterá-la abaixo se necessário.")
+            else:
+                st.info("⚠️ A chamada de hoje ainda não foi feita.")
+
+            # 2. FORMULÁRIO DE CHAMADA
             with st.form("form_chamada"):
                 presencas = {}
+                
                 for i, aluno in enumerate(alunos):
+                    nome_aluno = aluno['nome']
                     col_foto, col_nome, col_check = st.columns([1, 3, 2])
-                    nome_arq = mapa_fotos.get(limpar_texto_absoluto(aluno['nome']))
+                    
+                    nome_arq = mapa_fotos.get(limpar_texto_absoluto(nome_aluno))
                     url_img = f"{SUPABASE_URL}/storage/v1/object/public/fotos-alunos/{quote(nome_arq)}?t={cache_buster}" if nome_arq else "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png"
                     
                     col_foto.image(url_img, width=60)
-                    col_nome.markdown(f"<div style='padding-top:15px'><b>{aluno['nome']}</b></div>", unsafe_allow_html=True)
-                    presencas[aluno['nome']] = col_check.checkbox("Presente", value=True, key=f"c_{i}")
+                    col_nome.markdown(f"<div style='padding-top:15px'><b>{nome_aluno}</b></div>", unsafe_allow_html=True)
+                    
+                    # Lógica do checkbox: respeita o banco de dados se a chamada já foi feita
+                    if status_banco:
+                        valor_padrao = True if status_banco.get(nome_aluno) == "P" else False
+                    else:
+                        valor_padrao = True
+                        
+                    presencas[nome_aluno] = col_check.checkbox("Presente", value=valor_padrao, key=f"c_{i}")
 
-                if st.form_submit_button("🚀 FINALIZAR CHAMADA", use_container_width=True):
-                    dados = [{"turma": turma_real, "aluno_nome": n, "status": "P" if p else "F", "data_chamada": data_hoje} for n, p in presencas.items()]
+                # 3. LÓGICA DE SALVAMENTO SEGURA
+                submit = st.form_submit_button("🚀 FINALIZAR CHAMADA", use_container_width=True, type="primary")
+                
+                if submit:
+                    dados_insercao = [
+                        {
+                            "turma": turma_real, 
+                            "aluno_nome": n, 
+                            "status": "P" if is_presente else "F", 
+                            "data_chamada": data_hoje
+                        } 
+                        for n, is_presente in presencas.items()
+                    ]
+                    
                     try:
-                        supabase.table("frequencia").delete().match({"turma": turma_real, "data_chamada": data_hoje}).execute()
-                        supabase.table("frequencia").insert(dados).execute()
-                        st.success("Chamada salva com sucesso!")
-                        time.sleep(1)
-                        st.rerun()
+                        with st.spinner("Salvando chamada no sistema..."):
+                            # Deleta registros anteriores do dia para evitar duplicidade
+                            supabase.table("frequencia").delete().match({"turma": turma_real, "data_chamada": data_hoje}).execute()
+                            # Insere a nova lista validada
+                            res_insert = supabase.table("frequencia").insert(dados_insercao).execute()
+                            
+                        if res_insert.data:
+                            st.success("🎉 Chamada salva com sucesso!")
+                            time.sleep(1.5) # Aguarda para garantir que a inserção terminou e o usuário leu a msg
+                            st.rerun()
+                        else:
+                             st.error("Falha ao salvar. Nenhuma confirmação recebida do servidor.")
                     except Exception as e:
-                        st.error(f"Erro ao salvar: {e}")
+                        st.error(f"Erro grave ao salvar: {e}")
 
+        # ==========================================
+        # ABA 2: REGISTRO DE EVASÃO
+        # ==========================================
         with tab2:
-            # --- LÓGICA DE AULA AUTOMÁTICA CORRIGIDA ---
             aula_sug = descobrir_aula_atual(hora_atual)
             lista_aulas = ["1º Aula", "2º Aula", "3º Aula", "4º Aula", "5º Aula", "6º Aula", "7º Aula", "8º Aula", "9º Aula"]
             
-            # Se o retorno da função não estiver na lista (ex: "Intervalo"), ele volta para a 1ª aula ou mantém a sugestão
             if aula_sug in lista_aulas:
                 idx_aula = lista_aulas.index(aula_sug)
             else:
-                # Caso seja intervalo, você pode decidir se ele marca a última aula ou a primeira
                 idx_aula = 0 
 
             aula_sel = st.selectbox("Selecione a Aula para Registro:", lista_aulas, index=idx_aula)
             st.write(f"📌 *Sugestão atual baseada no horário:* **{aula_sug}**")
             
-            # Busca quem já fugiu na aula selecionada
             try:
                 res_ev = supabase.table("evasoes").select("aluno_nome").eq("data_registro", data_hoje).eq("aula_periodo", aula_sel).eq("turma", turma_real).execute()
                 fugoes = [r['aluno_nome'] for r in res_ev.data] if res_ev.data else []

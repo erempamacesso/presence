@@ -299,7 +299,7 @@ elif menu == "📚 Biblioteca de Questões":
             st.session_state.editando_id = None
             st.rerun()
             
-        # Busca a questão incluindo a coluna 'revisada' (CRIE ESTA COLUNA NO SUPABASE COMO BOOLEAN)
+        # Busca a questão incluindo a coluna 'revisada'
         res_q = supabase.table("questoes").select("*").eq("id", st.session_state.editando_id).execute()
         
         if res_q.data:
@@ -307,25 +307,45 @@ elif menu == "📚 Biblioteca de Questões":
             
             with st.form(key=f"form_edita_{q['id']}"):
                 st.markdown("### ⚙️ Configurações e Validação")
-                c1, c2, c3 = st.columns([1, 2, 1])
                 
-                with c1: 
+                # --- NOVA LÓGICA DE ASSUNTO ---
+                st.markdown("🔍 **Classificação do Assunto**")
+                c_serie, c_diff = st.columns(2)
+                
+                with c_serie: 
                     edit_serie = st.selectbox("Série", ["1º Ano", "2º Ano", "3º Ano"], 
                                              index=["1º Ano", "2º Ano", "3º Ano"].index(q.get('serie', "1º Ano")))
                 
-                with c2:
-                    # LÓGICA DE ASSUNTO PADRONIZADO
-                    st.write("**Assunto**")
-                    sel_assunto = st.selectbox("Escolha um existente:", ["-- NOVO ASSUNTO --"] + assuntos_existentes, 
-                                              index=assuntos_existentes.index(q.get('assunto')) + 1 if q.get('assunto') in assuntos_existentes else 0)
-                    novo_assunto = st.text_input("Ou digite um novo (se marcou a opção acima):")
-                    
-                    # Define qual assunto usar
-                    assunto_final = novo_assunto if sel_assunto == "-- NOVO ASSUNTO --" else sel_assunto
-
-                with c3:
+                with c_diff:
                     edit_diff = st.selectbox("Dificuldade", ["Fácil", "Média", "Difícil"], 
                                             index=["Fácil", "Média", "Difícil"].index(q.get('dificuldade', "Média")))
+
+                st.markdown("<br>", unsafe_allow_html=True)
+                c_sel, c_novo = st.columns([1, 1])
+                
+                with c_sel:
+                    # Adicionamos uma opção neutra no topo
+                    opcoes_assunto = ["-- SELECIONE UM EXISTENTE --"] + assuntos_existentes
+                    
+                    # Tenta pré-selecionar o assunto atual da questão se ele já estiver na lista
+                    idx_atual = 0
+                    if q.get('assunto') in assuntos_existentes:
+                        idx_atual = assuntos_existentes.index(q.get('assunto')) + 1
+                        
+                    assunto_selecionado = st.selectbox(
+                        "Assuntos já gravados (Selecione um para padronizar):", 
+                        opcoes_assunto, 
+                        index=idx_atual
+                    )
+
+                with c_novo:
+                    # Campo para sobrescrever ou criar um novo
+                    assunto_manual = st.text_input(
+                        "Ou crie um NOVO nome (Substitui a seleção ao lado):", 
+                        value="", 
+                        placeholder=f"Atual: {q.get('assunto', '')}"
+                    )
+                # ------------------------------
 
                 st.divider()
                 st.markdown("📝 **Enunciado da Questão**")
@@ -352,8 +372,18 @@ elif menu == "📚 Biblioteca de Questões":
                 btn_salvar = st.form_submit_button("✅ SALVAR E MARCAR COMO PRONTA", type="primary", use_container_width=True)
                 
                 if btn_salvar:
-                    if sel_assunto == "-- NOVO ASSUNTO --" and not novo_assunto:
-                        st.error("Por favor, digite o nome do novo assunto.")
+                    # Define a lógica final: prioridade para o que foi digitado manualmente
+                    if assunto_manual.strip() != "":
+                        assunto_final = assunto_manual.strip()
+                    else:
+                        # Se não digitou nada, usa o que selecionou no selectbox (se não for a opção neutra)
+                        if assunto_selecionado != "-- SELECIONE UM EXISTENTE --":
+                            assunto_final = assunto_selecionado
+                        else:
+                            assunto_final = q.get('assunto', '') # Mantém o original se nada for feito
+
+                    if not assunto_final:
+                         st.error("Por favor, defina um assunto para a questão.")
                     else:
                         dados_upd = {
                             "serie": edit_serie, 
@@ -363,7 +393,7 @@ elif menu == "📚 Biblioteca de Questões":
                             "enunciado": edit_enunciado,
                             "alternativas": edit_alts, 
                             "justificativas": edit_justs,
-                            "revisada": True  # AQUI A MÁGICA ACONTECE
+                            "revisada": True  # MARCA COMO PRONTA
                         }
                         supabase.table("questoes").update(dados_upd).eq("id", q['id']).execute()
                         st.session_state.editando_id = None
@@ -433,6 +463,8 @@ elif menu == "📚 Biblioteca de Questões":
                     if bc2.button("🗑️", key=f"del_{q['id']}"):
                         supabase.table("questoes").delete().eq("id", q['id']).execute()
                         st.rerun()
+        else:
+            st.info("Nenhuma questão encontrada.")
 
 # --- 8. GERADOR DE MODELOS ---
 elif menu == "📜 Gerar Modelo de Prova":
