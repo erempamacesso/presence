@@ -12,9 +12,15 @@ from urllib.parse import quote
 st.set_page_config(page_title="Chamada Digital EREMPAM", layout="centered")
 
 try:
-    # Ajustado para usar as chaves do projeto ChamadaEscolar (Alunos) conforme seu segredo
-    SUPABASE_URL = st.secrets["SUPABASE_URL_ALUNOS"]
-    SUPABASE_KEY = st.secrets["SUPABASE_KEY_ALUNOS"]
+    # ATUALIZAÇÃO AQUI: Usa .get() para não travar o app se a chave específica não for encontrada.
+    # Ele tenta primeiro a "_ALUNOS", se não achar, tenta a padrão.
+    SUPABASE_URL = st.secrets.get("SUPABASE_URL_ALUNOS", st.secrets.get("SUPABASE_URL"))
+    SUPABASE_KEY = st.secrets.get("SUPABASE_KEY_ALUNOS", st.secrets.get("SUPABASE_KEY"))
+    
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        st.error("🚨 Chaves de conexão não encontradas no secrets.toml.")
+        st.stop()
+        
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
     st.error(f"🚨 Erro de conexão: {e}")
