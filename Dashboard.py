@@ -56,12 +56,15 @@ if menu == "📊 Análise de Dados":
     st.markdown("Acompanhe o engajamento e o desempenho das turmas em tempo real.")
     
     try:
-        # 1. Buscar dados da View para Gráficos e KPIs
+        # 1. Buscar dados da View para Gráficos e KPIs (Projeto Provas)
         res_view = supabase.table("dashboard_diagnostico").select("*").execute()
         df = pd.DataFrame(res_view.data)
         
-        # 2. Buscar dados Brutos para o KPI de Estudantes Únicos
+        # 2. Buscar dados Brutos para Engajamento (Projeto Provas)
         res_raw = supabase.table("resultados_provas").select("aluno_id").execute()
+        
+        # 3. NOVO: Buscar alunos para fazer a ponte de Turmas (Projeto Alunos)
+        res_alunos_base = supabase_alunos.table("alunos").select("id, turma").execute()
         
         if not df.empty and res_raw.data:
             # --- TRATAMENTO DE DADOS (EXTRAÇÃO DE SÉRIE E TURMA) ---
@@ -115,18 +118,40 @@ if menu == "📊 Análise de Dados":
                 st.plotly_chart(fig, use_container_width=True)
                 
             with col2:
-                st.subheader("Engajamento Total por Série")
-                df_pizza = df.groupby("serie_curta")["total_respostas"].sum().reset_index()
+                # --- NOVA LÓGICA DO GRÁFICO DE ROSCA (POR TURMA) ---
+                st.subheader(f"Engajamento por Turma ({serie_foco})")
                 
-                fig2 = px.pie(
-                    df_pizza, 
-                    values='total_respostas',
-                    names='serie_curta', 
-                    hole=.4,
-                    color_discrete_sequence=px.colors.qualitative.Pastel
-                )
-                fig2.update_traces(textposition='inside', textinfo='percent+label')
-                st.plotly_chart(fig2, use_container_width=True)
+                df_alunos_join = pd.DataFrame(res_alunos_base.data)
+                
+                if not df_alunos_join.empty:
+                    # Tratamento para cruzar texto com número
+                    df_raw['aluno_id'] = df_raw['aluno_id'].astype(str)
+                    df_alunos_join['id'] = df_alunos_join['id'].astype(str)
+                    
+                    # A Ponte (Join)
+                    df_join = pd.merge(df_raw, df_alunos_join, left_on="aluno_id", right_on="id")
+                    
+                    # Aplica o filtro da tela (Se escolheu "3º Ano", busca turmas que começam com "3")
+                    if serie_foco != "Todas":
+                        prefixo_serie = serie_foco[0] # Pega só o número (ex: "3")
+                        df_join = df_join[df_join['turma'].astype(str).str.startswith(prefixo_serie)]
+                        
+                    # Agrupa e Conta
+                    df_pizza = df_join.groupby("turma").size().reset_index(name='total_respostas')
+                    
+                    # Renderiza
+                    fig2 = px.pie(
+                        df_pizza, 
+                        values='total_respostas',
+                        names='turma', 
+                        hole=.4,
+                        color_discrete_sequence=px.colors.qualitative.Pastel
+                    )
+                    # Dá um leve espaçamento entre as fatias pra ficar mais bonito
+                    fig2.update_traces(textposition='inside', textinfo='percent+label', pull=[0.02] * len(df_pizza))
+                    st.plotly_chart(fig2, use_container_width=True)
+                else:
+                    st.info("Aguardando turmas para gerar o gráfico.")
                 
             st.divider()
             
@@ -186,7 +211,7 @@ if menu == "📊 Análise de Dados":
 
     except Exception as e:
         st.error(f"Erro geral no Dashboard: {e}")
-
+        
 # --- 6. CADASTRO DE QUESTÕES (MANUAL + IA) ---
 elif menu == "📝 Cadastrar Questões":
     st.title("🖊️ Criador de Atv. online do Prof. Lardião")
