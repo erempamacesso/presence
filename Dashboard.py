@@ -62,6 +62,15 @@ if menu == "📊 Análise de Dados":
         res_raw = supabase.table("resultados_provas").select("aluno_id").execute()
         
         if not df.empty and res_raw.data:
+            # --- TRATAMENTO DE DADOS (EXTRAÇÃO DE SÉRIE E TURMA) ---
+            # Isola o "1º", "2º" ou "3º"
+            df['serie_curta'] = df['serie'].str.extract(r'(1º|2º|3º)')
+            # Isola a letra da turma (A, B, C, D ou E)
+            df['letra_turma'] = df['serie'].str.extract(r'([A-E])')
+            # Garante que valores vazios não quebrem o código
+            df['serie_curta'] = df['serie_curta'].fillna("N/A")
+            df['letra_turma'] = df['letra_turma'].fillna("Geral")
+
             # --- SEÇÃO 1: KPIs (Visão Geral) ---
             st.markdown("### 🎯 Visão Geral")
             kpi1, kpi2, kpi3 = st.columns(3)
@@ -73,7 +82,7 @@ if menu == "📊 Análise de Dados":
             melhor_assunto = df.loc[df['perc_acerto'].idxmax()]['assunto'] if not df.empty else "N/A"
             
             with kpi1:
-                st.metric(label="Total de Estudantes que Responderam", value=int(total_estudantes_unicos))
+                st.metric(label="Total de Estudantes Únicos", value=int(total_estudantes_unicos))
             with kpi2:
                 st.metric(label="Média de Acertos Geral", value=f"{media_geral:.1f}%")
             with kpi3:
@@ -82,37 +91,42 @@ if menu == "📊 Análise de Dados":
             st.divider()
             
             # --- SEÇÃO 2: GRÁFICOS INTERATIVOS ---
+            # Filtro para o Professor focar em uma série específica
+            lista_series_filtro = sorted([s for s in df['serie_curta'].unique() if s != "N/A"])
+            serie_foco = st.selectbox("🎯 Selecione a Série para detalhar:", ["Todas"] + lista_series_filtro)
+            
+            df_filtrado = df.copy()
+            if serie_foco != "Todas":
+                df_filtrado = df_filtrado[df_filtrado['serie_curta'] == serie_foco]
+
             col1, col2 = st.columns(2)
             
             with col1:
-                st.subheader("Desempenho: Acertos por Assunto")
+                st.subheader(f"Desempenho por Turma ({serie_foco})")
                 fig = px.bar(
-                    df, 
+                    df_filtrado, 
                     x="assunto", 
                     y="perc_acerto", 
-                    color="serie", 
+                    color="letra_turma",  # <--- CORES DIFERENTES POR TURMA (A, B, C...)
                     barmode="group", 
                     text_auto='.1f',
-                    labels={'perc_acerto': '% de Acerto', 'assunto': 'Assunto', 'serie': 'Série'},
-                    color_discrete_sequence=px.colors.qualitative.Pastel
+                    labels={'perc_acerto': '% de Acerto', 'assunto': 'Assunto', 'letra_turma': 'Turma'},
+                    color_discrete_sequence=px.colors.qualitative.Bold
                 )
                 fig.update_layout(xaxis_tickangle=-45, yaxis_title="% de Acertos")
                 st.plotly_chart(fig, use_container_width=True)
                 
             with col2:
-                # CORREÇÃO AQUI: Usamos o 'df' da View que já contém a coluna 'serie' 
-                # e o 'total_respostas' (ou podemos agrupar para evitar duplicatas de assunto)
-                st.subheader("Engajamento: Respostas por Série")
-                
-                # Agrupamos por série para o gráfico de pizza não repetir fatias por assunto
-                df_pizza = df.groupby("serie")["total_respostas"].sum().reset_index()
+                st.subheader("Engajamento Total por Série")
+                # Agrupamos pelo "1º, 2º, 3º" extraído
+                df_pizza = df.groupby("serie_curta")["total_respostas"].sum().reset_index()
                 
                 fig2 = px.pie(
                     df_pizza, 
                     values='total_respostas',
-                    names='serie', 
+                    names='serie_curta', 
                     hole=.4,
-                    color_discrete_sequence=px.colors.sequential.Teal
+                    color_discrete_sequence=px.colors.qualitative.Pastel
                 )
                 fig2.update_traces(textposition='inside', textinfo='percent+label')
                 st.plotly_chart(fig2, use_container_width=True)
@@ -121,15 +135,21 @@ if menu == "📊 Análise de Dados":
             
             # --- SEÇÃO 3: TABELA DE DADOS ---
             st.subheader("📋 Tabela de Dados Analíticos (Por Assunto)")
-            df_view = df.copy()
+            df_view = df_filtrado.copy()
             if 'perc_acerto' in df_view.columns:
                 df_view['perc_acerto'] = df_view['perc_acerto'].apply(lambda x: f"{x:.1f}%")
 
-            st.dataframe(df_view, use_container_width=True, hide_index=True)
+            st.dataframe(
+                df_view[['assunto', 'serie', 'total_respostas', 'total_acertos', 'perc_acerto']], 
+                use_container_width=True, 
+                hide_index=True
+            )
             
         else:
             st.info("📌 Nenhum dado de resposta encontrado no banco de dados.")
 
+    except Exception as e:
+        st.error(f"Erro geral no Dashboard: {e}")
         # --- SEÇÃO 4: DESEMPENHO INDIVIDUAL ---
         st.divider()
         st.subheader("🏆 Notas Individuais por Aluno")
