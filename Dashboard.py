@@ -4,6 +4,7 @@ from streamlit_quill import st_quill
 import plotly.express as px
 import pandas as pd
 import json
+import pytz  # <--- ADICIONE ESTA LINHA AQUI
 from fpdf import FPDF
 import base64
 import re
@@ -559,9 +560,14 @@ elif menu == "📜 Gerar Modelo de Prova":
     else:
         st.warning("Nenhuma questão cadastrada.")
 
+
 # --- 9. GERENCIAMENTO DE PROVAS ELABORADAS ---
 elif menu == "📂 Provas Elaboradas":
     st.title("📂 Gerenciar Provas Elaboradas")
+    
+    # Configuração de fuso horário para comparação de prazos
+    fuso = pytz.timezone('America/Recife')
+    agora = datetime.now(fuso)
     
     res_provas = supabase.table("modelos_prova").select("*").order("id", desc=True).execute()
     
@@ -571,19 +577,27 @@ elif menu == "📂 Provas Elaboradas":
         
         for prova in res_provas.data:
             with st.container(border=True):
-                c1, c2, c3, c4, c5 = st.columns([2.5, 1.5, 1.5, 2, 1.5], gap="small")
+                c1, c2, c3, c4, c5 = st.columns([2.5, 1.5, 1.5, 2, 1.8], gap="small")
                 
+                # --- Tratamento de Datas ---
                 status_texto = "🟢 ATIVA" if prova.get('ativa') else "🔴 INATIVA"
-                dt_limite = prova.get('data_limite', 'Sem limite')
-                if dt_limite != 'Sem limite':
-                    dt_limite = dt_limite[:16].replace("T", " às ")
-                
+                dt_limite_raw = prova.get('data_limite')
+                dt_limite_formatada = "Sem limite"
+                prazo_encerrado = False
+
+                if dt_limite_raw:
+                    # Converte a data do banco para objeto datetime com fuso horário
+                    dt_obj = datetime.fromisoformat(dt_limite_raw.replace("Z", "+00:00")).astimezone(fuso)
+                    dt_limite_formatada = dt_obj.strftime('%d/%m/%Y às %H:%M')
+                    prazo_encerrado = agora > dt_obj
+
                 c1.markdown(f"### {prova.get('titulo', 'Sem título')}")
-                c1.markdown(f"**Série:** {prova.get('serie', 'Geral')} | **Prazo:** {dt_limite}")
+                c1.markdown(f"**Série:** {prova.get('serie', 'Geral')} | **Prazo:** {dt_limite_formatada}")
                 
                 c2.markdown(f"**Status:**")
                 c2.markdown(f"*{status_texto}*")
                 
+                # Formato da Prova
                 q_total = prova.get('qtd_questoes', 0)
                 q_sorteio = prova.get('qtd_sorteio', q_total)
                 c3.markdown("**Formato:**")
@@ -592,8 +606,8 @@ elif menu == "📂 Provas Elaboradas":
                 serie_atual = prova.get('serie')
                 prova_id = prova.get('id')
                 
+                # --- Cálculo de Engajamento ---
                 try:
-                    # NOVA LÓGICA DE BUSCA DE ALUNOS
                     prefixo_turma = str(serie_atual).replace(" Ano", "").strip()
                     res_alunos = supabase_alunos.table("alunos").select("id").ilike("turma", f"{prefixo_turma}%").execute()
                     total_alunos = len(res_alunos.data) if res_alunos.data else 0
@@ -601,33 +615,51 @@ elif menu == "📂 Provas Elaboradas":
                     res_respostas = supabase.table("resultados_provas").select("aluno_id").eq("prova_id", prova_id).execute()
                     alunos_que_fizeram = len(set([r['aluno_id'] for r in res_respostas.data])) if res_respostas.data else 0
                     
-                    if total_alunos > 0:
-                        porcentagem = (alunos_que_fizeram / total_alunos) * 100
-                    else:
-                        porcentagem = 0.0
-                        
+                    porcentagem = (alunos_que_fizeram / total_alunos * 100) if total_alunos > 0 else 0.0
+                    
                     c4.markdown("**Engajamento:**")
                     c4.markdown(f"**{alunos_que_fizeram} / {total_alunos}** alunos")
                     cor_perc = "green" if porcentagem >= 70 else ("orange" if porcentagem >= 40 else "red")
                     c4.markdown(f"<span style='color:{cor_perc}; font-weight:bold;'>{porcentagem:.1f}% concluído</span>", unsafe_allow_html=True)
-                    
-                except Exception as e:
+                except:
                     c4.markdown("**Engajamento:**")
-                    c4.caption("Dados não encontrados.")
+                    c4.caption("Erro ao carregar dados.")
                 
+                # --- COLUNA 5: AÇÕES ---
                 with c5:
+                    # Botão 1: Alternar Status
                     texto_btn_status = "⏸️ Desativar" if prova.get('ativa') else "▶️ Ativar"
-                    if st.button(texto_btn_status, key=f"status_{prova['id']}", use_container_width=True):
+                    if st.button(texto_btn_status, key=f"status_{prova_id}", use_container_width=True):
                         novo_status = not prova.get('ativa')
-                        supabase.table("modelos_prova").update({"ativa": novo_status}).eq("id", prova['id']).execute()
+                        supabase.table("modelos_prova").update({"ativa": novo_status}).eq("id", prova_id).execute()
                         st.rerun()
                     
-                    if st.button("🗑️ Excluir", key=f"del_{prova['id']}", type="primary", use_container_width=True):
-                        supabase.table("modelos_prova").delete().eq("id", prova['id']).execute()
-                        st.rerun()
-                        
+                    # Botão 2: LIBERAR NOTAS (Novo!)
+                    # Só aparece se a prova ainda não expirou
+                    if not prazo_encerrado and dt_limite_raw:
+                        if st.button("🔓 Liberar Notas", key=f"liberar_{prova_id}", use_container_width=True, help="Encerra o prazo agora para mostrar as notas aos alunos"):
+                            # Define o prazo para "agora", o que libera a visualização no app do aluno
+                            supabase.table("modelos_prova").update({"data_limite": agora.isoformat()}).eq("id", prova_id).execute()
+                            st.toast("Notas liberadas para os alunos!")
+                            time.sleep(1)
+                            st.rerun()
+
+                    # Botão 3: Excluir (Corrigido para evitar erro de FK)
+                    if st.button("🗑️ Excluir", key=f"del_{prova_id}", type="primary", use_container_width=True):
+                        try:
+                            # 1. Apaga primeiro as referências (filhos)
+                            supabase.table("resultados_provas").delete().eq("prova_id", prova_id).execute()
+                            # 2. Apaga o modelo (pai)
+                            supabase.table("modelos_prova").delete().eq("id", prova_id).execute()
+                            st.success("Prova excluída!")
+                            time.sleep(1)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro: {e}")
+                            
     else:
         st.info("📌 Nenhuma prova foi elaborada ainda.")
+
 
 # --- 10. LISTA DE MATRÍCULAS PARA IMPRESSÃO (COM PDF) ---
 elif menu == "🖨️ Lista de Matrículas":
