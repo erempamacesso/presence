@@ -1061,8 +1061,8 @@ elif menu == "🧠 Diagnósticos IA":
                             supabase.table("feedback_ia_alunos").insert({
                                 "aluno_id": int(al_id),
                                 "prova_id": prova_id,
-                                "diagnostico_peda": txt,
-                                "revisado_professo": True
+                                "diagnostico_pedagogico": txt,
+                                "revisado_professor": True
                             }).execute()
                             count += 1
                         st.success(f"✅ {count} feedbacks salvos na tabela 'feedback_ia_alunos'!")
