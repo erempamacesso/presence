@@ -386,33 +386,37 @@ elif menu == "📚 Biblioteca de Questões":
                 btn_salvar = st.form_submit_button("✅ SALVAR E MARCAR COMO PRONTA", type="primary", use_container_width=True)
                 
                 if btn_salvar:
-                    # Define a lógica final: prioridade para o que foi digitado manualmente
-                    if assunto_manual.strip() != "":
-                        assunto_final = assunto_manual.strip()
+                    if not tit:
+                        st.error("Erro: Defina um título para a prova.")
                     else:
-                        # Se não digitou nada, usa o que selecionou no selectbox (se não for a opção neutra)
-                        if assunto_selecionado != "-- SELECIONE UM EXISTENTE --":
-                            assunto_final = assunto_selecionado
-                        else:
-                            assunto_final = q.get('assunto', '') # Mantém o original se nada for feito
+                        with st.spinner("Atualizando prova..."):
+                            # 1. Combina data e hora (sem fuso)
+                            naive_inicio = datetime.combine(data_inicio, hora_inicio)
+                            naive_limite = datetime.combine(data_limite, hora_limite)
 
-                    if not assunto_final:
-                         st.error("Por favor, defina um assunto para a questão.")
-                    else:
-                        dados_upd = {
-                            "serie": edit_serie, 
-                            "assunto": assunto_final, 
-                            "resposta_correta": edit_gabarito,
-                            "dificuldade": edit_diff, 
-                            "enunciado": edit_enunciado,
-                            "alternativas": edit_alts, 
-                            "justificativas": edit_justs,
-                            "revisada": True  # MARCA COMO PRONTA
-                        }
-                        supabase.table("questoes").update(dados_upd).eq("id", q['id']).execute()
-                        st.session_state.editando_id = None
-                        st.success("Questão validada e salva na biblioteca!")
-                        import time # Garantindo que o time está importado aqui caso não esteja no topo
+                            # 2. Carimba o fuso de Recife para o banco de dados entender
+                            aware_inicio = fuso.localize(naive_inicio)
+                            aware_limite = fuso.localize(naive_limite)
+
+                            # 3. Transforma em texto (agora vai com o -03:00 no final)
+                            data_hora_inicio_iso = aware_inicio.isoformat()
+                            data_hora_limite_iso = aware_limite.isoformat()
+
+                            dados_upd = {
+                                "titulo": tit, 
+                                "serie": ser, 
+                                "data_inicio": data_hora_inicio_iso, 
+                                "data_limite": data_hora_limite_iso, 
+                                "tempo_duracao": tempo_duracao,
+                                "qtd_questoes": qtd_questoes, 
+                                "qtd_sorteio": qtd_sorteio, 
+                                "valor_questao": valor_questao
+                            }
+                            supabase.table("modelos_prova").update(dados_upd).eq("id", p['id']).execute()
+                        
+                        st.session_state.editando_prova_id = None
+                        st.success("Configurações da prova atualizadas!")
+                        import time
                         time.sleep(1)
                         st.rerun()
 
