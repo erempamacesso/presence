@@ -519,7 +519,7 @@ elif st.session_state.etapa == "resultado_final":
                         Ele marcou a alternativa {erro_encontrado['marcou']}.
                         A base do seu feedback deve ser esta justificativa técnica: "{erro_encontrado['justificativa']}"
                         
-                        Transforme essa justificativa em uma dica curta (3 linhas), motivadora e com sotaque pernambucano (visse, arretado, oxente). Não mencione número de questão nem letra marcada.
+                        Transforme essa justificativa em uma dica curta (10 linhas), motivadora e com sotaque pernambucano (visse, arretado, oxente). Não mencione número de questão nem letra marcada, porém, Você pontuará cada erro do estudante indicando o que o mesmo precisa estudar mais.
                         """
                         resposta = modelo_ia.generate_content(prompt)
                         feedback_ia = resposta.text
