@@ -210,7 +210,7 @@ elif st.session_state.etapa == "ante_sala":
         
         with st.form("form_whats"):
             # Limite de 11 caracteres na interface
-            novo_whats = st.text_input("Seu WhatsApp (apenas números com DDD):", placeholder="Ex: 81982500528", max_chars=11)
+            novo_whats = st.text_input("Seu WhatsApp (apenas números com DDD):", placeholder="Ex: 99 99999999", max_chars=11)
             st.caption("Fique tranquilo, usaremos apenas para fins pedagógicos.")
             btn_vincular = st.form_submit_button("✅ Cadastrar e Acessar", type="primary")
             
