@@ -454,7 +454,7 @@ elif st.session_state.etapa == "resultado_final":
     st.markdown(f"""
         <div style="text-align: center; margin-top: 3rem;">
             <h1 style="color: {C_PRIMARY}; font-size: 40px; font-weight: bold;">🎉 Avaliação Concluída!</h1>
-            <p style="color: {C_TEXT_MUTED}; font-size: 18px; margin-top: 10px;">Parabéns, {aluno['nome']}. Suas respostas foram enviadas e processadas Pro.</p>
+            <p style="color: {C_TEXT_MUTED}; font-size: 18px; margin-top: 10px;">Parabéns, {aluno['nome']}. Suas respostas foram enviadas e processadas.</p>
         </div>
     """, unsafe_allow_html=True)
     
@@ -479,7 +479,7 @@ elif st.session_state.etapa == "resultado_final":
                 <div style="text-align: center;">
                     <h3 style="color: {C_PRIMARY}; font-size: 20px;">🌎 Ranking Gamificado Pro</h3>
                     <p style="color: orange; font-weight: bold; font-size: 16px; margin: 15px 0;">⌛ CALCULANDO...</p>
-                    <p style="color: {C_TEXT_MUTED}; font-size: 14px;">O Prof. Lardião está calculando sua posição Pro na turma e entre todos os terceiros!</p>
+                    <p style="color: {C_TEXT_MUTED}; font-size: 14px;">O sistema calculará sua posição Pro na turma e entre todos os terceiros!</p>
                 </div>
             """, unsafe_allow_html=True)
         
@@ -489,7 +489,7 @@ elif st.session_state.etapa == "resultado_final":
                 <div style="text-align: center;">
                     <h3 style="color: {C_PRIMARY}; font-size: 20px;">🧠 Feedback do Mestre Pro</h3>
                     <p style="color: orange; font-weight: bold; font-size: 16px; margin: 15px 0;">⌛ AGUARDE!</p>
-                    <p style="color: {C_TEXT_MUTED}; font-size: 14px;">O Prof. Lardião está analisando seu desempenho Pro para te dar uma dica de mestre personalizada em instantes...</p>
+                    <p style="color: {C_TEXT_MUTED}; font-size: 14px;">O sistema analisará seu desempenho Pro para te dar uma dica de mestre personalizada em instantes...</p>
                 </div>
             """, unsafe_allow_html=True)
 
