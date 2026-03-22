@@ -981,18 +981,18 @@ elif menu == "🧠 Diagnósticos IA":
 
         col_prompt, col_upload = st.columns(2)
 
-        # ==========================================
+# ==========================================
         # LADO ESQUERDO: GERAR PROMPT
         # ==========================================
         with col_prompt:
             st.subheader("1️⃣ Gerar Prompt para IA")
-            st.write("Busca os erros da prova selecionada e gera o texto para você copiar.")
+            st.write("Busca os diagnósticos dos erros e gera o texto para você copiar.")
             
             if st.button("🔍 Buscar Erros e Montar Texto", use_container_width=True):
-                with st.spinner("Analisando o banco de dados..."):
-                    # Busca alunos que erraram questões nesta prova
+                with st.spinner("Buscando justificativas e montando o super prompt..."):
+                    # Busca os erros trazendo a letra marcada E as justificativas lá da tabela questões!
                     erros = supabase.table("resultados_provas")\
-                              .select("aluno_id, questao_id")\
+                              .select("aluno_id, resposta_aluno, questoes(assunto, justificativas)")\
                               .eq("prova_id", prova_id)\
                               .eq("acertou", False)\
                               .execute()
@@ -1000,25 +1000,42 @@ elif menu == "🧠 Diagnósticos IA":
                     if not erros.data:
                         st.success("Nenhum erro registrado para esta prova ainda ou todos acertaram!")
                     else:
-                        # Agrupa os erros por aluno_id
+                        # Agrupa os diagnósticos por aluno_id
                         erros_por_aluno = {}
                         for erro in erros.data:
                             al_id = erro['aluno_id']
-                            q_id = erro['questao_id']
+                            
+                            # Pega a letra que o aluno marcou (ex: "B") limpando espaços
+                            letra_marcada = str(erro.get('resposta_aluno', '')).strip().upper()
+                            
+                            # Puxa os dados da questão atrelada a esse erro
+                            dados_questao = erro.get('questoes')
+                            if dados_questao:
+                                justificativas = dados_questao.get('justificativas', {})
+                                assunto = dados_questao.get('assunto', 'Geral')
+                                
+                                # Busca o texto exato do diagnóstico para a letra que ele marcou
+                                diag_texto = justificativas.get(letra_marcada, f"Marcou alternativa {letra_marcada}")
+                                texto_final = f"[Assunto: {assunto}] {diag_texto}"
+                            else:
+                                texto_final = f"Errou a alternativa {letra_marcada}"
+
                             if al_id not in erros_por_aluno:
                                 erros_por_aluno[al_id] = []
-                            erros_por_aluno[al_id].append(q_id)
+                            erros_por_aluno[al_id].append(texto_final)
 
-                        # Monta o prompt
+                        # Monta o prompt muito mais inteligente agora
                         prompt = f"""Aja como o Mestre Lardião, professor de Química de PE (use sotaque: visse, oxente, arretado).
-Abaixo estão os IDs dos alunos e os IDs das questões que eles erraram.
-Crie um feedback curto (2 linhas) e motivador para cada um, focando em não desistir.
+Abaixo estão os IDs dos alunos e os diagnósticos técnicos dos erros que eles cometeram na prova.
+Crie um feedback curto (máx 3 linhas) e motivador para cada um, focando em corrigir o erro conceitual.
 ME DEVOLVA APENAS UM ARQUIVO JSON no formato exato: {{"ID_DO_ALUNO": "TEXTO_DO_FEEDBACK"}}.
 
 DADOS DOS ALUNOS:
 """
-                        for al_id, questoes in erros_por_aluno.items():
-                            prompt += f"Aluno ID: {al_id} | Errou as questões: {', '.join(questoes)}\n"
+                        for al_id, lista_erros in erros_por_aluno.items():
+                            prompt += f"\nAluno ID: {al_id}\nErros cometidos:\n"
+                            for e in lista_erros:
+                                prompt += f"- {e}\n"
 
                         st.text_area("📋 Copie o texto abaixo e cole no Gemini Web:", value=prompt, height=350)
                         st.info("Dica: Clique dentro da caixa e aperte Ctrl+A e Ctrl+C.")
