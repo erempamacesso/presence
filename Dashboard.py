@@ -10,10 +10,12 @@ import base64
 import re
 from datetime import datetime
 import time
-import pywhatkit as kit          
-import urllib.parse             
-
-
+try:
+    import pywhatkit as kit
+    WHATSAPP_LOCAL = True
+except ImportError:
+    WHATSAPP_LOCAL = False
+              
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Gestão EREMPAM - Provas", layout="wide")
 
@@ -882,75 +884,79 @@ elif menu == "🖨️ Lista de Matrículas":
 # --- 11. CENTRAL DE AVISOS WHATSAPP ---
 elif menu == "📲 Central de Avisos":
     st.title("📲 Disparador de Avisos - EREMPAM")
-    st.info("💡 Lembre-se: O WhatsApp Web deve estar logado no seu navegador padrão.")
+    
+    # --- A TRAVA DE SEGURANÇA QUE FALTAVA ---
+    # Verifica se a variável existe e se é verdadeira
+    if 'WHATSAPP_LOCAL' not in globals() or not WHATSAPP_LOCAL:
+        st.error("🚨 Ambiente em Nuvem Detectado!")
+        st.warning("O disparo automático de mensagens funciona apenas rodando o sistema localmente no seu computador (via VS Code).")
+    else:
+        st.info("💡 Lembre-se: O WhatsApp Web deve estar logado no seu navegador padrão.")
 
-    # 1. Buscar Provas (Conexão 1)
-    res_p = supabase.table("modelos_prova").select("id, titulo, serie").execute()
-    df_p = pd.DataFrame(res_p.data)
+        # 1. Buscar Provas (Conexão 1)
+        res_p = supabase.table("modelos_prova").select("id, titulo, serie").execute()
+        df_p = pd.DataFrame(res_p.data)
 
-    if not df_p.empty:
-        col1, col2 = st.columns(2)
-        with col1:
-            prova_sel = st.selectbox("Escolha a Atividade:", df_p['titulo'].tolist())
-            dados_p = df_p[df_p['titulo'] == prova_sel].iloc[0]
-        
-        with col2:
-            tipo_msg = st.selectbox("Tipo de Aviso:", [
-                "🚀 1. Alerta de Abertura",
-                "⚠️ 2. Aviso de Prazo Final",
-                "📊 3. Resultado Disponível (IA)",
-                "📝 4. Comunicado Personalizado"
-            ])
-
-        # 2. Buscar Alunos (Usando a série da prova para filtrar a turma)
-        res_a = supabase_alunos.table("alunos").select("nome, whatsapp").eq("turma", dados_p['serie']).execute()
-        df_alunos = pd.DataFrame(res_a.data)
-
-        if not df_alunos.empty:
-            st.success(f"📍 {len(df_alunos)} alunos encontrados na turma {dados_p['serie']}")
+        if not df_p.empty:
+            col1, col2 = st.columns(2)
+            with col1:
+                prova_sel = st.selectbox("Escolha a Atividade:", df_p['titulo'].tolist())
+                dados_p = df_p[df_p['titulo'] == prova_sel].iloc[0]
             
-            msg_custom = ""
-            if "4." in tipo_msg:
-                msg_custom = st.text_area("Digite a mensagem:")
+            with col2:
+                tipo_msg = st.selectbox("Tipo de Aviso:", [
+                    "🚀 1. Alerta de Abertura",
+                    "⚠️ 2. Aviso de Prazo Final",
+                    "📊 3. Resultado Disponível (IA)",
+                    "📝 4. Comunicado Personalizado"
+                ])
 
-            if st.button("▶️ INICIAR DISPARO EM MASSA", type="primary"):
-                st.warning("🚀 Disparo iniciado! Mantenha a aba do WhatsApp visível.")
+            # 2. Buscar Alunos (Usando a série da prova para filtrar a turma)
+            res_a = supabase_alunos.table("alunos").select("nome, whatsapp").eq("turma", dados_p['serie']).execute()
+            df_alunos = pd.DataFrame(res_a.data)
+
+            if not df_alunos.empty:
+                st.success(f"📍 {len(df_alunos)} alunos encontrados na turma {dados_p['serie']}")
                 
-                for index, aluno in df_alunos.iterrows():
-                    # Coleta dados das colunas do seu Supabase ('nome' e 'whatsapp')
-                    nome_completo = str(aluno.get('nome', 'Estudante'))
-                    primeiro_nome = nome_completo.split()[0]
-                    fone = str(aluno.get('whatsapp', ''))
+                msg_custom = ""
+                if "4." in tipo_msg:
+                    msg_custom = st.text_area("Digite a mensagem:")
+
+                if st.button("▶️ INICIAR DISPARO EM MASSA", type="primary"):
+                    st.warning("🚀 Disparo iniciado! Mantenha a aba do WhatsApp visível e não mexa no mouse.")
                     
-                    if fone and fone != 'None' and fone.strip() != "":
-                        # 1. Primeiro removemos tudo que não é número fora da f-string
-                        apenas_numeros = re.sub(r'\D', '', fone)
+                    for index, aluno in df_alunos.iterrows():
+                        nome_completo = str(aluno.get('nome', 'Estudante'))
+                        primeiro_nome = nome_completo.split()[0]
+                        fone = str(aluno.get('whatsapp', ''))
                         
-                        # 2. Agora montamos o número internacional com segurança
-                        num_limpo = f"+55{apenas_numeros}"
-                        
-                        # Definição do conteúdo da mensagem
-                        if "1." in tipo_msg:
-                            texto = f"Olá {primeiro_nome}! 📢 A atividade *{prova_sel}* já está aberta no portal da EREMPAM. Boa sorte!"
-                        elif "2." in tipo_msg:
-                            texto = f"Atenção {primeiro_nome}! ⏳ O prazo para a atividade *{prova_sel}* está terminando. Não deixe de fazer!"
-                        elif "3." in tipo_msg:
-                            texto = f"Olá {primeiro_nome}! 📊 Seu diagnóstico e nota da atividade *{prova_sel}* já foram gerados. Confira no sistema!"
-                        else:
-                            texto = f"Olá {primeiro_nome}! 🔔 {msg_custom}"
-
-                        try:
-                            # Envia a mensagem (espera 15s para carregar o Zap Web e fecha a aba 3s após o envio)
-                            kit.sendwhatmsg_instantly(num_limpo, texto, 15, True, 3)
-                            st.write(f"✅ Mensagem enviada para: **{nome_completo}**")
+                        if fone and fone != 'None' and fone.strip() != "":
+                            # Limpa o número
+                            apenas_numeros = re.sub(r'\D', '', fone)
+                            num_limpo = f"+55{apenas_numeros}"
                             
-                            # Pausa de segurança entre um aluno e outro para evitar bloqueio do WhatsApp
-                            time.sleep(2) 
-                        except Exception as e:
-                            st.error(f"❌ Falha ao enviar para {primeiro_nome}: {e}")
-                    else:
-                        st.warning(f"⚠️ Aluno(a) **{nome_completo}** está sem número de WhatsApp cadastrado.")
+                            # Define o texto
+                            if "1." in tipo_msg:
+                                texto = f"Olá {primeiro_nome}! 📢 A atividade *{prova_sel}* já está aberta no portal da EREMPAM. Boa sorte!"
+                            elif "2." in tipo_msg:
+                                texto = f"Atenção {primeiro_nome}! ⏳ O prazo para a atividade *{prova_sel}* está terminando. Não deixe de fazer!"
+                            elif "3." in tipo_msg:
+                                texto = f"Olá {primeiro_nome}! 📊 Seu diagnóstico e nota da atividade *{prova_sel}* já foram gerados. Confira no sistema!"
+                            else:
+                                texto = f"Olá {primeiro_nome}! 🔔 {msg_custom}"
 
-                st.success("🏁 Processo de disparo em massa finalizado!")
+                            try:
+                                # Faz o envio
+                                kit.sendwhatmsg_instantly(num_limpo, texto, 15, True, 3)
+                                st.write(f"✅ Mensagem enviada para: **{nome_completo}**")
+                                time.sleep(2) 
+                            except Exception as e:
+                                st.error(f"❌ Falha ao enviar para {primeiro_nome}: {e}")
+                        else:
+                            st.warning(f"⚠️ Aluno(a) **{nome_completo}** está sem número de WhatsApp cadastrado.")
+
+                    st.success("🏁 Processo de disparo em massa finalizado!")
+            else:
+                st.warning(f"Nenhum aluno cadastrado na turma {dados_p['serie']}.")
         else:
-            st.warning(f"Nenhum aluno cadastrado na turma {dados_p['serie']}.")
+            st.warning("Nenhuma atividade cadastrada ainda.")
