@@ -464,14 +464,14 @@ elif st.session_state.etapa == "resultado_final":
     with st.container(border=True):
         st.markdown(f"""
             <div style="text-align: center; padding: 20px;">
-                <h2 style="color: {{C_SECONDARY}}; margin-bottom: 15px; font-size: 26px;">🤫 Segredo do Mestre!</h2>
+                <h2 style="color: {{C_SECONDARY}}; margin-bottom: 15px; font-size: 26px;">🤫 A nota só é liberada depois vi Bença!</h2>
                 <p style="color: {{C_TEXT}}; font-size: 18px; line-height: 1.6;">
                     Para manter o suspense e evitar <em>spoilers</em> para os colegas que ainda farão a prova, 
                     <strong>sua nota, o gabarito e o feedback personalizado do Mestre Lardião</strong> 
                     só serão liberados após o encerramento do prazo desta atividade.
                 </p>
                 <p style="color: {{C_TEXT_MUTED}}; font-size: 16px; margin-top: 15px;">
-                    Fique de olho! O professor avisará quando o portal de resultados for aberto.
+                    Fique de olho! O portal avisará quando os resultados for aberto.
                 </p>
             </div>
         """, unsafe_allow_html=True)

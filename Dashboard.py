@@ -962,7 +962,7 @@ elif menu == "📲 Central de Avisos":
         else:
             st.warning("Nenhuma atividade cadastrada ainda.")
 
- # =================================================================
+# =================================================================
 # 12. MESTRE LARDIÃO - DIAGNÓSTICOS EM LOTE (SISTEMA SEM API KEY)
 # =================================================================
 elif menu == "🧠 Diagnósticos IA":
@@ -988,43 +988,68 @@ elif menu == "🧠 Diagnósticos IA":
         with c1:
             st.subheader("1️⃣ Extrair Erros")
             if st.button("🔍 Gerar Texto para IA", use_container_width=True):
-                with st.spinner("Buscando justificativas..."):
-                    # AGORA SIM! Buscando na tabela certa (respostas_alunos) e coluna certa (correta = False)
-                    erros = supabase.table("respostas_alunos")\
-                        .select("aluno_id, resposta_aluno, questoes(assunto, justificativas)")\
-                        .eq("prova_id", prova_id)\
-                        .eq("correta", False)\
-                        .execute()
+                with st.spinner("Buscando justificativas à prova de falhas..."):
+                    try:
+                        # 1º Passo: Busca apenas os erros (sem fazer join para não crachar o Supabase)
+                        # Nota: Se a coluna se chamar 'resposta', o código tratará isso lá embaixo.
+                        erros = supabase.table("respostas_alunos")\
+                            .select("aluno_id, questao_id, resposta_aluno")\
+                            .eq("prova_id", prova_id)\
+                            .eq("correta", False)\
+                            .execute()
 
-                    if not erros.data:
-                        st.info("Nenhum erro encontrado para esta prova.")
-                    else:
-                        mapa_erros = {}
-                        for e in erros.data:
-                            aid = e['aluno_id']
-                            letra = str(e.get('resposta_aluno', '')).strip().upper()
+                        if not erros.data:
+                            st.info("Nenhum erro encontrado para esta prova.")
+                        else:
+                            # 2º Passo: Pega a lista de questões que foram erradas
+                            ids_questoes = list(set([e['questao_id'] for e in erros.data]))
                             
-                            # Tratamento seguro caso a questão não tenha justificativa cadastrada
-                            dados_q = e.get('questoes') or {}
-                            justificativas = dados_q.get('justificativas') or {}
-                            assunto = dados_q.get('assunto') or 'Geral'
+                            # 3º Passo: Busca as justificativas dessas questões separadamente
+                            questoes_db = supabase.table("questoes")\
+                                .select("id, assunto, justificativas")\
+                                .in_("id", ids_questoes)\
+                                .execute()
                             
-                            diag_texto = justificativas.get(letra, f"Marcou a alternativa {letra}")
-                            texto_final = f"[Assunto: {assunto}] {diag_texto}"
+                            # Cria um dicionário para a gente cruzar as informações no Python
+                            dict_quest = {q['id']: q for q in questoes_db.data}
 
-                            mapa_erros.setdefault(aid, []).append(texto_final)
+                            mapa_erros = {}
+                            for e in erros.data:
+                                aid = e['aluno_id']
+                                qid = e['questao_id']
+                                
+                                # Tenta pegar 'resposta_aluno'. Se não existir, tenta 'resposta'
+                                letra_crua = e.get('resposta_aluno')
+                                if letra_crua is None:
+                                    letra_crua = e.get('resposta', '')
+                                letra = str(letra_crua).strip().upper()
+                                
+                                dados_q = dict_quest.get(qid, {})
+                                justificativas = dados_q.get('justificativas') or {}
+                                assunto = dados_q.get('assunto') or 'Geral'
+                                
+                                diag_texto = justificativas.get(letra, f"Marcou a alternativa {letra}")
+                                texto_final = f"[Assunto: {assunto}] {diag_texto}"
 
-                        # Monta o Prompt
-                        prompt_txt = "Aja como o Mestre Lardião, professor de Química de PE (use sotaque: visse, oxente, arretado).\n"
-                        prompt_txt += "Crie um feedback de máx 3 linhas e motivador para cada aluno focado nos diagnósticos técnicos.\n"
-                        prompt_txt += "Retorne APENAS um JSON no formato: {\"ID\": \"Feedback\"}\n\n"
-                        
-                        for aid, erros_lista in mapa_erros.items():
-                            prompt_txt += f"Aluno ID: {aid}\nErros:\n"
-                            for erro in erros_lista:
-                                prompt_txt += f"- {erro}\n"
-                        
-                        st.text_area("Copie e cole no Gemini Web:", value=prompt_txt, height=300)
+                                mapa_erros.setdefault(aid, []).append(texto_final)
+
+                            # Monta o Prompt
+                            prompt_txt = "Aja como o Mestre Lardião, professor de Química de PE (use sotaque: visse, oxente, arretado).\n"
+                            prompt_txt += "Crie um feedback de máx 3 linhas e motivador para cada aluno focado nos diagnósticos técnicos.\n"
+                            prompt_txt += "Retorne APENAS um JSON no formato: {\"ID\": \"Feedback\"}\n\n"
+                            
+                            for aid, erros_lista in mapa_erros.items():
+                                prompt_txt += f"Aluno ID: {aid}\nErros:\n"
+                                for erro in erros_lista:
+                                    prompt_txt += f"- {erro}\n"
+                            
+                            st.text_area("Copie e cole no Gemini Web:", value=prompt_txt, height=300)
+                    
+                    except Exception as e:
+                        # O PARAQUEDAS: Se o Supabase rejeitar, o Streamlit mostra a mensagem educadamente!
+                        st.error("❌ O banco de dados recusou a busca. O erro exato foi:")
+                        st.code(str(e))
+                        st.info("💡 Dica: Verifique se na tabela `respostas_alunos` existe mesmo uma coluna chamada `correta` e se ela é do tipo boolean.")
 
         # ==========================================
         # LADO DIREITO: SALVAR NO BANCO
@@ -1039,9 +1064,8 @@ elif menu == "🧠 Diagnósticos IA":
                         dados_ia = json.loads(json_input)
                         count = 0
                         for al_id, txt in dados_ia.items():
-                            # Salva na tabela feedback_ia_alunos convertendo o ID para inteiro!
                             supabase.table("feedback_ia_alunos").insert({
-                                "aluno_id": int(al_id),  # <-- O SEGREDO ESTAVA AQUI E NA TABELA!
+                                "aluno_id": int(al_id),
                                 "prova_id": prova_id,
                                 "diagnostico_peda": txt,
                                 "revisado_professo": True
@@ -1050,6 +1074,7 @@ elif menu == "🧠 Diagnósticos IA":
                         st.success(f"✅ {count} feedbacks salvos na tabela 'feedback_ia_alunos'!")
                         st.balloons()
                     except json.JSONDecodeError:
-                        st.error("Erro: O texto não é um JSON válido.")
+                        st.error("Erro: O texto colado não é um JSON válido.")
                     except Exception as e:
-                        st.error(f"Erro no Supabase: {e}")
+                        st.error("❌ Erro ao salvar no banco. Mensagem:")
+                        st.code(str(e))
