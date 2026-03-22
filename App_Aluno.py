@@ -185,12 +185,43 @@ if st.session_state.etapa == "login":
 elif st.session_state.etapa == "ante_sala":
     if 'aluno' not in st.session_state or not st.session_state.aluno:
         st.warning("⚠️ Sessão de aluno não encontrada. Voltando ao login em 2 segundos...")
-        import time
         time.sleep(2)
         st.session_state.etapa = "login"
         st.rerun()
 
     aluno = st.session_state.aluno
+
+    # ==========================================
+    # 🔒 CHECK-IN DO WHATSAPP INSERIDO AQUI
+    # ==========================================
+    if not aluno.get('whatsapp') or str(aluno.get('whatsapp')).strip() == "":
+        st.warning("🚀 **Quase lá!** Para continuar, precisamos do seu WhatsApp para te enviar o resultado e alertas de atividades.")
+        
+        with st.form("form_whats"):
+            novo_whats = st.text_input("Seu WhatsApp (com DDD):", placeholder="Ex: 81999887766")
+            st.caption("Fique tranquilo, usaremos apenas para fins pedagógicos e avisos automáticos.")
+            btn_vincular = st.form_submit_button("✅ Cadastrar e Liberar Provas", type="primary")
+            
+            if btn_vincular:
+                if len(novo_whats) >= 10:
+                    try:
+                        # Atualiza no banco de dados de alunos usando o ID do aluno
+                        db_alunos.table("alunos").update({"whatsapp": novo_whats}).eq("id", aluno['id']).execute()
+                        
+                        # Atualiza o estado da sessão para não pedir de novo
+                        st.session_state.aluno['whatsapp'] = novo_whats
+                        
+                        st.success("WhatsApp vinculado com sucesso! Redirecionando...")
+                        time.sleep(1)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao salvar o WhatsApp: {e}")
+                else:
+                    st.error("Por favor, digite um número válido com DDD (apenas números).")
+        
+        st.stop() # 🛑 Para a renderização aqui até o aluno preencher o zap!
+    # ==========================================
+
     turma_bruta = str(aluno.get('turma', ''))
     serie_aluno = "1º Ano"
     if "2" in turma_bruta: serie_aluno = "2º Ano"
@@ -359,7 +390,6 @@ elif st.session_state.etapa == "em_prova":
                 escolha = st.radio(
                     f"Radio_Q{i+1}", 
                     options=ordem, 
-                    # Agora ele pega APENAS o texto limpo da alternativa 👇
                     format_func=lambda x: f"{limpar_alternativa(opcoes_dict.get(x, ''))}",
                     index=None, 
                     key=f"q_{q['id']}", 
