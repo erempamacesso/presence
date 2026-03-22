@@ -773,25 +773,34 @@ elif menu == "📂 Provas Elaboradas":
                         c4.markdown("**Engajamento:**")
                         c4.caption("Erro ao carregar dados.")
                     
-                    # --- COLUNA 5: AÇÕES ---
+            # --- COLUNA 5: AÇÕES (VERSÃO ATUALIZADA) ---
                     with c5:
+                        # 1. Botão Editar
                         if st.button("✏️ Editar", key=f"edit_prova_{prova_id}", use_container_width=True):
                             st.session_state.editando_prova_id = prova_id
                             st.rerun()
 
+                        # 2. Botão Ativar/Desativar Prova
                         texto_btn_status = "⏸️ Desativar" if prova.get('ativa') else "▶️ Ativar"
                         if st.button(texto_btn_status, key=f"status_{prova_id}", use_container_width=True):
                             novo_status = not prova.get('ativa')
                             supabase.table("modelos_prova").update({"ativa": novo_status}).eq("id", prova_id).execute()
                             st.rerun()
                         
-                        if not prazo_encerrado and dt_limite_raw:
-                            if st.button("🔓 Liberar Notas", key=f"liberar_{prova_id}", use_container_width=True, help="Encerra o prazo agora para mostrar as notas aos alunos"):
-                                supabase.table("modelos_prova").update({"data_limite": agora.isoformat()}).eq("id", prova_id).execute()
-                                st.toast("Notas liberadas para os alunos!")
-                                time.sleep(1)
-                                st.rerun()
+                        # 3. NOVO: Controle de Visibilidade das Notas (O Cadeado)
+                        notas_liberadas = prova.get('notas_liberadas', False)
+                        label_notas = "🔒 Esconder Notas" if notas_liberadas else "🔓 Liberar Notas"
+                        
+                        if st.button(label_notas, key=f"lib_btn_{prova_id}", use_container_width=True):
+                            nova_visibilidade = not notas_liberadas
+                            supabase.table("modelos_prova").update({"notas_liberadas": nova_visibilidade}).eq("id", prova_id).execute()
+                            
+                            msg = "Notas LIBERADAS para os alunos!" if nova_visibilidade else "Notas ESCONDIDAS dos alunos!"
+                            st.toast(msg)
+                            time.sleep(1)
+                            st.rerun()
 
+                        # 4. Botão Excluir
                         if st.button("🗑️ Excluir", key=f"del_{prova_id}", type="primary", use_container_width=True):
                             try:
                                 supabase.table("resultados_provas").delete().eq("prova_id", prova_id).execute()
@@ -800,10 +809,7 @@ elif menu == "📂 Provas Elaboradas":
                                 time.sleep(1)
                                 st.rerun()
                             except Exception as e:
-                                st.error(f"Erro: {e}")
-                                
-        else:
-            st.info("📌 Nenhuma prova foi elaborada ainda.")
+                                st.error(f"Erro: {e}")      
 
 # --- 10. LISTA DE MATRÍCULAS PARA IMPRESSÃO (COM PDF) ---
 elif menu == "🖨️ Lista de Matrículas":
