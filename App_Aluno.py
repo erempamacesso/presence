@@ -364,116 +364,122 @@ elif st.session_state.etapa == "instrucoes":
                 st.rerun()
 
 # ==========================================
-# ETAPA 4: EXECUÇÃO DA PROVA (COM CRONÔMETRO)
+# ETAPA 4: EXECUÇÃO DA PROVA (VERSÃO TURBO)
 # ==========================================
 elif st.session_state.etapa == "em_prova":
-    st.markdown("""
+    # 1. CSS para manter o cronômetro fixo e visível
+    st.markdown(f"""
         <style>
-            .stApp { background-color: #FFFFFF !important; }
-            .timer-box {
-                position: fixed; top: 10px; right: 10px; z-index: 1000;
-                background-color: #fff1f0; border: 2px solid #ff4d4f;
-                padding: 10px 20px; border-radius: 10px; text-align: center;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-            }
+            .stApp {{ background-color: #FFFFFF !important; }}
+            .timer-container {{
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                z-index: 9999;
+                background-color: white;
+                padding: 15px;
+                border-radius: 15px;
+                border: 2px solid {C_PRIMARY};
+                box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+                text-align: center;
+                min-width: 120px;
+            }}
         </style>
     """, unsafe_allow_html=True)
-    
-    if not st.session_state.questoes or not st.session_state.tempo_final:
-        st.session_state.etapa = "login"
-        st.rerun()
 
-    # Cálculo do Tempo
-    restante = st.session_state.tempo_final - datetime.now()
-    segs = int(restante.total_seconds())
-    
-    if segs <= 0:
-        st.error("⌛ TEMPO ESGOTADO! Infelizmente, o prazo encerrou.")
-        if st.button("Voltar ao Portal Pro"):
-            st.session_state.clear()
-            st.rerun()
-        st.stop()
+    # 2. FUNÇÃO DO CRONÔMETRO ISOLADA (O SEGREDO!)
+    @st.fragment(run_every="1s")
+    def render_cronometro():
+        restante = st.session_state.tempo_final - datetime.now()
+        segs = int(restante.total_seconds())
+        
+        if segs <= 0:
+            st.error("⌛ TEMPO ESGOTADO!")
+            st.stop()
+        
+        mins, secs = divmod(segs, 60)
+        cor = "#FF4B4B" if segs < 300 else C_PRIMARY
+        
+        st.markdown(f"""
+            <div class="timer-container">
+                <div style="font-size: 12px; color: #666; font-weight: bold;">TEMPO</div>
+                <div style="font-size: 24px; color: {cor}; font-weight: 800; font-family: monospace;">
+                    {mins:02d}:{secs:02d}
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
 
-    # --- EXIBIÇÃO DO CRONÔMETRO ---
-    mins, secs = divmod(segs, 60)
-    cor_timer = "#ff4d4f" if segs < 300 else C_TEXT # Vermelho se menos de 5 min
-    
-    st.markdown(f"""
-        <div class="timer-box">
-            <span style="color: {C_TEXT_MUTED}; font-size: 12px; font-weight: bold;">TEMPO RESTANTE</span><br>
-            <span style="color: {cor_timer}; font-size: 24px; font-weight: 800;">{mins:02d}:{secs:02d}</span>
-        </div>
-    """, unsafe_allow_html=True)
+    # Chamar o cronômetro (ele vai rodar em paralelo sem travar os cliques)
+    render_cronometro()
 
-    st.markdown(f"""
-        <div style="margin-bottom: 25px;">
-            <h2 style="color: {C_TEXT}; font-size: 24px; margin-bottom: 0;">✍️ {st.session_state.prova_config['titulo']}</h2>
-            <p style="color: {C_TEXT_MUTED}; font-size: 14px;">Boa sorte, {st.session_state.aluno['nome']}! Leia com atenção.</p>
-        </div>
-    """, unsafe_allow_html=True)
-    
+    # 3. CABEÇALHO DA PROVA
+    st.markdown(f"## ✍️ {st.session_state.prova_config['titulo']}")
+    st.caption(f"Aluno: {st.session_state.aluno['nome']} | Boa sorte, Bença!")
+
+    # 4. FORMULÁRIO DE QUESTÕES (Sem o st.rerun aqui dentro)
     with st.form("form_prova", clear_on_submit=False):
         for i, q in enumerate(st.session_state.questoes):
             with st.container(border=True):
-                st.markdown(f"**<span style='color: {C_PRIMARY}; font-size: 18px;'>QUESTÃO {i+1}</span>**", unsafe_allow_html=True)
-                st.write(q['enunciado'], unsafe_allow_html=True)
+                st.markdown(f"**QUESTÃO {i+1}**")
+                st.markdown(q['enunciado'], unsafe_allow_html=True)
                 
-                opcoes_dict = q.get('alternativas', {}) 
+                opcoes_dict = q.get('alternativas', {})
                 letras_originais = [l for l in ["A", "B", "C", "D", "E"] if opcoes_dict.get(l)]
                 
-                # Semente fixa por aluno/questão para manter a ordem se a página recarregar
+                # Semente para manter a ordem fixa mesmo com o fragment rodando
                 random.seed(f"{st.session_state.aluno['id']}-{q['id']}")
                 ordem = letras_originais.copy()
                 random.shuffle(ordem)
 
-                def limpar_alternativa(texto_cru):
-                    t_sem_html = re.sub(r'<[^>]+>', '', str(texto_cru)) 
-                    t_limpo = re.sub(r'^\s*[A-Ea-e]\s*[\)\.\-]\s*', '', t_sem_html).strip() 
-                    return t_limpo
+                def limpar_txt(t):
+                    return re.sub(r'<[^>]+>', '', str(t)).strip()
 
+                # O segredo para não perder o clique é salvar direto no session_state via key
                 escolha = st.radio(
-                    f"Selecione a resposta da {i+1}:", 
-                    options=ordem, 
-                    format_func=lambda x: f"({x}) {limpar_alternativa(opcoes_dict.get(x, ''))}",
-                    index=None, 
-                    key=f"q_{q['id']}"
+                    f"Selecione para Q{i+1}:",
+                    options=ordem,
+                    format_func=lambda x: f"({x}) {limpar_txt(opcoes_dict.get(x, ''))}",
+                    index=None,
+                    key=f"radio_q_{q['id']}" # Chave única
                 )
-                
-                if escolha:
-                    st.session_state.respostas[q['id']] = escolha 
-            
+        
         st.markdown("<br>", unsafe_allow_html=True)
-        entregar = st.form_submit_button("✅ FINALIZAR E ENVIAR AVALIAÇÃO PRO", type="primary", use_container_width=True)
+        entregar = st.form_submit_button("✅ FINALIZAR E ENVIAR PROVA", type="primary", use_container_width=True)
 
+    # 5. LÓGICA DE ENVIO
     if entregar:
-        if len(st.session_state.respostas) < len(st.session_state.questoes):
-            st.warning("⚠️ Atenção! Você precisa responder todas as questões Pro antes de enviar.")
+        # Coleta as respostas das 'keys' do session_state
+        respostas_aluno = {}
+        for q in st.session_state.questoes:
+            chave = f"radio_q_{q['id']}"
+            if chave in st.session_state and st.session_state[chave] is not None:
+                respostas_aluno[q['id']] = st.session_state[chave]
+
+        if len(respostas_aluno) < len(st.session_state.questoes):
+            st.warning("⚠️ Bença, responda todas as questões antes de enviar!")
         else:
-            # ... (seu código de salvamento continua igual aqui)
-            valor_cada = st.session_state.prova_config.get('valor_questao', 1.0)
-            acertos = 0
-            for q in st.session_state.questoes:
-                if st.session_state.respostas.get(q['id']) == q['resposta_correta']:
-                    acertos += 1
-            
-            lista_resultados = []
-            for q in st.session_state.questoes:
-                resp_aluno = st.session_state.respostas.get(q['id'])
-                lista_resultados.append({
-                    "aluno_id": str(st.session_state.aluno['id']), 
-                    "prova_id": st.session_state.prova_config['id'],
-                    "questao_id": q['id'],
-                    "resposta_aluno": resp_aluno,
-                    "acertou": (resp_aluno == q['resposta_correta']),
-                    "acertos": acertos 
-                })
-            
-            try:
-                db_provas.table("resultados_provas").insert(lista_resultados).execute()
-                st.session_state.etapa = "resultado_final"
-                st.rerun()
-            except Exception as e:
-                st.error(f"Erro ao salvar: {e}")
+            with st.spinner("Salvando no Pergaminho..."):
+                # ... (Aqui entra sua lógica de cálculo de acertos e db_provas.insert)
+                # Use o dicionário 'respostas_aluno' para calcular a nota
+                acertos = sum(1 for q in st.session_state.questoes if respostas_aluno.get(q['id']) == q['resposta_correta'])
+                
+                lista_resultados = []
+                for q in st.session_state.questoes:
+                    lista_resultados.append({
+                        "aluno_id": str(st.session_state.aluno['id']),
+                        "prova_id": st.session_state.prova_config['id'],
+                        "questao_id": q['id'],
+                        "resposta_aluno": respostas_aluno.get(q['id']),
+                        "acertou": (respostas_aluno.get(q['id']) == q['resposta_correta']),
+                        "acertos": acertos
+                    })
+                
+                try:
+                    db_provas.table("resultados_provas").insert(lista_resultados).execute()
+                    st.session_state.etapa = "resultado_final"
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao salvar: {e}")
 
 # ==========================================
 # ETAPA 5: RESULTADO E MISTÉRIO DO PROFESSOR
@@ -512,7 +518,7 @@ elif st.session_state.etapa == "resultado_final":
     if st.button("⬅️ Voltar para o Portal Pro", type="secondary", use_container_width=True):
         st.session_state.clear() 
         st.rerun()
-        
+
 # ==========================================
 # ETAPA 6: VER MEU RESULTADO E FEEDBACK DA IA
 # ==========================================
