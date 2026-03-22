@@ -513,93 +513,116 @@ elif st.session_state.etapa == "ver_meu_resultado":
     aluno = st.session_state.aluno
     prova = st.session_state.prova_resultado
 
-    # Cabeçalho mais discreto
-    st.subheader(f"📊 Desempenho: {prova['titulo']}")
-    
-    with st.spinner("Carregando revisão..."):
-        try:
-            # 1. Busca dados
-            res_detalhes = db_provas.table("resultados_provas").select("*").eq("aluno_id", str(aluno['id'])).eq("prova_id", prova['id']).execute()
-            acertos = sum(1 for r in res_detalhes.data if r.get('acertou') == True)
-            valor_cada = prova.get('valor_questao', 1.0)
-            nota_final = acertos * valor_cada
-            
-            res_fb = db_provas.table("feedback_ia_alunos").select("diagnostico_pedagogico").eq("aluno_id", str(aluno['id'])).eq("prova_id", prova['id']).execute()
-            feedback = res_fb.data[0]['diagnostico_pedagogico'] if res_fb.data else None
+    # 1. VERIFICAÇÃO DE CADEADO: As notas foram liberadas pelo professor?
+    try:
+        res_status = db_provas.table("modelos_prova").select("notas_liberadas").eq("id", prova['id']).single().execute()
+        notas_liberadas = res_status.data.get('notas_liberadas', False) if res_status.data else False
+    except:
+        notas_liberadas = False
 
-            # 2. Nova Barra de Resumo (Substitui os boxes grandes)
-            col_nota, col_acerto, col_feedback = st.columns([1, 1, 3])
-            
-            with col_nota:
-                st.metric("Sua Nota", f"{nota_final:.1f}")
-            
-            with col_acerto:
-                st.metric("Acertos", f"{acertos}")
+    if not notas_liberadas:
+        # --- TELA DE ESPERA (Cadeado Fechado) ---
+        st.subheader(f"✅ Prova Enviada: {prova['titulo']}")
+        st.balloons()
+        
+        st.markdown(f"""
+            <div style="background-color: #f0f7ff; border-left: 5px solid #007bff; border-radius: 10px; padding: 25px; margin-top: 20px;">
+                <h3 style="color: #0056b3; margin-top: 0;">🧙‍♂️ O Mestre Lardião está analisando...</h3>
+                <p style="font-size: 18px; color: #333;">Suas respostas foram salvas com sucesso no pergaminho sagrado!</p>
+                <p style="font-size: 16px; color: #666;"><b>O que acontece agora?</b> O professor está revisando os feedbacks da IA. 
+                Assim que as notas forem liberadas, você poderá ver seu desempenho detalhado e o diagnóstico pedagógico aqui.</p>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        if st.button("⬅️ Voltar para Atividades", use_container_width=True):
+            st.session_state.etapa = "ante_sala"
+            st.rerun()
 
-            with col_feedback:
-                if feedback:
-                    # Feedback do Mestre em formato de "alerta" discreto
-                    st.info(f"**🧙‍♂️ Mestre Lardião:** {feedback}")
-                else:
-                    st.caption("Aguardando feedback pedagógico final.")
-
-            st.divider()
-
-            # 3. Revisão de Questões (A mesma lógica de antes, mas com visual polido)
-            erradas = [r for r in res_detalhes.data if r.get('acertou') == False]
-            
-            if not erradas:
-                st.success("✨ **Excepcional! Você não cometeu erros nesta avaliação.**")
-            else:
-                st.markdown("#### 🔍 Onde ajustar o conhecimento:")
+    else:
+        # --- TELA DE RESULTADO (Cadeado Aberto) ---
+        st.subheader(f"📊 Desempenho: {prova['titulo']}")
+        
+        with st.spinner("Carregando sua correção comentada..."):
+            try:
+                # 1. Busca dados de desempenho e feedback
+                res_detalhes = db_provas.table("resultados_provas").select("*").eq("aluno_id", str(aluno['id'])).eq("prova_id", prova['id']).execute()
                 
-                q_ids = [r['questao_id'] for r in erradas]
-                res_questoes = db_provas.table("questoes").select("*").in_("id", q_ids).execute()
-                questoes_dict = {q['id']: q for q in res_questoes.data}
+                acertos = sum(1 for r in res_detalhes.data if r.get('acertou') == True)
+                valor_cada = prova.get('valor_questao', 1.0)
+                nota_final = acertos * valor_cada
+                
+                res_fb = db_provas.table("feedback_ia_alunos").select("diagnostico_pedagogico").eq("aluno_id", str(aluno['id'])).eq("prova_id", prova['id']).execute()
+                feedback = res_fb.data[0]['diagnostico_pedagogico'] if res_fb.data else None
 
-                for erro in erradas:
-                    q = questoes_dict.get(erro['questao_id'])
-                    if q:
-                        # Criamos um resumo do enunciado para o título do expander
-                        enunciado_puro = q.get('enunciado', '')
-                        # Removemos tags HTML se houver, para o título não virar bagunça
-                        resumo = (enunciado_puro[:60] + '...') if len(enunciado_puro) > 60 else enunciado_puro
-                        
-                        # Agora o título do expander fica amigável:
-                        with st.expander(f"🔍 Questão: {resumo}", expanded=True):
-                            # O restante do código de exibição continua igual...
-                            st.write(q.get('enunciado', ''), unsafe_allow_html=True)
+                # 2. Barra de Resumo (Métricas + Mestre)
+                col_nota, col_acerto, col_fb = st.columns([1, 1, 3])
+                
+                with col_nota:
+                    st.metric("Sua Nota", f"{nota_final:.1f}")
+                with col_acerto:
+                    st.metric("Acertos", f"{acertos}")
+                with col_fb:
+                    if feedback:
+                        st.info(f"**🧙‍♂️ Mestre Lardião diz:** {feedback}")
+                    else:
+                        st.caption("Feedback pedagógico sendo processado.")
 
+                st.divider()
+
+                # 3. Revisão de Questões
+                erradas = [r for r in res_detalhes.data if r.get('acertou') == False]
+                
+                if not erradas:
+                    st.success("✨ **Excepcional! Você gabaritou esta avaliação.**")
+                else:
+                    st.markdown("#### 🔍 Revisão de Pontos Críticos:")
+                    
+                    q_ids = [r['questao_id'] for r in erradas]
+                    res_questoes = db_provas.table("questoes").select("*").in_("id", q_ids).execute()
+                    questoes_dict = {q['id']: q for q in res_questoes.data}
+
+                    for erro in erradas:
+                        q = questoes_dict.get(erro['questao_id'])
+                        if q:
+                            # Prepara resumo do título (limpo de HTML)
+                            texto_puro = q.get('enunciado', 'Questão sem texto')
+                            resumo = (texto_puro[:65] + '...') if len(texto_puro) > 65 else texto_puro
                             
-                            alts = q.get('alternativas') or {}
-                            letra_aluno = erro.get('resposta_a') or erro.get('resposta_aluno') or "?"
-                            letra_correta = q.get('resposta_correta', '')
-                            
-                            # Respostas Lado a Lado
-                            c1, c2 = st.columns(2)
-                            with c1:
-                                st.markdown(f"<span style='color:#d9534f'>❌ **Sua resposta:** ({letra_aluno})</span>", unsafe_allow_html=True)
-                            with c2:
-                                st.markdown(f"<span style='color:#5cb85c'>✅ **O correto:** ({letra_correta})</span>", unsafe_allow_html=True)
-
-                            # Tarja Azul de Justificativa (Limpando a palavra Diagnóstico via código também)
-                            just = q.get('justificativas')
-                            if just:
-                                if isinstance(just, dict):
-                                    # Puxa a do erro e a da correta, limpando o prefixo se ainda existir
-                                    txt_erro = str(just.get(letra_aluno, "")).replace("Diagnóstico: ", "")
-                                    txt_certa = str(just.get(letra_correta, "")).replace("Diagnóstico: ", "")
-                                    
-                                    msg = f"**Por que a ({letra_aluno}) não serve:** {txt_erro}<br><br>**Foco na ({letra_correta}):** {txt_certa}" if txt_erro else f"**Explicação:** {txt_certa}"
-                                else:
-                                    msg = str(just).replace("Diagnóstico: ", "")
+                            with st.expander(f"❌ Erro em: {resumo}", expanded=False):
+                                # Mostra enunciado completo (Suporta fórmulas/imagens)
+                                st.write(q.get('enunciado', ''), unsafe_allow_html=True)
                                 
-                                st.markdown(f"<div style='background-color: #e7f3fe; border-left: 5px solid #2196F3; padding: 10px; font-size: 14px; color: #0c5460;'>💡 {msg}</div>", unsafe_allow_html=True)
+                                alts = q.get('alternativas') or {}
+                                letra_aluno = erro.get('resposta_a') or erro.get('resposta_aluno') or "?"
+                                letra_correta = q.get('resposta_correta', '')
 
-        except Exception as e:
-            st.error("Erro ao carregar os detalhes.")
-            st.code(str(e))
+                                # Comparação de respostas
+                                c1, c2 = st.columns(2)
+                                with c1:
+                                    st.markdown(f"<span style='color:#d9534f'>❌ **Você marcou:** ({letra_aluno})</span>", unsafe_allow_html=True)
+                                with c2:
+                                    st.markdown(f"<span style='color:#5cb85c'>✅ **O correto era:** ({letra_correta})</span>", unsafe_allow_html=True)
 
-    if st.button("⬅️ Voltar", use_container_width=True):
-        st.session_state.etapa = "ante_sala"
-        st.rerun()
+                                # Tarja de Justificativa com Limpeza de Texto
+                                just = q.get('justificativas')
+                                if just:
+                                    if isinstance(just, dict):
+                                        txt_erro = str(just.get(letra_aluno, "")).replace("Diagnóstico: ", "")
+                                        txt_certa = str(just.get(letra_correta, "")).replace("Diagnóstico: ", "")
+                                        
+                                        if txt_erro:
+                                            msg = f"<b>Por que a ({letra_aluno}) está incorreta:</b> {txt_erro}<br><br><b>Sobre a correta ({letra_correta}):</b> {txt_certa}"
+                                        else:
+                                            msg = f"<b>Explicação da correta ({letra_correta}):</b> {txt_certa}"
+                                    else:
+                                        msg = str(just).replace("Diagnóstico: ", "")
+                                    
+                                    st.markdown(f"<div style='background-color: #e7f3fe; border-left: 5px solid #2196F3; padding: 15px; border-radius: 5px; color: #0c5460;'>💡 {msg}</div>", unsafe_allow_html=True)
+
+            except Exception as e:
+                st.error("Ocorreu um erro ao processar sua correção.")
+                st.code(str(e))
+
+        if st.button("⬅️ Voltar para Atividades", use_container_width=True):
+            st.session_state.etapa = "ante_sala"
+            st.rerun()
