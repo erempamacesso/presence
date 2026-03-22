@@ -560,9 +560,16 @@ elif st.session_state.etapa == "ver_meu_resultado":
                 for erro in erradas:
                     q = questoes_dict.get(erro['questao_id'])
                     if q:
-                        with st.expander(f"Ver erro na questão de ID {q['id']}", expanded=True):
-                            # Enunciado (suporta HTML/Imagens)
+                        # Criamos um resumo do enunciado para o título do expander
+                        enunciado_puro = q.get('enunciado', '')
+                        # Removemos tags HTML se houver, para o título não virar bagunça
+                        resumo = (enunciado_puro[:60] + '...') if len(enunciado_puro) > 60 else enunciado_puro
+                        
+                        # Agora o título do expander fica amigável:
+                        with st.expander(f"🔍 Questão: {resumo}", expanded=True):
+                            # O restante do código de exibição continua igual...
                             st.write(q.get('enunciado', ''), unsafe_allow_html=True)
+
                             
                             alts = q.get('alternativas') or {}
                             letra_aluno = erro.get('resposta_a') or erro.get('resposta_aluno') or "?"
