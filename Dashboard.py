@@ -315,11 +315,11 @@ elif menu == "📚 Biblioteca de Questões":
                 
                 with c_serie: 
                     edit_serie = st.selectbox("Série", ["1º Ano", "2º Ano", "3º Ano"], 
-                                             index=["1º Ano", "2º Ano", "3º Ano"].index(q.get('serie', "1º Ano")))
+                                              index=["1º Ano", "2º Ano", "3º Ano"].index(q.get('serie', "1º Ano")))
                 
                 with c_diff:
                     edit_diff = st.selectbox("Dificuldade", ["Fácil", "Média", "Difícil"], 
-                                            index=["Fácil", "Média", "Difícil"].index(q.get('dificuldade', "Média")))
+                                             index=["Fácil", "Média", "Difícil"].index(q.get('dificuldade', "Média")))
 
                 st.markdown("<br>", unsafe_allow_html=True)
                 c_sel, c_novo = st.columns([1, 1])
@@ -355,8 +355,21 @@ elif menu == "📚 Biblioteca de Questões":
                 
                 st.divider()
                 st.markdown("🧠 **Gabarito e Justificativas**")
-                edit_gabarito = st.radio("Alternativa Correta:", ["A", "B", "C", "D"], 
-                                        index=["A", "B", "C", "D"].index(q.get('resposta_correta', "A")), horizontal=True)
+                
+                # --- LÓGICA DE SEGURANÇA PARA O GABARITO ---
+                opcoes_gabarito = ["A", "B", "C", "D"]
+                # Limpa o dado que vem do banco (remove espaços e põe em maiúsculo)
+                resposta_vinda_do_banco = str(q.get('resposta_correta', "A")).strip().upper()
+
+                # Verifica se a resposta é válida, se não for, define o índice como 0 (Alternativa A)
+                if resposta_vinda_do_banco in opcoes_gabarito:
+                    idx_gabarito = opcoes_gabarito.index(resposta_vinda_do_banco)
+                else:
+                    idx_gabarito = 0 
+                # -------------------------------------------
+
+                edit_gabarito = st.radio("Alternativa Correta:", opcoes_gabarito, 
+                                         index=idx_gabarito, horizontal=True)
                 
                 alts = q.get('alternativas', {})
                 justs = q.get('justificativas', {})
@@ -399,6 +412,7 @@ elif menu == "📚 Biblioteca de Questões":
                         supabase.table("questoes").update(dados_upd).eq("id", q['id']).execute()
                         st.session_state.editando_id = None
                         st.success("Questão validada e salva na biblioteca!")
+                        import time # Garantindo que o time está importado aqui caso não esteja no topo
                         time.sleep(1)
                         st.rerun()
 
@@ -426,6 +440,8 @@ elif menu == "📚 Biblioteca de Questões":
         if data:
             st.write(f"🔍 Encontradas: **{len(data)}** questões")
             st.divider()
+            
+            import re # Garantindo que o re está importado caso não esteja no topo
             
             # Cabeçalho da Tabela
             h_c1, h_c2, h_c3, h_c4, h_c5, h_c6 = st.columns([0.6, 0.8, 1.2, 4, 0.5, 0.8])
@@ -466,7 +482,7 @@ elif menu == "📚 Biblioteca de Questões":
                         st.rerun()
         else:
             st.info("Nenhuma questão encontrada.")
-
+            
 # --- 8. GERADOR DE MODELOS ---
 elif menu == "📜 Gerar Modelo de Prova":
     st.title("📜 Publicar Prova para Alunos")
