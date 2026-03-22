@@ -150,26 +150,33 @@ if st.session_state.etapa == "login":
 
         with st.container():
             st.markdown('<div style="margin-top: -100px; padding: 0 30px 40px 30px;">', unsafe_allow_html=True)
-            matricula = st.text_input("Digite sua matrícula:", label_visibility="collapsed", placeholder="Digite Sua Matrícula")
+            
+            # Limite de 7 caracteres na interface
+            matricula = st.text_input("Digite sua matrícula:", label_visibility="collapsed", placeholder="Sua Matrícula (7 números)", max_chars=7)
             st.write("") 
             
             if st.button("ACESSAR SISTEMA PRO", use_container_width=True, type="primary"):
                 if matricula:
-                    with st.spinner("Buscando dados no servidor..."):
-                        try:
-                            mat_limpa = str(matricula).strip()
-                            res = db_alunos.table("alunos").select("*").eq("numero_matricula", mat_limpa).execute()
-                            
-                            if res.data and len(res.data) > 0:
-                                st.session_state.aluno = res.data[0]
-                                st.session_state.etapa = "ante_sala"
-                                st.rerun() 
-                            else:
-                                st.error(f"❌ Matrícula '{mat_limpa}' não encontrada.")
+                    mat_limpa = str(matricula).strip()
+                    
+                    # Validação de segurança: Exatamente 7 dígitos e apenas números
+                    if len(mat_limpa) != 7 or not mat_limpa.isdigit():
+                        st.warning("⚠️ Ops! A matrícula deve conter exatamente 7 números.")
+                    else:
+                        with st.spinner("Buscando dados no servidor..."):
+                            try:
+                                res = db_alunos.table("alunos").select("*").eq("numero_matricula", mat_limpa).execute()
                                 
-                        except Exception as e:
-                            st.error("Erro ao conectar com o banco de dados das matrículas.")
-                            st.code(f"Detalhes do erro: {e}")
+                                if res.data and len(res.data) > 0:
+                                    st.session_state.aluno = res.data[0]
+                                    st.session_state.etapa = "ante_sala"
+                                    st.rerun() 
+                                else:
+                                    st.error(f"❌ Matrícula '{mat_limpa}' não encontrada.")
+                                    
+                            except Exception as e:
+                                st.error("Erro ao conectar com o banco de dados das matrículas.")
+                                st.code(f"Detalhes do erro: {e}")
                 else:
                     st.warning("⚠️ Por favor, digite sua matrícula antes de acessar.")
             
@@ -192,34 +199,36 @@ elif st.session_state.etapa == "ante_sala":
     aluno = st.session_state.aluno
 
     # ==========================================
-    # 🔒 CHECK-IN DO WHATSAPP INSERIDO AQUI
+    # 🔒 CHECK-IN DO WHATSAPP (Aprimorado)
     # ==========================================
-    if not aluno.get('whatsapp') or str(aluno.get('whatsapp')).strip() == "":
-        st.warning("🚀 **Quase lá!** Para continuar, precisamos do seu WhatsApp para te enviar o resultado e alertas de atividades.")
+    whats_atual = aluno.get('whatsapp')
+    # Verifica se é nulo, vazio ou até a string "null" (caso o banco salve errado)
+    precisa_zap = not whats_atual or str(whats_atual).strip() == "" or str(whats_atual).lower() == "null"
+
+    if precisa_zap:
+        st.warning("🚀 **Quase lá!** Para continuar, precisamos do seu WhatsApp para te enviar sua nota.")
         
         with st.form("form_whats"):
-            novo_whats = st.text_input("Seu WhatsApp (com DDD):", placeholder="Ex: 81999887766")
-            st.caption("Fique tranquilo, usaremos apenas para fins pedagógicos e avisos automáticos.")
-            btn_vincular = st.form_submit_button("✅ Cadastrar e Liberar Provas", type="primary")
+            # Limite de 11 caracteres na interface
+            novo_whats = st.text_input("Seu WhatsApp (apenas números com DDD):", placeholder="Ex: 81982500528", max_chars=11)
+            st.caption("Fique tranquilo, usaremos apenas para fins pedagógicos.")
+            btn_vincular = st.form_submit_button("✅ Cadastrar e Acessar", type="primary")
             
             if btn_vincular:
-                if len(novo_whats) >= 10:
+                # Validação: Exatamente 11 dígitos e apenas números
+                if len(novo_whats) == 11 and novo_whats.isdigit():
                     try:
-                        # Atualiza no banco de dados de alunos usando o ID do aluno
                         db_alunos.table("alunos").update({"whatsapp": novo_whats}).eq("id", aluno['id']).execute()
-                        
-                        # Atualiza o estado da sessão para não pedir de novo
                         st.session_state.aluno['whatsapp'] = novo_whats
-                        
-                        st.success("WhatsApp vinculado com sucesso! Redirecionando...")
+                        st.success("WhatsApp salvo! Redirecionando...")
                         time.sleep(1)
                         st.rerun()
                     except Exception as e:
                         st.error(f"Erro ao salvar o WhatsApp: {e}")
                 else:
-                    st.error("Por favor, digite um número válido com DDD (apenas números).")
+                    st.error("⚠️ Digite exatos 11 números (2 do DDD + 9 do telefone). Ex: 81982500528")
         
-        st.stop() # 🛑 Para a renderização aqui até o aluno preencher o zap!
+        st.stop() # Trava a tela aqui
     # ==========================================
 
     turma_bruta = str(aluno.get('turma', ''))
@@ -230,7 +239,7 @@ elif st.session_state.etapa == "ante_sala":
     st.markdown(f"""
         <div style="margin-bottom: 25px; padding: 15px; background-color: #F8FAFC; border-left: 5px solid #00C896; border-radius: 5px;">
             <h2 style="margin: 0; color: #1E293B;">👋 Olá, <span style="color: #00C896;">{aluno.get('nome', 'Aluno')}</span>!</h2>
-            <p style="color: #64748b; font-size: 16px; margin: 5px 0 0 0;">Sua série: <strong>{serie_aluno}</strong> ({turma_bruta})</p>
+            <p style="color: #64748b; font-size: 16px; margin: 5px 0 0 0;">Sua série: <strong>{serie_aluno}</strong> ({turma_bruta}) | 📱 {aluno.get('whatsapp')}</p>
         </div>
     """, unsafe_allow_html=True)
 
@@ -295,7 +304,6 @@ elif st.session_state.etapa == "ante_sala":
             st.error("Erro interno ao carregar a lista de atividades.")
             st.code(f"Detalhes do Erro: {str(e)}")
 
-# ==========================================
 # ETAPA 3: INSTRUÇÕES E SORTEIO
 # ==========================================
 elif st.session_state.etapa == "instrucoes":
