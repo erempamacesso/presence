@@ -1,3 +1,4 @@
+import google.generativeai as genai
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
@@ -7,6 +8,7 @@ import re
 import random 
 import base64
 import os
+
 
 # ==========================================
 # 1. CONFIGURAÇÕES, IDENTIDADE E ESTILO (TEMA CLARO PRO)
@@ -485,13 +487,46 @@ elif st.session_state.etapa == "resultado_final":
         
     with colR2:
         with st.container(border=True):
-            st.markdown(f"""
-                <div style="text-align: center;">
-                    <h3 style="color: {C_PRIMARY}; font-size: 20px;">🧠 Feedback do Mestre Pro</h3>
-                    <p style="color: orange; font-weight: bold; font-size: 16px; margin: 15px 0;">⌛ AGUARDE!</p>
-                    <p style="color: {C_TEXT_MUTED}; font-size: 14px;">O sistema analisará seu desempenho Pro para te dar uma dica de mestre personalizada em instantes...</p>
-                </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"<h3 style='text-align: center; color: {C_PRIMARY}; font-size: 20px; margin-bottom: 15px;'>🧠 Feedback do Mestre Pro</h3>", unsafe_allow_html=True)
+            
+            with st.spinner("O Mestre Lardião está analisando suas respostas..."):
+                try:
+                    # 1. Pega os erros do aluno na sessão atual
+                    questoes_erradas = []
+                    for q in st.session_state.questoes:
+                        resp_aluno = st.session_state.respostas.get(q['id'])
+                        if resp_aluno != q.get('resposta_correta'):
+                            texto_limpo = re.sub(r'<[^>]+>', '', str(q.get('enunciado', '')))
+                            questoes_erradas.append(texto_limpo[:150]) 
+                    
+                    # 2. Chama o Gemini
+                    genai.configure(api_key=st.secrets["gemini"]["API_KEY"])
+                    modelo_ia = genai.GenerativeModel('gemini-1.5-flash')
+                    
+                    if not questoes_erradas:
+                        feedback_ia = f"Oxente, {aluno['nome']}, gabaritou tudo! O Mestre Lardião tá orgulhoso demais do seu foco. Continue assim, arretado!"
+                    else:
+                        temas = "\n".join([f"- {erro}" for erro in questoes_erradas])
+                        prompt = f"""
+                        Você é o Mestre Lardião, professor de Química de Pernambuco.
+                        O aluno {aluno['nome']} acabou de fazer uma prova e errou questões sobre:
+                        {temas}
+                        
+                        Escreva uma dica pedagógica de no máximo 4 linhas, muito motivadora e com sotaque local (ex: 'visse', 'arretado', 'oxente'). 
+                        Não diga o número da questão, foque apenas no conceito químico que ele precisa estudar mais.
+                        """
+                        resposta = modelo_ia.generate_content(prompt)
+                        feedback_ia = resposta.text
+                    
+                    # 3. Exibe o resultado na tela do aluno
+                    st.success(feedback_ia)
+                    
+                    # 4. SALVAR NO BANCO (Descomente as 2 linhas abaixo se quiser salvar no Supabase)
+                    # dados_insert = {"aluno_id": str(aluno['id']), "prova_id": st.session_state.prova_config['id'], "diagnostico_pedagogico": feedback_ia}
+                    # db_provas.table("feedback_ia_alunos").insert(dados_insert).execute()
+
+                except Exception as e:
+                    st.warning("O Mestre está corrigindo muitas provas agora, mas continue firme nos estudos! A evolução vem com a prática.")
 
     st.divider()
     if st.button("⬅️ Voltar para o Portal Pro", type="secondary", use_container_width=True):
