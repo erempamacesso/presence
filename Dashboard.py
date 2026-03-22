@@ -10,7 +10,6 @@ import base64
 import re
 from datetime import datetime
 import time
-import google.generativeai as genai
 
 # --- PROTEÇÃO PARA O WHATSAPP (Nuvem vs Local) ---
 try:
@@ -963,91 +962,97 @@ elif menu == "📲 Central de Avisos":
         else:
             st.warning("Nenhuma atividade cadastrada ainda.")
 
- # --- 12. TELA: DIAGNÓSTICOS IA ---
- 
+ # --- 12. DIAGNÓSTICOS IA EM LOTE (MESTRE LARDIÃO) ---
 elif menu == "🧠 Diagnósticos IA":
-    st.title("🧠 Central de Diagnósticos Pedagógicos (Gemini)")
-    st.markdown("Analise o desempenho da turma e gere feedbacks personalizados com a IA da SEE-PE.")
+    st.title("👨‍🏫 Central do Mestre Lardião (IA em Lote)")
+    st.markdown("Gere feedbacks personalizados para a turma inteira de uma vez e salve direto no banco!")
 
-    # Inicializa o Gemini
-    try:
-        genai.configure(api_key=st.secrets["gemini"]["API_KEY"])
-        model_gemini = genai.GenerativeModel('gemini-1.5-flash')
-        ia_pronta = True
-    except Exception as e:
-        st.error(f"Erro ao conectar com o Gemini: {e}")
-        ia_pronta = False
+    # 1. Selecionar a Prova
+    res_p = supabase.table("modelos_prova").select("id, titulo").order("id", desc=True).execute()
+    
+    if not res_p.data:
+        st.warning("Nenhuma prova encontrada no banco.")
+    else:
+        dict_provas = {p['titulo']: p['id'] for p in res_p.data}
+        prova_selecionada = st.selectbox("Selecione a Prova para analisar os erros:", options=list(dict_provas.keys()))
+        prova_id = dict_provas[prova_selecionada]
 
-    if ia_pronta:
-        # Função interna para gerar o texto
-        def pedir_dica_ao_mestre(nome, lista_erros):
-            if not lista_erros:
-                return f"Parabéns, {nome}! Você dominou todos os conceitos desta avaliação. O Mestre Lardião está orgulhoso!"
+        st.divider()
+
+        col_prompt, col_upload = st.columns(2)
+
+        # ==========================================
+        # LADO ESQUERDO: GERAR PROMPT
+        # ==========================================
+        with col_prompt:
+            st.subheader("1️⃣ Gerar Prompt para IA")
+            st.write("Busca os erros da prova selecionada e gera o texto para você copiar.")
             
-            contexto = "\n".join([f"- {item}" for item in lista_erros])
-            prompt = f"""
-            Você é o Mestre Lardião, professor de Química de Pernambuco.
-            Seu aluno {nome} errou questões sobre:
-            {contexto}
-            
-            Escreva uma dica pedagógica curta (3 a 4 linhas), motivadora e com sotaque local. 
-            Não diga o número da questão, foque no conteúdo químico.
-            """
-            try:
-                response = model_gemini.generate_content(prompt)
-                return response.text
-            except:
-                return "Continue firme nos estudos, a evolução vem com a prática!"
+            if st.button("🔍 Buscar Erros e Montar Texto", use_container_width=True):
+                with st.spinner("Analisando o banco de dados..."):
+                    # Busca alunos que erraram questões nesta prova
+                    erros = supabase.table("resultados_provas")\
+                              .select("aluno_id, questao_id")\
+                              .eq("prova_id", prova_id)\
+                              .eq("acertou", False)\
+                              .execute()
 
-        # Seleção da Prova
-        res_p = supabase.table("modelos_prova").select("id, titulo").execute()
-        if res_p.data:
-            df_p = pd.DataFrame(res_p.data)
-            prova_escolhida = st.selectbox("Selecione a Prova para Diagnóstico:", df_p['titulo'].tolist())
-            id_prova_foco = df_p[df_p['titulo'] == prova_escolhida].iloc[0]['id']
-
-            if st.button("🚀 GERAR DIAGNÓSTICOS PARA TODOS OS ALUNOS", type="primary"):
-                with st.spinner("O Mestre Lardião está analisando as provas..."):
-                    
-                    # 1. Puxa resultados
-                    res_res = supabase.table("resultados_provas").select("*").eq("prova_id", id_prova_foco).execute()
-                    if not res_res.data:
-                        st.warning("Ninguém fez essa prova ainda!")
+                    if not erros.data:
+                        st.success("Nenhum erro registrado para esta prova ainda ou todos acertaram!")
                     else:
-                        df_res = pd.DataFrame(res_res.data)
-                        alunos_ids = df_res['aluno_id'].unique().tolist()
+                        # Agrupa os erros por aluno_id
+                        erros_por_aluno = {}
+                        for erro in erros.data:
+                            al_id = erro['aluno_id']
+                            q_id = erro['questao_id']
+                            if al_id not in erros_por_aluno:
+                                erros_por_aluno[al_id] = []
+                            erros_por_aluno[al_id].append(q_id)
+
+                        # Monta o prompt
+                        prompt = f"""Aja como o Mestre Lardião, professor de Química de PE (use sotaque: visse, oxente, arretado).
+Abaixo estão os IDs dos alunos e os IDs das questões que eles erraram.
+Crie um feedback curto (2 linhas) e motivador para cada um, focando em não desistir.
+ME DEVOLVA APENAS UM ARQUIVO JSON no formato exato: {{"ID_DO_ALUNO": "TEXTO_DO_FEEDBACK"}}.
+
+DADOS DOS ALUNOS:
+"""
+                        for al_id, questoes in erros_por_aluno.items():
+                            prompt += f"Aluno ID: {al_id} | Errou as questões: {', '.join(questoes)}\n"
+
+                        st.text_area("📋 Copie o texto abaixo e cole no Gemini Web:", value=prompt, height=350)
+                        st.info("Dica: Clique dentro da caixa e aperte Ctrl+A e Ctrl+C.")
+
+        # ==========================================
+        # LADO DIREITO: SALVAR NO BANCO
+        # ==========================================
+        with col_upload:
+            st.subheader("2️⃣ Salvar Retorno da IA")
+            st.write("Cole o JSON devolvido pelo Gemini aqui para salvar na base de alunos.")
+            
+            json_recebido = st.text_area("Cole aqui o JSON gerado pela IA:", height=200, placeholder='{"12345": "Oxe, estude mais visse!"}')
+            
+            if st.button("💾 Gravar Diagnósticos no Banco", type="primary", use_container_width=True):
+                if json_recebido:
+                    try:
+                        dados = json.loads(json_recebido)
+                        insercoes_sucesso = 0
                         
-                        # 2. Puxa nomes dos alunos
-                        res_aln = supabase_alunos.table("alunos").select("id, nome").in_("id", alunos_ids).execute()
-                        dict_nomes = {str(a['id']): a['nome'] for a in res_aln.data}
+                        for al_id, feedback_texto in dados.items():
+                            # Faz o insert na tabela do print
+                            supabase.table("feedback_ia_alunos").insert({
+                                "aluno_id": al_id,
+                                "prova_id": prova_id,
+                                "diagnostico_peda": feedback_texto,
+                                "revisado_professo": True
+                            }).execute()
+                            insercoes_sucesso += 1
                         
-                        # 3. Puxa textos das questões
-                        q_ids = df_res['questao_id'].unique().tolist()
-                        res_qst = supabase.table("questoes").select("id, enunciado").in_("id", q_ids).execute()
-                        dict_qst = {q['id']: q['enunciado'][:100] for q in res_qst.data}
-
-                        progresso = st.progress(0)
-                        lista_final_ia = []
-
-                        for i, a_id in enumerate(alunos_ids):
-                            nome_aluno = dict_nomes.get(str(a_id), "Estudante")
-                            erros = df_res[(df_res['aluno_id'] == a_id) & (df_res['acertou'] == False)]
-                            temas_erros = [dict_qst.get(row['questao_id'], "Química") for _, row in erros.iterrows()]
-                            
-                            texto_ia = pedir_dica_ao_mestre(nome_aluno, temas_erros)
-                            
-                            lista_final_ia.append({
-                                "aluno_id": str(a_id),
-                                "prova_id": str(id_prova_foco),
-                                "diagnostico_pedagogico": texto_ia
-                            })
-                            progresso.progress((i + 1) / len(alunos_ids))
-
-                        # 4. Salva no Banco Avaliador-Provas
-                        if lista_final_ia:
-                            for item in lista_final_ia:
-                                supabase.table("feedback_ia_alunos").delete().eq("aluno_id", item['aluno_id']).eq("prova_id", item['prova_id']).execute()
-                            
-                            supabase.table("feedback_ia_alunos").insert(lista_final_ia).execute()
-                            st.success(f"✅ {len(lista_final_ia)} Diagnósticos Gerados com Sucesso!")
-                            st.balloons()
+                        st.success(f"✅ {insercoes_sucesso} feedbacks gravados com sucesso na tabela 'feedback_ia_alunos'!")
+                        st.balloons()
+                    except json.JSONDecodeError:
+                        st.error("Erro: O texto colado não é um JSON válido. Verifique se a IA não incluiu texto antes ou depois das chaves { }.")
+                    except Exception as e:
+                        st.error(f"Erro ao salvar no banco: {e}")
+                else:
+                    st.warning("Cole o JSON na caixa acima antes de salvar.")
