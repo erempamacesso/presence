@@ -962,114 +962,94 @@ elif menu == "📲 Central de Avisos":
         else:
             st.warning("Nenhuma atividade cadastrada ainda.")
 
- # --- 12. DIAGNÓSTICOS IA EM LOTE (MESTRE LARDIÃO) ---
+ # =================================================================
+# 12. MESTRE LARDIÃO - DIAGNÓSTICOS EM LOTE (SISTEMA SEM API KEY)
+# =================================================================
 elif menu == "🧠 Diagnósticos IA":
     st.title("👨‍🏫 Central do Mestre Lardião (IA em Lote)")
-    st.markdown("Gere feedbacks personalizados para a turma inteira de uma vez e salve direto no banco!")
+    st.markdown("Nesta área, você extrai os erros dos alunos para processar no Gemini Web e depois salva no banco.")
 
     # 1. Selecionar a Prova
     res_p = supabase.table("modelos_prova").select("id, titulo").order("id", desc=True).execute()
     
     if not res_p.data:
-        st.warning("Nenhuma prova encontrada no banco.")
+        st.warning("Nenhuma prova encontrada.")
     else:
         dict_provas = {p['titulo']: p['id'] for p in res_p.data}
-        prova_selecionada = st.selectbox("Selecione a Prova para analisar os erros:", options=list(dict_provas.keys()))
-        prova_id = dict_provas[prova_selecionada]
+        prova_sel = st.selectbox("Selecione a Prova:", options=list(dict_provas.keys()))
+        prova_id = dict_provas[prova_sel]
 
         st.divider()
+        c1, c2 = st.columns(2)
 
-        col_prompt, col_upload = st.columns(2)
-
-# ==========================================
+        # ==========================================
         # LADO ESQUERDO: GERAR PROMPT
         # ==========================================
-        with col_prompt:
-            st.subheader("1️⃣ Gerar Prompt para IA")
-            st.write("Busca os diagnósticos dos erros e gera o texto para você copiar.")
-            
-            if st.button("🔍 Buscar Erros e Montar Texto", use_container_width=True):
-                with st.spinner("Buscando justificativas e montando o super prompt..."):
-                    # Busca os erros trazendo a letra marcada E as justificativas lá da tabela questões!
-                    erros = supabase.table("resultados_provas")\
-                              .select("aluno_id, resposta_aluno, questoes(assunto, justificativas)")\
-                              .eq("prova_id", prova_id)\
-                              .eq("acertou", False)\
-                              .execute()
+        with c1:
+            st.subheader("1️⃣ Extrair Erros")
+            if st.button("🔍 Gerar Texto para IA", use_container_width=True):
+                with st.spinner("Buscando justificativas..."):
+                    # AGORA SIM! Buscando na tabela certa (respostas_alunos) e coluna certa (correta = False)
+                    erros = supabase.table("respostas_alunos")\
+                        .select("aluno_id, resposta_aluno, questoes(assunto, justificativas)")\
+                        .eq("prova_id", prova_id)\
+                        .eq("correta", False)\
+                        .execute()
 
                     if not erros.data:
-                        st.success("Nenhum erro registrado para esta prova ainda ou todos acertaram!")
+                        st.info("Nenhum erro encontrado para esta prova.")
                     else:
-                        # Agrupa os diagnósticos por aluno_id
-                        erros_por_aluno = {}
-                        for erro in erros.data:
-                            al_id = erro['aluno_id']
+                        mapa_erros = {}
+                        for e in erros.data:
+                            aid = e['aluno_id']
+                            letra = str(e.get('resposta_aluno', '')).strip().upper()
                             
-                            # Pega a letra que o aluno marcou (ex: "B") limpando espaços
-                            letra_marcada = str(erro.get('resposta_aluno', '')).strip().upper()
+                            # Tratamento seguro caso a questão não tenha justificativa cadastrada
+                            dados_q = e.get('questoes') or {}
+                            justificativas = dados_q.get('justificativas') or {}
+                            assunto = dados_q.get('assunto') or 'Geral'
                             
-                            # Puxa os dados da questão atrelada a esse erro
-                            dados_questao = erro.get('questoes')
-                            if dados_questao:
-                                justificativas = dados_questao.get('justificativas', {})
-                                assunto = dados_questao.get('assunto', 'Geral')
-                                
-                                # Busca o texto exato do diagnóstico para a letra que ele marcou
-                                diag_texto = justificativas.get(letra_marcada, f"Marcou alternativa {letra_marcada}")
-                                texto_final = f"[Assunto: {assunto}] {diag_texto}"
-                            else:
-                                texto_final = f"Errou a alternativa {letra_marcada}"
+                            diag_texto = justificativas.get(letra, f"Marcou a alternativa {letra}")
+                            texto_final = f"[Assunto: {assunto}] {diag_texto}"
 
-                            if al_id not in erros_por_aluno:
-                                erros_por_aluno[al_id] = []
-                            erros_por_aluno[al_id].append(texto_final)
+                            mapa_erros.setdefault(aid, []).append(texto_final)
 
-                        # Monta o prompt muito mais inteligente agora
-                        prompt = f"""Aja como o Mestre Lardião, professor de Química de PE (use sotaque: visse, oxente, arretado).
-Abaixo estão os IDs dos alunos e os diagnósticos técnicos dos erros que eles cometeram na prova.
-Crie um feedback curto (máx 3 linhas) e motivador para cada um, focando em corrigir o erro conceitual.
-ME DEVOLVA APENAS UM ARQUIVO JSON no formato exato: {{"ID_DO_ALUNO": "TEXTO_DO_FEEDBACK"}}.
-
-DADOS DOS ALUNOS:
-"""
-                        for al_id, lista_erros in erros_por_aluno.items():
-                            prompt += f"\nAluno ID: {al_id}\nErros cometidos:\n"
-                            for e in lista_erros:
-                                prompt += f"- {e}\n"
-
-                        st.text_area("📋 Copie o texto abaixo e cole no Gemini Web:", value=prompt, height=350)
-                        st.info("Dica: Clique dentro da caixa e aperte Ctrl+A e Ctrl+C.")
+                        # Monta o Prompt
+                        prompt_txt = "Aja como o Mestre Lardião, professor de Química de PE (use sotaque: visse, oxente, arretado).\n"
+                        prompt_txt += "Crie um feedback de máx 3 linhas e motivador para cada aluno focado nos diagnósticos técnicos.\n"
+                        prompt_txt += "Retorne APENAS um JSON no formato: {\"ID\": \"Feedback\"}\n\n"
+                        
+                        for aid, erros_lista in mapa_erros.items():
+                            prompt_txt += f"Aluno ID: {aid}\nErros:\n"
+                            for erro in erros_lista:
+                                prompt_txt += f"- {erro}\n"
+                        
+                        st.text_area("Copie e cole no Gemini Web:", value=prompt_txt, height=300)
 
         # ==========================================
         # LADO DIREITO: SALVAR NO BANCO
         # ==========================================
-        with col_upload:
-            st.subheader("2️⃣ Salvar Retorno da IA")
-            st.write("Cole o JSON devolvido pelo Gemini aqui para salvar na base de alunos.")
+        with c2:
+            st.subheader("2️⃣ Importar Diagnósticos")
+            json_input = st.text_area("Cole o JSON da IA aqui:", height=200, placeholder='{"123": "Oxe, melhore!"}')
             
-            json_recebido = st.text_area("Cole aqui o JSON gerado pela IA:", height=200, placeholder='{"12345": "Oxe, estude mais visse!"}')
-            
-            if st.button("💾 Gravar Diagnósticos no Banco", type="primary", use_container_width=True):
-                if json_recebido:
+            if st.button("💾 Salvar Feedbacks no Banco", type="primary", use_container_width=True):
+                if json_input:
                     try:
-                        dados = json.loads(json_recebido)
-                        insercoes_sucesso = 0
-                        
-                        for al_id, feedback_texto in dados.items():
-                            # Faz o insert na tabela do print
+                        dados_ia = json.loads(json_input)
+                        count = 0
+                        for al_id, txt in dados_ia.items():
+                            # Salva na tabela feedback_ia_alunos convertendo o ID para inteiro!
                             supabase.table("feedback_ia_alunos").insert({
-                                "aluno_id": al_id,
+                                "aluno_id": int(al_id),  # <-- O SEGREDO ESTAVA AQUI E NA TABELA!
                                 "prova_id": prova_id,
-                                "diagnostico_peda": feedback_texto,
+                                "diagnostico_peda": txt,
                                 "revisado_professo": True
                             }).execute()
-                            insercoes_sucesso += 1
-                        
-                        st.success(f"✅ {insercoes_sucesso} feedbacks gravados com sucesso na tabela 'feedback_ia_alunos'!")
+                            count += 1
+                        st.success(f"✅ {count} feedbacks salvos na tabela 'feedback_ia_alunos'!")
                         st.balloons()
                     except json.JSONDecodeError:
-                        st.error("Erro: O texto colado não é um JSON válido. Verifique se a IA não incluiu texto antes ou depois das chaves { }.")
+                        st.error("Erro: O texto não é um JSON válido.")
                     except Exception as e:
-                        st.error(f"Erro ao salvar no banco: {e}")
-                else:
-                    st.warning("Cole o JSON na caixa acima antes de salvar.")
+                        st.error(f"Erro no Supabase: {e}")
