@@ -423,7 +423,7 @@ elif menu == "📚 Biblioteca de Questões":
         col1, col2, col3 = st.columns(3)
         with col1: f_serie = st.multiselect("Filtrar Série", ["1º Ano", "2º Ano", "3º Ano"])
         with col2: f_assunto = st.multiselect("Filtrar Assunto", assuntos_existentes)
-        with col3: f_status = st.multiselect("Status", ["Pronta", "Pendente"])
+        with col3: f_status = st.multiselect("Status", ["Pronta", "Pendente"], default=["Pendente"])
 
         query = supabase.table("questoes").select("id, serie, assunto, dificuldade, enunciado, resposta_correta, revisada")
         if f_serie: query = query.in_("serie", f_serie)
@@ -487,7 +487,7 @@ elif menu == "📚 Biblioteca de Questões":
 elif menu == "📜 Gerar Modelo de Prova":
     st.title("📜 Publicar Prova para Alunos")
     
-    res_q = supabase.table("questoes").select("id, assunto, serie, dificuldade, enunciado, resposta_correta").execute()
+    res_q = supabase.table("questoes").select("id, assunto, serie, dificuldade, enunciado, resposta_correta").eq("revisada", True).execute()
     df_q = pd.DataFrame(res_q.data)
     
     if not df_q.empty:
