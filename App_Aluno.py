@@ -364,50 +364,64 @@ elif st.session_state.etapa == "instrucoes":
                 st.rerun()
 
 # ==========================================
-# ETAPA 4: EXECUÇÃO DA PROVA (COM FUNDO BRANCO VIP)
+# ETAPA 4: EXECUÇÃO DA PROVA (COM CRONÔMETRO)
 # ==========================================
 elif st.session_state.etapa == "em_prova":
-    # MÁGICA AQUI: Força o fundo branco especificamente para o Simulado
     st.markdown("""
         <style>
-            .stApp {
-                background-color: #FFFFFF !important;
+            .stApp { background-color: #FFFFFF !important; }
+            .timer-box {
+                position: fixed; top: 10px; right: 10px; z-index: 1000;
+                background-color: #fff1f0; border: 2px solid #ff4d4f;
+                padding: 10px 20px; border-radius: 10px; text-align: center;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.1);
             }
         </style>
     """, unsafe_allow_html=True)
-    
-    import streamlit.components.v1 as components
     
     if not st.session_state.questoes or not st.session_state.tempo_final:
         st.session_state.etapa = "login"
         st.rerun()
 
+    # Cálculo do Tempo
     restante = st.session_state.tempo_final - datetime.now()
     segs = int(restante.total_seconds())
     
     if segs <= 0:
-        st.error("⌛ TEMPO ESGOTADO! Infelizmente, suas respostas não foram enviadas a tempo Pro.")
-        if st.button("Voltar ao Portal Pro", type="secondary"):
+        st.error("⌛ TEMPO ESGOTADO! Infelizmente, o prazo encerrou.")
+        if st.button("Voltar ao Portal Pro"):
             st.session_state.clear()
             st.rerun()
         st.stop()
 
+    # --- EXIBIÇÃO DO CRONÔMETRO ---
+    mins, secs = divmod(segs, 60)
+    cor_timer = "#ff4d4f" if segs < 300 else C_TEXT # Vermelho se menos de 5 min
+    
     st.markdown(f"""
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
-            <h2 style="color: {C_TEXT}; font-size: 24px;">✍️ {st.session_state.prova_config['titulo']}</h2>
-            <p style="color: {C_TEXT_MUTED}; font-size: 14px;">Aluno: {st.session_state.aluno['nome']}</p>
+        <div class="timer-box">
+            <span style="color: {C_TEXT_MUTED}; font-size: 12px; font-weight: bold;">TEMPO RESTANTE</span><br>
+            <span style="color: {cor_timer}; font-size: 24px; font-weight: 800;">{mins:02d}:{secs:02d}</span>
+        </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown(f"""
+        <div style="margin-bottom: 25px;">
+            <h2 style="color: {C_TEXT}; font-size: 24px; margin-bottom: 0;">✍️ {st.session_state.prova_config['titulo']}</h2>
+            <p style="color: {C_TEXT_MUTED}; font-size: 14px;">Boa sorte, {st.session_state.aluno['nome']}! Leia com atenção.</p>
         </div>
     """, unsafe_allow_html=True)
     
     with st.form("form_prova", clear_on_submit=False):
         for i, q in enumerate(st.session_state.questoes):
             with st.container(border=True):
-                st.markdown(f"**<span style='color: {C_PRIMARY}; font-size: 18px; display: block; margin-bottom: 15px;'>QUESTÃO {i+1}</span>**", unsafe_allow_html=True)
-                st.markdown(q['enunciado'], unsafe_allow_html=True)
+                st.markdown(f"**<span style='color: {C_PRIMARY}; font-size: 18px;'>QUESTÃO {i+1}</span>**", unsafe_allow_html=True)
+                st.write(q['enunciado'], unsafe_allow_html=True)
                 
                 opcoes_dict = q.get('alternativas', {}) 
                 letras_originais = [l for l in ["A", "B", "C", "D", "E"] if opcoes_dict.get(l)]
                 
+                # Semente fixa por aluno/questão para manter a ordem se a página recarregar
                 random.seed(f"{st.session_state.aluno['id']}-{q['id']}")
                 ordem = letras_originais.copy()
                 random.shuffle(ordem)
@@ -417,19 +431,16 @@ elif st.session_state.etapa == "em_prova":
                     t_limpo = re.sub(r'^\s*[A-Ea-e]\s*[\)\.\-]\s*', '', t_sem_html).strip() 
                     return t_limpo
 
-                st.markdown(f"<strong style='font-size:15px; color:{C_TEXT}'>Selecione a alternativa correta:</strong>", unsafe_allow_html=True)
                 escolha = st.radio(
-                    f"Radio_Q{i+1}", 
+                    f"Selecione a resposta da {i+1}:", 
                     options=ordem, 
-                    format_func=lambda x: f"{limpar_alternativa(opcoes_dict.get(x, ''))}",
+                    format_func=lambda x: f"({x}) {limpar_alternativa(opcoes_dict.get(x, ''))}",
                     index=None, 
-                    key=f"q_{q['id']}", 
-                    label_visibility="collapsed" 
+                    key=f"q_{q['id']}"
                 )
                 
                 if escolha:
                     st.session_state.respostas[q['id']] = escolha 
-                st.markdown("<br>", unsafe_allow_html=True)
             
         st.markdown("<br>", unsafe_allow_html=True)
         entregar = st.form_submit_button("✅ FINALIZAR E ENVIAR AVALIAÇÃO PRO", type="primary", use_container_width=True)
@@ -438,31 +449,31 @@ elif st.session_state.etapa == "em_prova":
         if len(st.session_state.respostas) < len(st.session_state.questoes):
             st.warning("⚠️ Atenção! Você precisa responder todas as questões Pro antes de enviar.")
         else:
-            with st.spinner("Processando suas respostas e calculando nota Pro..."):
-                valor_cada = st.session_state.prova_config.get('valor_questao', 1.0)
-                acertos = 0
-                for q in st.session_state.questoes:
-                    if st.session_state.respostas.get(q['id']) == q['resposta_correta']:
-                        acertos += 1
-                
-                lista_resultados = []
-                for q in st.session_state.questoes:
-                    resp_aluno = st.session_state.respostas.get(q['id'])
-                    lista_resultados.append({
-                        "aluno_id": str(st.session_state.aluno['id']), 
-                        "prova_id": st.session_state.prova_config['id'],
-                        "questao_id": q['id'],
-                        "resposta_aluno": resp_aluno,
-                        "acertou": (resp_aluno == q['resposta_correta']),
-                        "acertos": acertos 
-                    })
-                
-                try:
-                    db_provas.table("resultados_provas").insert(lista_resultados).execute()
-                    st.session_state.etapa = "resultado_final"
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erro Crítico ao salvar resultado no banco de dados Pro: {e}")
+            # ... (seu código de salvamento continua igual aqui)
+            valor_cada = st.session_state.prova_config.get('valor_questao', 1.0)
+            acertos = 0
+            for q in st.session_state.questoes:
+                if st.session_state.respostas.get(q['id']) == q['resposta_correta']:
+                    acertos += 1
+            
+            lista_resultados = []
+            for q in st.session_state.questoes:
+                resp_aluno = st.session_state.respostas.get(q['id'])
+                lista_resultados.append({
+                    "aluno_id": str(st.session_state.aluno['id']), 
+                    "prova_id": st.session_state.prova_config['id'],
+                    "questao_id": q['id'],
+                    "resposta_aluno": resp_aluno,
+                    "acertou": (resp_aluno == q['resposta_correta']),
+                    "acertos": acertos 
+                })
+            
+            try:
+                db_provas.table("resultados_provas").insert(lista_resultados).execute()
+                st.session_state.etapa = "resultado_final"
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao salvar: {e}")
 
 # ==========================================
 # ETAPA 5: RESULTADO E MISTÉRIO DO PROFESSOR
@@ -470,42 +481,38 @@ elif st.session_state.etapa == "em_prova":
 elif st.session_state.etapa == "resultado_final":
     aluno = st.session_state.aluno
 
-    # Como a nota e as respostas já foram salvas no banco de dados na etapa anterior,
-    # não precisamos mais fazer a busca aqui, já que não vamos mostrar a nota agora.
-
     st.balloons() 
     st.markdown(f"""
         <div style="text-align: center; margin-top: 3rem;">
-            <h1 style="color: {{C_PRIMARY}}; font-size: 40px; font-weight: bold;">🎉 Avaliação Concluída!</h1>
-            <p style="color: {{C_TEXT_MUTED}}; font-size: 18px; margin-top: 10px;">Parabéns, {aluno['nome']}. Suas respostas foram enviadas e salvas com sucesso!</p>
+            <h1 style="color: {C_PRIMARY}; font-size: 40px; font-weight: bold;">🎉 Avaliação Concluída!</h1>
+            <p style="color: {C_TEXT_MUTED}; font-size: 18px; margin-top: 10px;">Parabéns, {aluno['nome']}. Suas respostas foram enviadas e salvas com sucesso!</p>
         </div>
     """, unsafe_allow_html=True)
     
     st.divider()
 
-    # --- A NOVA CAIXA DE MISTÉRIO (Substitui a nota e a IA) ---
+    # --- A NOVA CAIXA DE MISTÉRIO ---
     with st.container(border=True):
         st.markdown(f"""
             <div style="text-align: center; padding: 20px;">
-                <h2 style="color: {{C_SECONDARY}}; margin-bottom: 15px; font-size: 26px;">🤫 A nota só é liberada depois vi Bença!</h2>
-                <p style="color: {{C_TEXT}}; font-size: 18px; line-height: 1.6;">
+                <h2 style="color: {C_SECONDARY}; margin-bottom: 15px; font-size: 26px;">🤫 A nota só é liberada depois, viu Bença!</h2>
+                <p style="color: {C_TEXT}; font-size: 18px; line-height: 1.6;">
                     Para manter o suspense e evitar <em>spoilers</em> para os colegas que ainda farão a prova, 
                     <strong>sua nota, o gabarito e o feedback personalizado do Mestre Lardião</strong> 
                     só serão liberados após o encerramento do prazo desta atividade.
                 </p>
-                <p style="color: {{C_TEXT_MUTED}}; font-size: 16px; margin-top: 15px;">
-                    Fique de olho! O portal avisará quando os resultados for aberto.
+                <p style="color: {C_TEXT_MUTED}; font-size: 16px; margin-top: 15px;">
+                    Fique de olho! O portal avisará quando os resultados forem abertos.
                 </p>
             </div>
         """, unsafe_allow_html=True)
 
     st.divider()
     
-    # Botão de voltar mantido intacto para o aluno sair do app
     if st.button("⬅️ Voltar para o Portal Pro", type="secondary", use_container_width=True):
         st.session_state.clear() 
         st.rerun()
-
+        
 # ==========================================
 # ETAPA 6: VER MEU RESULTADO E FEEDBACK DA IA
 # ==========================================
