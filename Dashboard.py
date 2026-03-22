@@ -983,72 +983,66 @@ elif menu == "🧠 Diagnósticos IA":
         c1, c2 = st.columns(2)
 
     # ==========================================
-        # LADO ESQUERDO: GERAR PROMPT
+        # LADO ESQUERDO: GERAR PROMPT (AJUSTADO PELOS PRINTS)
         # ==========================================
         with c1:
             st.subheader("1️⃣ Extrair Erros")
             if st.button("🔍 Gerar Texto para IA", use_container_width=True):
                 
-                # 👀 DEBUG: Mostra o ID que o Streamlit está buscando para você comparar com o Print!
-                st.info(f"Buscando erros para a Prova ID: {prova_id}")
-                
-                with st.spinner("Buscando justificativas à prova de falhas..."):
+                with st.spinner("Puxando dados da tabela resultado_provas..."):
                     try:
-                        # 1º Passo: Busca TODAS as respostas dessa prova (sem filtrar o False no banco)
-                        respostas = supabase.table("respostas_alunos")\
-                            .select("aluno_id, questao_id, resposta_aluno, correta")\
+                        # 1. Busca na tabela certa (resultado_provas) conforme seu Print 2
+                        res = supabase.table("resultado_provas")\
+                            .select("aluno_id, questao_id, resposta, acertou")\
                             .eq("prova_id", prova_id)\
                             .execute()
 
-                        # 2º Passo: Filtramos quem errou usando o Python (100% garantido)
-                        erros_data = [r for r in respostas.data if r.get('correta') is False]
+                        # 2. Filtra quem não acertou (acertou == False)
+                        erros_data = [r for r in res.data if str(r.get('acertou')).lower() == 'false']
+
+                        st.write(f"📊 Total de registros: {len(res.data)} | Erros encontrados: {len(erros_data)}")
 
                         if not erros_data:
-                            st.warning("A busca funcionou, mas nenhuma resposta errada foi encontrada para ESSE ID de prova acima.")
+                            st.warning("Nenhum erro encontrado para esta prova nos registros de 'resultado_provas'.")
                         else:
-                            # 3º Passo: Pega a lista de questões que foram erradas
-                            ids_questoes = list(set([e['questao_id'] for e in erros_data]))
-                            
-                            questoes_db = supabase.table("questoes")\
-                                .select("id, assunto, justificativas")\
-                                .in_("id", ids_questoes)\
-                                .execute()
-                            
-                            dict_quest = {q['id']: q for q in questoes_db.data}
-                            mapa_erros = {}
-                            
+                            # 3. Busca as justificativas na tabela 'questoes' (Print 1)
+                            ids_q = list(set([e['questao_id'] for e in erros_data]))
+                            q_db = supabase.table("questoes").select("id, assunto, justificativas").in_("id", ids_q).execute()
+                            dict_q = {q['id']: q for q in q_db.data}
+
+                            # 4. Organiza o mapa de erros por aluno
+                            mapa = {}
                             for e in erros_data:
                                 aid = e['aluno_id']
-                                qid = e['questao_id']
+                                letra = str(e.get('resposta', '')).strip().upper()
                                 
-                                letra_crua = e.get('resposta_aluno')
-                                if letra_crua is None:
-                                    letra_crua = e.get('resposta', '')
-                                letra = str(letra_crua).strip().upper()
+                                dados_q = dict_q.get(e['questao_id'], {})
+                                assunto = dados_q.get('assunto', 'Geral')
+                                justs = dados_q.get('justificativas') or {}
                                 
-                                dados_q = dict_quest.get(qid, {})
-                                justificativas = dados_q.get('justificativas') or {}
-                                assunto = dados_q.get('assunto') or 'Geral'
+                                # Pega a justificativa técnica da letra que o aluno marcou
+                                txt_erro = justs.get(letra, f"Errou a questão (marcou {letra})")
+                                info_final = f"[Assunto: {assunto}] {txt_erro}"
                                 
-                                diag_texto = justificativas.get(letra, f"Marcou a alternativa {letra}")
-                                texto_final = f"[Assunto: {assunto}] {diag_texto}"
+                                if aid not in mapa: mapa[aid] = []
+                                mapa[aid].append(info_final)
 
-                                mapa_erros.setdefault(aid, []).append(texto_final)
-
+                            # 5. Gera o Prompt para você copiar
                             prompt_txt = "Aja como o Mestre Lardião, professor de Química de PE (use sotaque: visse, oxente, arretado).\n"
-                            prompt_txt += "Crie um feedback de máx 3 linhas e motivador para cada aluno focado nos diagnósticos técnicos.\n"
-                            prompt_txt += "Retorne APENAS um JSON no formato: {\"ID\": \"Feedback\"}\n\n"
+                            prompt_txt += "Crie um feedback curto (máx 3 linhas) e motivador para cada aluno com base nos erros técnicos abaixo.\n"
+                            prompt_txt += "ME DEVOLVA APENAS UM ARQUIVO JSON no formato exato: {\"ID_DO_ALUNO\": \"TEXTO_DO_FEEDBACK\"}.\n\n"
                             
-                            for aid, erros_lista in mapa_erros.items():
-                                prompt_txt += f"Aluno ID: {aid}\nErros:\n"
-                                for erro in erros_lista:
+                            for aid, lista_erros in mapa.items():
+                                prompt_txt += f"Aluno ID: {aid}\n"
+                                for erro in lista_erros:
                                     prompt_txt += f"- {erro}\n"
+                                prompt_txt += "\n"
                             
-                            st.text_area("Copie e cole no Gemini Web:", value=prompt_txt, height=300)
-                    
+                            st.text_area("Copie tudo abaixo e cole no Gemini Web:", value=prompt_txt, height=300)
+                            st.success("✅ Prompt gerado! Agora é só levar pro Gemini e trazer o JSON de volta.")
+
                     except Exception as e:
-                        st.error("❌ O banco de dados recusou a busca. O erro exato foi:")
-                        st.code(str(e))
+                        st.error(f"Erro ao acessar tabelas: {e}")
 
         # ==========================================
         # LADO DIREITO: SALVAR NO BANCO
