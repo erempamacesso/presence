@@ -443,14 +443,18 @@ elif menu == "📚 Biblioteca de Questões":
             
             import re # Garantindo que o re está importado caso não esteja no topo
             
-            # Cabeçalho da Tabela
-            h_c1, h_c2, h_c3, h_c4, h_c5, h_c6 = st.columns([0.6, 0.8, 1.2, 4, 0.5, 0.8])
+            # Cabeçalho da Tabela - Adicionada a coluna h_c0 para Seleção
+            h_c0, h_c1, h_c2, h_c3, h_c4, h_c5, h_c6 = st.columns([0.3, 0.6, 0.8, 1.2, 4, 0.5, 0.8])
+            h_c0.caption("SEL.")
             h_c1.caption("ID")
             h_c2.caption("STATUS")
             h_c3.caption("CLASSIFICAÇÃO")
             h_c4.caption("ENUNCIADO (PRÉVIA)")
             h_c5.caption("GAB.")
             h_c6.caption("AÇÕES")
+            
+            # Lista para armazenar as questões selecionadas em massa
+            questoes_selecionadas = []
             
             for q in data:
                 texto_puro = re.sub('<[^<]+>', '', str(q['enunciado']))
@@ -459,8 +463,13 @@ elif menu == "📚 Biblioteca de Questões":
                 is_revisada = q.get('revisada', False)
                 
                 with st.container(border=True):
-                    c1, c2, c3, c4, c5, c6 = st.columns([0.6, 0.8, 1.2, 4, 0.5, 0.8], gap="small")
+                    # Adicionada a coluna c0 para Seleção
+                    c0, c1, c2, c3, c4, c5, c6 = st.columns([0.3, 0.6, 0.8, 1.2, 4, 0.5, 0.8], gap="small")
                     
+                    # Checkbox de seleção em massa
+                    if c0.checkbox("", key=f"batch_sel_{q['id']}"):
+                        questoes_selecionadas.append(q['id'])
+                        
                     c1.write(f"#{str(q['id'])[:4]}")
                     
                     # Badge de Status Dinâmico
@@ -480,6 +489,19 @@ elif menu == "📚 Biblioteca de Questões":
                     if bc2.button("🗑️", key=f"del_{q['id']}"):
                         supabase.table("questoes").delete().eq("id", q['id']).execute()
                         st.rerun()
+
+            # --- LÓGICA DE APROVAÇÃO EM MASSA ---
+            if len(questoes_selecionadas) > 0:
+                st.divider()
+                if st.button(f"✅ Marcar {len(questoes_selecionadas)} questões selecionadas como PRONTAS", type="primary"):
+                    with st.spinner("Atualizando questões..."):
+                        for q_id in questoes_selecionadas:
+                            supabase.table("questoes").update({"revisada": True}).eq("id", q_id).execute()
+                    st.success(f"{len(questoes_selecionadas)} questões validadas com sucesso!")
+                    import time
+                    time.sleep(1)
+                    st.rerun()
+
         else:
             st.info("Nenhuma questão encontrada.")
             
