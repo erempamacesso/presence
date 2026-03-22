@@ -355,7 +355,7 @@ elif st.session_state.etapa == "em_prova":
                     t_limpo = re.sub(r'^\s*[A-Ea-e]\s*[\)\.\-]\s*', '', t_sem_html).strip() 
                     return t_limpo
 
-                st.markdown(f"<strong style='font-size:15px; color:{C_TEXT}'>Selecione a alternativa correta Pro:</strong>", unsafe_allow_html=True)
+                st.markdown(f"<strong style='font-size:15px; color:{C_TEXT}'>Selecione a alternativa correta:</strong>", unsafe_allow_html=True)
                 escolha = st.radio(
                     f"Radio_Q{i+1}", 
                     options=ordem, 
