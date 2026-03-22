@@ -581,12 +581,23 @@ elif st.session_state.etapa == "ver_meu_resultado":
                             just = q.get('justificativas')
                             if just:
                                 if isinstance(just, dict):
-                                    txt_just = just.get(letra_correta, just.get("geral", "Sem detalhes."))
+                                    # Puxa a justificativa da letra que o aluno errou
+                                    just_erro = just.get(letra_aluno)
+                                    # Puxa a justificativa da correta (ou a geral, se não tiver)
+                                    just_correta = just.get(letra_correta, just.get("geral", "O professor não detalhou essa."))
+                                    
+                                    # Se existir uma justificativa específica para o erro dele:
+                                    if just_erro:
+                                        txt_just = f"<b>Por que a ({letra_aluno}) está incorreta:</b> {just_erro}<br><br><b>Sobre a correta ({letra_correta}):</b> {just_correta}"
+                                    else:
+                                        # Se não tiver a do erro, mostra só a da correta
+                                        txt_just = f"<b>Explicação:</b> {just_correta}"
                                 else:
+                                    # Se não for um dicionário (JSON), mostra o texto puro
                                     txt_just = str(just)
-                                st.info(f"💡 **Por que?** {txt_just}")
-                            
-                            st.write("---")
+                                
+                                # Criando a tarja azul bonita e que aceita HTML (fórmulas e imagens)
+                                st.markdown(f"<div style='color: #004085; background-color: #cce5ff; padding: 15px; border-radius: 5px; margin-top: 10px; margin-bottom: 10px;'>💡 {txt_just}</div>", unsafe_allow_html=True)
 
         except Exception as e:
             st.error("Erro ao carregar a correção detalhada.")
