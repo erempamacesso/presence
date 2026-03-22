@@ -390,15 +390,15 @@ elif menu == "📚 Biblioteca de Questões":
                         st.error("Erro: Defina um título para a prova.")
                     else:
                         with st.spinner("Atualizando prova..."):
-                            # 1. Combina data e hora (sem fuso)
+                            # 1. Cria a data e hora informada no formulário
                             naive_inicio = datetime.combine(data_inicio, hora_inicio)
                             naive_limite = datetime.combine(data_limite, hora_limite)
 
-                            # 2. Carimba o fuso de Recife para o banco de dados entender
+                            # 2. Aplica o fuso horário do Nordeste (-03:00) explicitamente
                             aware_inicio = fuso.localize(naive_inicio)
                             aware_limite = fuso.localize(naive_limite)
 
-                            # 3. Transforma em texto (agora vai com o -03:00 no final)
+                            # 3. Converte para texto no formato ISO para o banco de dados
                             data_hora_inicio_iso = aware_inicio.isoformat()
                             data_hora_limite_iso = aware_limite.isoformat()
 
@@ -416,8 +416,7 @@ elif menu == "📚 Biblioteca de Questões":
                         
                         st.session_state.editando_prova_id = None
                         st.success("Configurações da prova atualizadas!")
-                        import time
-                        time.sleep(1)
+                        time.sleep(1) 
                         st.rerun()
 
     else:
