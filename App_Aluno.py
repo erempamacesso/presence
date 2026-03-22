@@ -280,20 +280,32 @@ elif st.session_state.etapa == "ante_sala":
                             st.caption(f"Assunto: {p.get('assunto','Geral')}")
                         with c2:
                             st.markdown(f"**Nota Máx.**\n\n{valor_total:.1f}")
-                        with c3:
+                        
+                with c3:
                             st.markdown(f"**Status**\n\n:{status_cor}[{status_texto}]")
                             st.caption(f"Até: {dt_limite}")
                             
-                            # --- NOVO: BOTÃO DE RESULTADO MAGICO ---
+                            # --- LÓGICA AUTOMÁTICA DE LIBERAÇÃO ---
                             if foi_feita:
-                                # Verifica se o professor ativou o botão lá no banco
-                                if p.get('liberar_resultados') == True: 
+                                passou_do_prazo = False
+                                # Verifica se a prova tem data limite e se já passou
+                                if p.get('data_limite'):
+                                    try:
+                                        # Pega a data do banco e compara com o relógio de agora
+                                        data_banco = datetime.strptime(p['data_limite'][:16], "%Y-%m-%dT%H:%M")
+                                        if datetime.now() >= data_banco:
+                                            passou_do_prazo = True
+                                    except Exception:
+                                        passou_do_prazo = False
+                                
+                                # Se já passou do prazo, aparece o botão!
+                                if passou_do_prazo:
                                     if st.button("📊 Ver Resultado", key=f"res_{p['id']}", use_container_width=True):
                                         st.session_state.prova_resultado = p
                                         st.session_state.etapa = "ver_meu_resultado"
                                         st.rerun()
                                 else:
-                                    st.caption("⏳ *Aguardando liberação*")
+                                    st.caption("⏳ *Aguardando fim do prazo*")
 
                 if ha_pendentes:
                     st.divider()
