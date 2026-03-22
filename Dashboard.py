@@ -623,15 +623,25 @@ elif menu == "📂 Provas Elaboradas":
         if res_p.data:
             p = res_p.data[0]
             
-            # Converte a data do banco de volta para Date e Time do Python para os inputs
-            dt_raw = p.get('data_limite')
-            if dt_raw:
-                dt_obj = datetime.fromisoformat(dt_raw.replace("Z", "+00:00")).astimezone(fuso)
-                data_atual = dt_obj.date()
-                hora_atual = dt_obj.time()
+            # --- Tratamento Data LIMITE ---
+            dt_limite_raw = p.get('data_limite')
+            if dt_limite_raw:
+                dt_limite_obj = datetime.fromisoformat(dt_limite_raw.replace("Z", "+00:00")).astimezone(fuso)
+                data_limite_atual = dt_limite_obj.date()
+                hora_limite_atual = dt_limite_obj.time()
             else:
-                data_atual = datetime.today().date()
-                hora_atual = datetime.now().time()
+                data_limite_atual = datetime.today().date()
+                hora_limite_atual = datetime.now().time()
+
+            # --- Tratamento Data INÍCIO (NOVO) ---
+            dt_inicio_raw = p.get('data_inicio')
+            if dt_inicio_raw:
+                dt_inicio_obj = datetime.fromisoformat(dt_inicio_raw.replace("Z", "+00:00")).astimezone(fuso)
+                data_inicio_atual = dt_inicio_obj.date()
+                hora_inicio_atual = dt_inicio_obj.time()
+            else:
+                data_inicio_atual = datetime.today().date()
+                hora_inicio_atual = datetime.now().time()
             
             with st.form(key=f"form_edita_prova_{p['id']}"):
                 st.subheader("⚙️ Configurações Gerais")
@@ -645,10 +655,15 @@ elif menu == "📂 Provas Elaboradas":
                     
                     st.write("---")
                     st.write("**Regras de Acesso e Tempo**")
-                    col_c1, col_c2, col_c3 = st.columns(3)
-                    with col_c1: data_limite = st.date_input("📅 Data Limite", value=data_atual)
-                    with col_c2: hora_limite = st.time_input("⏰ Hora Limite (Brasília)", value=hora_atual)
-                    with col_c3: tempo_duracao = st.number_input("⏳ Duração (Minutos)", min_value=10, max_value=300, value=p.get('tempo_duracao', 60), step=10)
+                    c_dat, c_hor, c_dur = st.columns([1.5, 1.5, 1])
+                    with c_dat: 
+                        data_inicio = st.date_input("🟢 Data Início", value=data_inicio_atual)
+                        data_limite = st.date_input("🔴 Data Limite", value=data_limite_atual)
+                    with c_hor: 
+                        hora_inicio = st.time_input("🟢 Hora Início", value=hora_inicio_atual)
+                        hora_limite = st.time_input("🔴 Hora Limite", value=hora_limite_atual)
+                    with c_dur: 
+                        tempo_duracao = st.number_input("⏳ Duração (Minutos)", min_value=10, max_value=300, value=p.get('tempo_duracao', 60), step=10)
 
                     st.write("---")
                     st.write("**Pontuação e Sorteio**")
@@ -667,13 +682,14 @@ elif menu == "📂 Provas Elaboradas":
                         st.error("Erro: Defina um título para a prova.")
                     else:
                         with st.spinner("Atualizando prova..."):
-                            data_hora_combinada = datetime.combine(data_limite, hora_limite)
-                            data_hora_iso = data_hora_combinada.isoformat()
+                            data_hora_limite_iso = datetime.combine(data_limite, hora_limite).isoformat()
+                            data_hora_inicio_iso = datetime.combine(data_inicio, hora_inicio).isoformat()
 
                             dados_upd = {
                                 "titulo": tit, 
                                 "serie": ser, 
-                                "data_limite": data_hora_iso, 
+                                "data_inicio": data_hora_inicio_iso, # NOVA COLUNA
+                                "data_limite": data_hora_limite_iso, 
                                 "tempo_duracao": tempo_duracao,
                                 "qtd_questoes": qtd_questoes, 
                                 "qtd_sorteio": qtd_sorteio, 
@@ -701,23 +717,45 @@ elif menu == "📂 Provas Elaboradas":
                 with st.container(border=True):
                     c1, c2, c3, c4, c5 = st.columns([2.5, 1.5, 1.5, 2, 1.8], gap="small")
                     
-                    # --- Tratamento de Datas ---
-                    status_texto = "🟢 ATIVA" if prova.get('ativa') else "🔴 INATIVA"
+                    # --- Tratamento de Datas e Status Inteligente ---
+                    dt_inicio_raw = prova.get('data_inicio')
                     dt_limite_raw = prova.get('data_limite')
+                    
+                    dt_inicio_formatada = "Imediato"
                     dt_limite_formatada = "Sem limite"
                     prazo_encerrado = False
+                    
+                    dt_ini_obj = None
+                    dt_fim_obj = None
 
+                    if dt_inicio_raw:
+                        dt_ini_obj = datetime.fromisoformat(dt_inicio_raw.replace("Z", "+00:00")).astimezone(fuso)
+                        dt_inicio_formatada = dt_ini_obj.strftime('%d/%m às %H:%M')
+                        
                     if dt_limite_raw:
-                        # Converte a data do banco para objeto datetime com fuso horário
-                        dt_obj = datetime.fromisoformat(dt_limite_raw.replace("Z", "+00:00")).astimezone(fuso)
-                        dt_limite_formatada = dt_obj.strftime('%d/%m/%Y às %H:%M')
-                        prazo_encerrado = agora > dt_obj
+                        dt_fim_obj = datetime.fromisoformat(dt_limite_raw.replace("Z", "+00:00")).astimezone(fuso)
+                        dt_limite_formatada = dt_fim_obj.strftime('%d/%m às %H:%M')
+                        prazo_encerrado = agora > dt_fim_obj
+
+                    # Define a cor e o texto do status dinamicamente
+                    if not prova.get('ativa'):
+                        status_texto = "🔴 INATIVA"
+                        cor_status = "#dc3545" # Vermelho
+                    elif dt_ini_obj and agora < dt_ini_obj:
+                        status_texto = "🟡 AGENDADA"
+                        cor_status = "#d39e00" # Amarelo
+                    elif dt_fim_obj and agora > dt_fim_obj:
+                        status_texto = "🔴 ENCERRADA"
+                        cor_status = "#dc3545" # Vermelho
+                    else:
+                        status_texto = "🟢 ATIVA"
+                        cor_status = "#28a745" # Verde
 
                     c1.markdown(f"### {prova.get('titulo', 'Sem título')}")
-                    c1.markdown(f"**Série:** {prova.get('serie', 'Geral')} | **Prazo:** {dt_limite_formatada}")
+                    c1.markdown(f"**De:** {dt_inicio_formatada} | **Até:** {dt_limite_formatada}")
                     
                     c2.markdown(f"**Status:**")
-                    c2.markdown(f"*{status_texto}*")
+                    c2.markdown(f"<span style='color:{cor_status}; font-weight:bold;'>{status_texto}</span>", unsafe_allow_html=True)
                     
                     # Formato da Prova
                     q_total = prova.get('qtd_questoes', 0)
