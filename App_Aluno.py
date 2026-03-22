@@ -513,44 +513,46 @@ elif st.session_state.etapa == "ver_meu_resultado":
     aluno = st.session_state.aluno
     prova = st.session_state.prova_resultado
 
-    st.header(f"📊 Seu Resultado: {prova['titulo']}")
+    # Cabeçalho mais discreto
+    st.subheader(f"📊 Desempenho: {prova['titulo']}")
     
-    with st.spinner("Buscando o diagnóstico e a correção do Mestre..."):
+    with st.spinner("Carregando revisão..."):
         try:
-            # 1. Puxa todos os resultados detalhados
+            # 1. Busca dados
             res_detalhes = db_provas.table("resultados_provas").select("*").eq("aluno_id", str(aluno['id'])).eq("prova_id", prova['id']).execute()
-            
             acertos = sum(1 for r in res_detalhes.data if r.get('acertou') == True)
             valor_cada = prova.get('valor_questao', 1.0)
             nota_final = acertos * valor_cada
             
-            # 2. Puxa o Feedback da IA
             res_fb = db_provas.table("feedback_ia_alunos").select("diagnostico_pedagogico").eq("aluno_id", str(aluno['id'])).eq("prova_id", prova['id']).execute()
-            feedback = res_fb.data[0]['diagnostico_pedagogico'] if res_fb.data else "O Mestre está finalizando sua análise!"
+            feedback = res_fb.data[0]['diagnostico_pedagogico'] if res_fb.data else None
 
-            # 3. Cabeçalho Visual
-            col1, col2 = st.columns([1, 2])
-            with col1:
-                st.markdown(f"""<div style="background-color: #FFFFFF; border: 2px solid #00C896; border-radius: 15px; padding: 20px; text-align: center; height: 100%;">
-                    <h3 style="color: #718096; margin-bottom: 0;">Sua Nota</h3>
-                    <h1 style="color: #00C896; font-size: 60px; margin-top: -10px; margin-bottom: -10px;">{nota_final:.1f}</h1>
-                    <p style="color: #2D3748; font-size: 18px;">Acertos: {acertos}</p>
-                </div>""", unsafe_allow_html=True)
-            with col2:
-                st.markdown(f"""<div style="background-color: #FFF3CD; border-left: 5px solid #FFC107; border-radius: 15px; padding: 25px; height: 100%;">
-                    <h3 style="color: #856404; margin-top: 0;">🧙‍♂️ Palavra do Mestre Lardião:</h3>
-                    <p style="color: #856404; font-size: 18px; line-height: 1.5;"><em>"{feedback}"</em></p>
-                </div>""", unsafe_allow_html=True)
+            # 2. Nova Barra de Resumo (Substitui os boxes grandes)
+            col_nota, col_acerto, col_feedback = st.columns([1, 1, 3])
+            
+            with col_nota:
+                st.metric("Sua Nota", f"{nota_final:.1f}")
+            
+            with col_acerto:
+                st.metric("Acertos", f"{acertos}")
+
+            with col_feedback:
+                if feedback:
+                    # Feedback do Mestre em formato de "alerta" discreto
+                    st.info(f"**🧙‍♂️ Mestre Lardião:** {feedback}")
+                else:
+                    st.caption("Aguardando feedback pedagógico final.")
 
             st.divider()
 
-            # 4. Revisão de Erros
+            # 3. Revisão de Questões (A mesma lógica de antes, mas com visual polido)
             erradas = [r for r in res_detalhes.data if r.get('acertou') == False]
             
             if not erradas:
-                st.success("🎉 **Parabéns! Você gabaritou a prova!**")
+                st.success("✨ **Excepcional! Você não cometeu erros nesta avaliação.**")
             else:
-                st.markdown("### 🔍 Revisão: Onde você escorregou")
+                st.markdown("#### 🔍 Onde ajustar o conhecimento:")
+                
                 q_ids = [r['questao_id'] for r in erradas]
                 res_questoes = db_provas.table("questoes").select("*").in_("id", q_ids).execute()
                 questoes_dict = {q['id']: q for q in res_questoes.data}
@@ -558,51 +560,39 @@ elif st.session_state.etapa == "ver_meu_resultado":
                 for erro in erradas:
                     q = questoes_dict.get(erro['questao_id'])
                     if q:
-                        with st.container():
-                            # CORREÇÃO 1: Renderizar HTML do enunciado (imagens/fórmulas)
-                            st.markdown(f"**Questão:**", unsafe_allow_html=True)
+                        with st.expander(f"Ver erro na questão de ID {q['id']}", expanded=True):
+                            # Enunciado (suporta HTML/Imagens)
                             st.write(q.get('enunciado', ''), unsafe_allow_html=True)
                             
                             alts = q.get('alternativas') or {}
-                            
-                            # CORREÇÃO 2: Garantir que pegamos a coluna certa da resposta
-                            # Verifique se no seu banco o nome é 'resposta_a' ou 'resposta_aluno'
                             letra_aluno = erro.get('resposta_a') or erro.get('resposta_aluno') or "?"
                             letra_correta = q.get('resposta_correta', '')
                             
-                            texto_aluno = alts.get(letra_aluno, "Não marcada ou desconhecida")
-                            texto_correta = alts.get(letra_correta, "Gabarito não encontrado")
+                            # Respostas Lado a Lado
+                            c1, c2 = st.columns(2)
+                            with c1:
+                                st.markdown(f"<span style='color:#d9534f'>❌ **Sua resposta:** ({letra_aluno})</span>", unsafe_allow_html=True)
+                            with c2:
+                                st.markdown(f"<span style='color:#5cb85c'>✅ **O correto:** ({letra_correta})</span>", unsafe_allow_html=True)
 
-                            # Exibição Visual das Respostas
-                            st.error(f"❌ **Sua resposta ({letra_aluno}):** {texto_aluno}", icon="🚨")
-                            st.success(f"✅ **Resposta correta ({letra_correta}):** {texto_correta}", icon="🎯")
-
-                            # Justificativa
+                            # Tarja Azul de Justificativa (Limpando a palavra Diagnóstico via código também)
                             just = q.get('justificativas')
                             if just:
                                 if isinstance(just, dict):
-                                    # Puxa a justificativa da letra que o aluno errou
-                                    just_erro = just.get(letra_aluno)
-                                    # Puxa a justificativa da correta (ou a geral, se não tiver)
-                                    just_correta = just.get(letra_correta, just.get("geral", "O professor não detalhou essa."))
+                                    # Puxa a do erro e a da correta, limpando o prefixo se ainda existir
+                                    txt_erro = str(just.get(letra_aluno, "")).replace("Diagnóstico: ", "")
+                                    txt_certa = str(just.get(letra_correta, "")).replace("Diagnóstico: ", "")
                                     
-                                    # Se existir uma justificativa específica para o erro dele:
-                                    if just_erro:
-                                        txt_just = f"<b>Por que a ({letra_aluno}) está incorreta:</b> {just_erro}<br><br><b>Sobre a correta ({letra_correta}):</b> {just_correta}"
-                                    else:
-                                        # Se não tiver a do erro, mostra só a da correta
-                                        txt_just = f"<b>Explicação:</b> {just_correta}"
+                                    msg = f"**Por que a ({letra_aluno}) não serve:** {txt_erro}<br><br>**Foco na ({letra_correta}):** {txt_certa}" if txt_erro else f"**Explicação:** {txt_certa}"
                                 else:
-                                    # Se não for um dicionário (JSON), mostra o texto puro
-                                    txt_just = str(just)
+                                    msg = str(just).replace("Diagnóstico: ", "")
                                 
-                                # Criando a tarja azul bonita e que aceita HTML (fórmulas e imagens)
-                                st.markdown(f"<div style='color: #004085; background-color: #cce5ff; padding: 15px; border-radius: 5px; margin-top: 10px; margin-bottom: 10px;'>💡 {txt_just}</div>", unsafe_allow_html=True)
+                                st.markdown(f"<div style='background-color: #e7f3fe; border-left: 5px solid #2196F3; padding: 10px; font-size: 14px; color: #0c5460;'>💡 {msg}</div>", unsafe_allow_html=True)
 
         except Exception as e:
-            st.error("Erro ao carregar a correção detalhada.")
+            st.error("Erro ao carregar os detalhes.")
             st.code(str(e))
 
-    if st.button("⬅️ Voltar para Atividades", use_container_width=True):
+    if st.button("⬅️ Voltar", use_container_width=True):
         st.session_state.etapa = "ante_sala"
         st.rerun()
