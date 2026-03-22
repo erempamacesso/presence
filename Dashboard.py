@@ -982,30 +982,30 @@ elif menu == "🧠 Diagnósticos IA":
         st.divider()
         c1, c2 = st.columns(2)
 
-    # ==========================================
-        # LADO ESQUERDO: GERAR PROMPT (AJUSTADO PELOS PRINTS)
+        # ==========================================
+        # LADO ESQUERDO: GERAR PROMPT (AGORA COM O "S" CORRETO)
         # ==========================================
         with c1:
             st.subheader("1️⃣ Extrair Erros")
             if st.button("🔍 Gerar Texto para IA", use_container_width=True):
                 
-                with st.spinner("Puxando dados da tabela resultado_provas..."):
+                with st.spinner("Puxando dados da tabela resultados_provas..."):
                     try:
-                        # 1. Busca na tabela certa (resultado_provas) conforme seu Print 2
-                        res = supabase.table("resultado_provas")\
-                            .select("aluno_id, questao_id, resposta, acertou")\
+                        # 1. Busca na tabela certa COM O 'S' NO FINAL (resultados_provas)
+                        res = supabase.table("resultados_provas")\
+                            .select("aluno_id, questao_id, resposta_aluno, acertou")\
                             .eq("prova_id", prova_id)\
                             .execute()
 
                         # 2. Filtra quem não acertou (acertou == False)
                         erros_data = [r for r in res.data if str(r.get('acertou')).lower() == 'false']
 
-                        st.write(f"📊 Total de registros: {len(res.data)} | Erros encontrados: {len(erros_data)}")
+                        st.write(f"📊 Total de registros baixados: {len(res.data)} | Erros encontrados: {len(erros_data)}")
 
                         if not erros_data:
-                            st.warning("Nenhum erro encontrado para esta prova nos registros de 'resultado_provas'.")
+                            st.warning("Nenhum erro encontrado para esta prova nos registros de 'resultados_provas'.")
                         else:
-                            # 3. Busca as justificativas na tabela 'questoes' (Print 1)
+                            # 3. Busca as justificativas na tabela 'questoes'
                             ids_q = list(set([e['questao_id'] for e in erros_data]))
                             q_db = supabase.table("questoes").select("id, assunto, justificativas").in_("id", ids_q).execute()
                             dict_q = {q['id']: q for q in q_db.data}
@@ -1014,7 +1014,8 @@ elif menu == "🧠 Diagnósticos IA":
                             mapa = {}
                             for e in erros_data:
                                 aid = e['aluno_id']
-                                letra = str(e.get('resposta', '')).strip().upper()
+                                # Pega a resposta_aluno (se vier vazio tenta pegar 'resposta' por garantia)
+                                letra = str(e.get('resposta_aluno') or e.get('resposta', '')).strip().upper()
                                 
                                 dados_q = dict_q.get(e['questao_id'], {})
                                 assunto = dados_q.get('assunto', 'Geral')
