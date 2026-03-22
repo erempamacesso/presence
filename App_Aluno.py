@@ -283,6 +283,17 @@ elif st.session_state.etapa == "ante_sala":
                         with c3:
                             st.markdown(f"**Status**\n\n:{status_cor}[{status_texto}]")
                             st.caption(f"Até: {dt_limite}")
+                            
+                            # --- NOVO: BOTÃO DE RESULTADO MAGICO ---
+                            if foi_feita:
+                                # Verifica se o professor ativou o botão lá no banco
+                                if p.get('liberar_resultados') == True: 
+                                    if st.button("📊 Ver Resultado", key=f"res_{p['id']}", use_container_width=True):
+                                        st.session_state.prova_resultado = p
+                                        st.session_state.etapa = "ver_meu_resultado"
+                                        st.rerun()
+                                else:
+                                    st.caption("⏳ *Aguardando liberação*")
 
                 if ha_pendentes:
                     st.divider()
@@ -481,4 +492,59 @@ elif st.session_state.etapa == "resultado_final":
     # Botão de voltar mantido intacto para o aluno sair do app
     if st.button("⬅️ Voltar para o Portal Pro", type="secondary", use_container_width=True):
         st.session_state.clear() 
+        st.rerun()
+
+        # ==========================================
+# ETAPA 6: VER MEU RESULTADO E FEEDBACK
+# ==========================================
+elif st.session_state.etapa == "ver_meu_resultado":
+    aluno = st.session_state.aluno
+    prova = st.session_state.prova_resultado
+
+    st.header(f"📊 Seu Resultado: {prova['titulo']}")
+    
+    with st.spinner("Puxando seu diagnóstico do Mestre Lardião..."):
+        try:
+            # 1. Puxa a quantidade de acertos
+            res_notas = db_provas.table("resultados_provas").select("acertos").eq("aluno_id", str(aluno['id'])).eq("prova_id", prova['id']).execute()
+            
+            # Pega o maior número de acertos (caso haja bugs de envios duplicados)
+            acertos = max([r['acertos'] for r in res_notas.data]) if res_notas.data else 0
+            valor_cada = prova.get('valor_questao', 1.0)
+            nota_final = acertos * valor_cada
+            
+            # 2. Puxa o Feedback da IA
+            res_fb = db_provas.table("feedback_ia_alunos").select("diagnostico_pedagogico").eq("aluno_id", int(aluno['id'])).eq("prova_id", prova['id']).execute()
+            
+            feedback = res_fb.data[0]['diagnostico_pedagogico'] if res_fb.data else "Seu professor ainda não enviou o feedback personalizado. Volte mais tarde, visse?"
+
+            # 3. Monta a tela bonitona
+            col1, col2 = st.columns([1, 2])
+            
+            with col1:
+                st.markdown(f"""
+                    <div style="background-color: {C_CARD_BG}; border: 2px solid {C_PRIMARY}; border-radius: 15px; padding: 20px; text-align: center; height: 100%;">
+                        <h3 style="color: {C_TEXT_MUTED}; margin-bottom: 0;">Sua Nota</h3>
+                        <h1 style="color: {C_PRIMARY}; font-size: 60px; margin-top: -10px; margin-bottom: -10px;">{nota_final:.1f}</h1>
+                        <p style="color: {C_TEXT}; font-size: 18px;">Acertos: {acertos}</p>
+                    </div>
+                """, unsafe_allow_html=True)
+            
+            with col2:
+                st.markdown(f"""
+                    <div style="background-color: #FFF3CD; border-left: 5px solid #FFC107; border-radius: 15px; padding: 25px; height: 100%;">
+                        <h3 style="color: #856404; margin-top: 0; display: flex; align-items: center; gap: 10px;">
+                            🧙‍♂️ Palavra do Mestre Lardião:
+                        </h3>
+                        <p style="color: #856404; font-size: 18px; line-height: 1.5;"><em>"{feedback}"</em></p>
+                    </div>
+                """, unsafe_allow_html=True)
+
+        except Exception as e:
+            st.error("Oxe! Deu um erro ao buscar os resultados.")
+            st.code(str(e))
+
+    st.divider()
+    if st.button("⬅️ Voltar para Atividades", use_container_width=True):
+        st.session_state.etapa = "ante_sala"
         st.rerun()
