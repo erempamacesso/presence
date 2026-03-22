@@ -506,8 +506,8 @@ elif st.session_state.etapa == "resultado_final":
         st.session_state.clear() 
         st.rerun()
 
-        # ==========================================
-# ETAPA 6: VER MEU RESULTADO E FEEDBACK
+# ==========================================
+# ETAPA 6: VER MEU RESULTADO E FEEDBACK DA IA
 # ==========================================
 elif st.session_state.etapa == "ver_meu_resultado":
     aluno = st.session_state.aluno
@@ -515,48 +515,108 @@ elif st.session_state.etapa == "ver_meu_resultado":
 
     st.header(f"📊 Seu Resultado: {prova['titulo']}")
     
-    with st.spinner("Puxando seu diagnóstico do Mestre Lardião..."):
+    with st.spinner("Buscando o diagnóstico e a correção do Mestre..."):
         try:
-            # 1. Puxa a quantidade de acertos
-            res_notas = db_provas.table("resultados_provas").select("acertos").eq("aluno_id", str(aluno['id'])).eq("prova_id", prova['id']).execute()
+            # 1. Puxa todos os resultados detalhados (para calcular nota e ver os erros)
+            # Obs: aluno_id na resultados_provas tá como text
+            res_detalhes = db_provas.table("resultados_provas").select("*").eq("aluno_id", str(aluno['id'])).eq("prova_id", prova['id']).execute()
             
-            # Pega o maior número de acertos (caso haja bugs de envios duplicados)
-            acertos = max([r['acertos'] for r in res_notas.data]) if res_notas.data else 0
+            # Conta os acertos para a nota
+            acertos = sum(1 for r in res_detalhes.data if r.get('acertou') == True)
             valor_cada = prova.get('valor_questao', 1.0)
             nota_final = acertos * valor_cada
             
-            # 2. Puxa o Feedback da IA
-            res_fb = db_provas.table("feedback_ia_alunos").select("diagnostico_pedagogico").eq("aluno_id", int(aluno['id'])).eq("prova_id", prova['id']).execute()
+            # 2. Puxa o Feedback da tabela de IA (diagnostico_pedagogico)
+            # Obs: aluno_id na feedback_ia_alunos tá como text (olhando seu print antigo)
+            res_fb = db_provas.table("feedback_ia_alunos").select("diagnostico_pedagogico").eq("aluno_id", str(aluno['id'])).eq("prova_id", prova['id']).execute()
             
-            feedback = res_fb.data[0]['diagnostico_pedagogico'] if res_fb.data else "Seu professor ainda não enviou o feedback personalizado. Volte mais tarde, visse?"
+            if res_fb.data:
+                feedback = res_fb.data[0]['diagnostico_pedagogico']
+            else:
+                feedback = "Oxe, o Mestre ainda tá terminando de revisar os feedbacks. Mas você já pode ver suas correções abaixo!"
 
-            # 3. Monta a tela bonitona
+            # 3. Desenha a parte de cima (Nota e Mestre Lardião)
             col1, col2 = st.columns([1, 2])
             
             with col1:
                 st.markdown(f"""
-                    <div style="background-color: {C_CARD_BG}; border: 2px solid {C_PRIMARY}; border-radius: 15px; padding: 20px; text-align: center; height: 100%;">
-                        <h3 style="color: {C_TEXT_MUTED}; margin-bottom: 0;">Sua Nota</h3>
-                        <h1 style="color: {C_PRIMARY}; font-size: 60px; margin-top: -10px; margin-bottom: -10px;">{nota_final:.1f}</h1>
-                        <p style="color: {C_TEXT}; font-size: 18px;">Acertos: {acertos}</p>
+                    <div style="background-color: #FFFFFF; border: 2px solid #00C896; border-radius: 15px; padding: 20px; text-align: center; height: 100%;">
+                        <h3 style="color: #718096; margin-bottom: 0;">Sua Nota</h3>
+                        <h1 style="color: #00C896; font-size: 60px; margin-top: -10px; margin-bottom: -10px;">{nota_final:.1f}</h1>
+                        <p style="color: #2D3748; font-size: 18px;">Acertos: {acertos}</p>
                     </div>
                 """, unsafe_allow_html=True)
             
             with col2:
                 st.markdown(f"""
                     <div style="background-color: #FFF3CD; border-left: 5px solid #FFC107; border-radius: 15px; padding: 25px; height: 100%;">
-                        <h3 style="color: #856404; margin-top: 0; display: flex; align-items: center; gap: 10px;">
-                            🧙‍♂️ Palavra do Mestre Lardião:
-                        </h3>
+                        <h3 style="color: #856404; margin-top: 0;">🧙‍♂️ Palavra do Mestre Lardião:</h3>
                         <p style="color: #856404; font-size: 18px; line-height: 1.5;"><em>"{feedback}"</em></p>
                     </div>
                 """, unsafe_allow_html=True)
 
+            st.divider()
+
+            # 4. PREPARA A CORREÇÃO DOS ERROS
+            erradas = [r for r in res_detalhes.data if r.get('acertou') == False]
+            
+            if len(erradas) == 0:
+                st.success("🎉 **Parabéns! Você gabaritou a prova! Não há erros para revisar.**")
+            else:
+                st.markdown("### 🔍 Revisão: Onde você escorregou")
+                st.caption("Veja abaixo as questões que você errou e entenda o motivo.")
+                
+                # Pega os IDs das questões erradas para buscar no banco
+                q_ids = [r['questao_id'] for r in erradas]
+                
+                # Busca os enunciados, alternativas e justificativas dessas questões
+                res_questoes = db_provas.table("questoes").select("id, enunciado, alternativas, resposta_correta, justificativas").in_("id", q_ids).execute()
+                
+                # Cria um dicionário para achar a questão fácil pelo ID
+                questoes_dict = {q['id']: q for q in res_questoes.data}
+
+                # 5. MOSTRA AS QUESTÕES ERRADAS
+                for erro in erradas:
+                    q = questoes_dict.get(erro['questao_id'])
+                    if q:
+                        with st.container():
+                            st.markdown(f"**Questão:** {q.get('enunciado', 'Enunciado não encontrado')}")
+                            
+                            # Pega as alternativas e a resposta do aluno
+                            alts = q.get('alternativas') or {}
+                            resp_aluno = erro.get('resposta_a', '')
+                            correta = q.get('resposta_correta', '')
+                            
+                            texto_resp_aluno = alts.get(resp_aluno, "Opção desconhecida")
+                            texto_correta = alts.get(correta, "Opção desconhecida")
+
+                            # Mostra o que ele marcou (em vermelho) e a correta (em verde)
+                            st.error(f"❌ **Você marcou ({resp_aluno}):** {texto_resp_aluno}")
+                            st.success(f"✅ **A correta era ({correta}):** {texto_correta}")
+
+                            # Mostra a justificativa
+                            justificativas = q.get('justificativas')
+                            texto_justificativa = ""
+                            
+                            # Tratamento para ler o JSONB das justificativas corretamente
+                            if justificativas:
+                                if isinstance(justificativas, dict):
+                                    # Se for dicionário, tenta pegar a da correta, se não, pega a geral
+                                    texto_justificativa = justificativas.get(correta, justificativas.get("geral", "O professor não detalhou essa."))
+                                else:
+                                    # Se for só um texto salvo no JSON
+                                    texto_justificativa = str(justificativas)
+                                
+                                st.info(f"💡 **Por que?** {texto_justificativa}")
+                            else:
+                                st.info("💡 **Por que?** Justificativa não cadastrada pelo professor.")
+                            
+                            st.write("---") # Linha separadora entre as questões
+
         except Exception as e:
-            st.error("Oxe! Deu um erro ao buscar os resultados.")
+            st.error("Erro ao montar a tela de correção.")
             st.code(str(e))
 
-    st.divider()
     if st.button("⬅️ Voltar para Atividades", use_container_width=True):
         st.session_state.etapa = "ante_sala"
         st.rerun()
