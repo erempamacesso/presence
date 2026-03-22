@@ -574,69 +574,230 @@ elif menu == "📜 Gerar Modelo de Prova":
                 st.success("Prova publicada!")
                 st.rerun()
 
+
 # --- 9. GERENCIAMENTO DE PROVAS ELABORADAS ---
 elif menu == "📂 Provas Elaboradas":
     if 'editando_prova_id' not in st.session_state:
         st.session_state.editando_prova_id = None
+
     fuso = pytz.timezone('America/Recife')
     agora = datetime.now(fuso)
 
-    if st.session_state.editando_prova_id:
+    # --- TELA DE EDIÇÃO DE PROVA (COM A TRAVA DE SEGURANÇA) ---
+    if st.session_state.editando_prova_id is not None:
+        st.title("✏️ Editar Configurações da Prova")
+        
+        if st.button("⬅️ Voltar para Gerenciamento", type="secondary"):
+            st.session_state.editando_prova_id = None
+            st.rerun()
+            
         res_p = supabase.table("modelos_prova").select("*").eq("id", st.session_state.editando_prova_id).execute()
+        
         if res_p.data:
             p = res_p.data[0]
             
-            # Converte ISO do banco para objetos date/time
-            dt_ini_obj = datetime.fromisoformat(p['data_inicio'].replace("Z", "+00:00")).astimezone(fuso)
-            dt_fim_obj = datetime.fromisoformat(p['data_limite'].replace("Z", "+00:00")).astimezone(fuso)
+            # --- Tratamento Data LIMITE ---
+            dt_limite_raw = p.get('data_limite')
+            if dt_limite_raw:
+                dt_limite_obj = datetime.fromisoformat(dt_limite_raw.replace("Z", "+00:00")).astimezone(fuso)
+                data_limite_atual = dt_limite_obj.date()
+                hora_limite_atual = dt_limite_obj.time()
+            else:
+                data_limite_atual = datetime.today().date()
+                hora_limite_atual = datetime.now().time()
 
-            with st.form("form_edicao"):
-                st.subheader(f"✏️ Editando: {p['titulo']}")
-                tit = st.text_input("Título", value=p['titulo'])
-                
-                c_dat, c_hor = st.columns(2)
-                with c_dat:
-                    # FORÇANDO A DATA A SER SEMPRE UM OBJETO SINGLE DATE
-                    d_ini_edit = st.date_input("🟢 Data Início", value=dt_ini_obj.date())
-                    d_fim_edit = st.date_input("🔴 Data Limite", value=dt_fim_obj.date())
-                with c_hor:
-                    h_ini_edit = st.time_input("🟢 Hora Início", value=dt_ini_obj.time())
-                    h_fim_edit = st.time_input("🔴 Hora Limite", value=dt_fim_obj.time())
-                
-                # GARANTIA FINAL CONTRA LISTAS/TUPLAS NO FORMULÁRIO
-                data_inicio = d_ini_edit[0] if isinstance(d_ini_edit, (list, tuple)) else d_ini_edit
-                data_limite = d_fim_edit[0] if isinstance(d_fim_edit, (list, tuple)) else d_fim_edit
+            # --- Tratamento Data INÍCIO ---
+            dt_inicio_raw = p.get('data_inicio')
+            if dt_inicio_raw:
+                dt_inicio_obj = datetime.fromisoformat(dt_inicio_raw.replace("Z", "+00:00")).astimezone(fuso)
+                data_inicio_atual = dt_inicio_obj.date()
+                hora_inicio_atual = dt_inicio_obj.time()
+            else:
+                data_inicio_atual = datetime.today().date()
+                hora_inicio_atual = datetime.now().time()
+            
+            with st.form(key=f"form_edita_prova_{p['id']}"):
+                st.subheader("⚙️ Configurações Gerais")
+                with st.container(border=True):
+                    col_t1, col_t2 = st.columns([2, 1])
+                    with col_t1:
+                        tit = st.text_input("Título da Prova", value=p.get('titulo', ''))
+                    with col_t2:
+                        idx_serie = ["1º Ano", "2º Ano", "3º Ano"].index(p.get('serie', "1º Ano")) if p.get('serie') in ["1º Ano", "2º Ano", "3º Ano"] else 0
+                        ser = st.selectbox("Filtrar questões da Série:", ["1º Ano", "2º Ano", "3º Ano"], index=idx_serie)
+                    
+                    st.write("---")
+                    st.write("**Regras de Acesso e Tempo**")
+                    c_dat, c_hor, c_dur = st.columns([1.5, 1.5, 1])
+                    
+                    with c_dat: 
+                        # Captura os valores brutos do calendário com a CHAVE ÚNICA para evitar cache de alertas
+                        raw_inicio = st.date_input("🟢 Data Início", value=data_inicio_atual, key=f"di_edit_{p['id']}")
+                        raw_limite = st.date_input("🔴 Data Limite", value=data_limite_atual, key=f"df_edit_{p['id']}")
+                        
+                        # TRAVA CONTRA ALERTAS AMARELOS (Extrai a data se vier como lista/tupla)
+                        data_inicio = raw_inicio[0] if isinstance(raw_inicio, (list, tuple)) else raw_inicio
+                        data_limite = raw_limite[0] if isinstance(raw_limite, (list, tuple)) else raw_limite
 
-                if st.form_submit_button("💾 Salvar Alterações"):
-                    aware_inicio = fuso.localize(datetime.combine(data_inicio, h_ini_edit))
-                    aware_limite = fuso.localize(datetime.combine(data_limite, h_fim_edit))
-                    
-                    supabase.table("modelos_prova").update({
-                        "titulo": tit,
-                        "data_inicio": aware_inicio.isoformat(),
-                        "data_limite": aware_limite.isoformat()
-                    }).eq("id", p['id']).execute()
-                    
-                    st.session_state.editando_prova_id = None
-                    st.success("Atualizado!")
-                    st.rerun()
-            if st.button("Cancelar"):
-                st.session_state.editando_prova_id = None
-                st.rerun()
+                    with c_hor: 
+                        hora_inicio = st.time_input("🟢 Hora Início", value=hora_inicio_atual, key=f"hi_edit_{p['id']}")
+                        hora_limite = st.time_input("🔴 Hora Limite", value=hora_limite_atual, key=f"hf_edit_{p['id']}")
+                    with c_dur: 
+                        tempo_duracao = st.number_input("⏳ Duração (Minutos)", min_value=10, max_value=300, value=p.get('tempo_duracao', 60), step=10)
+
+                    st.write("---")
+                    st.write("**Pontuação e Sorteio**")
+                    col_p1, col_p2 = st.columns(2)
+                    with col_p1: qtd_questoes = st.number_input("🔢 Banco de Questões (Total)", min_value=1, max_value=100, value=p.get('qtd_questoes', 10))
+                    with col_p2:
+                        valor_questao = st.number_input("⭐ Valor de cada Questão", min_value=0.1, max_value=10.0, value=float(p.get('valor_questao', 1.0)), step=0.5)
+                        qtd_sorteio = st.number_input("🎲 Sorteio: Questões por Aluno", min_value=1, max_value=int(qtd_questoes), value=p.get('qtd_sorteio', 10))
+                
+                st.info("💡 Nota: Alterar a Série ou o Total do Banco exigirá que você re-selecione as questões no banco no futuro.")
+                
+                btn_salvar = st.form_submit_button("💾 SALVAR ALTERAÇÕES", type="primary", use_container_width=True)
+                
+                if btn_salvar:
+                    if not tit:
+                        st.error("Erro: Defina um título para a prova.")
+                    else:
+                        with st.spinner("Atualizando prova..."):
+                            naive_inicio = datetime.combine(data_inicio, hora_inicio)
+                            naive_limite = datetime.combine(data_limite, hora_limite)
+
+                            aware_inicio = fuso.localize(naive_inicio)
+                            aware_limite = fuso.localize(naive_limite)
+
+                            dados_upd = {
+                                "titulo": tit, 
+                                "serie": ser, 
+                                "data_inicio": aware_inicio.isoformat(), 
+                                "data_limite": aware_limite.isoformat(), 
+                                "tempo_duracao": tempo_duracao,
+                                "qtd_questoes": qtd_questoes, 
+                                "qtd_sorteio": qtd_sorteio, 
+                                "valor_questao": valor_questao
+                            }
+                            supabase.table("modelos_prova").update(dados_upd).eq("id", p['id']).execute()
+                        
+                        st.session_state.editando_prova_id = None
+                        st.success("Configurações da prova atualizadas!")
+                        time.sleep(1)
+                        st.rerun()
+
+    # --- TELA DE LISTAGEM DE PROVAS (COM O DESIGN COMPLETO RESTAURADO) ---
     else:
-        # LISTAGEM DE PROVAS (Código de visualização continua o mesmo)
-        st.title("📂 Gerenciar Provas")
+        st.title("📂 Gerenciar Provas Elaboradas")
+        
         res_provas = supabase.table("modelos_prova").select("*").order("id", desc=True).execute()
-        for prova in res_provas.data:
-            with st.container(border=True):
-                c1, c2, c3 = st.columns([3, 1, 1])
-                c1.write(f"### {prova['titulo']}")
-                if c2.button("✏️ Editar", key=f"ed_{prova['id']}"):
-                    st.session_state.editando_prova_id = prova['id']
-                    st.rerun()
-                if c3.button("🗑️ Excluir", key=f"del_{prova['id']}"):
-                    supabase.table("modelos_prova").delete().eq("id", prova['id']).execute()
-                    st.rerun()
+        
+        if res_provas.data:
+            st.write(f"🔍 Total de avaliações cadastradas: **{len(res_provas.data)}**")
+            st.divider()
+            
+            for prova in res_provas.data:
+                with st.container(border=True):
+                    c1, c2, c3, c4, c5 = st.columns([2.5, 1.5, 1.5, 2, 1.8], gap="small")
+                    
+                    # --- Tratamento de Datas e Status Inteligente ---
+                    dt_inicio_raw = prova.get('data_inicio')
+                    dt_limite_raw = prova.get('data_limite')
+                    
+                    dt_inicio_formatada = "Imediato"
+                    dt_limite_formatada = "Sem limite"
+                    prazo_encerrado = False
+                    
+                    dt_ini_obj = None
+                    dt_fim_obj = None
+
+                    if dt_inicio_raw:
+                        dt_ini_obj = datetime.fromisoformat(dt_inicio_raw.replace("Z", "+00:00")).astimezone(fuso)
+                        dt_inicio_formatada = dt_ini_obj.strftime('%d/%m às %H:%M')
+                        
+                    if dt_limite_raw:
+                        dt_fim_obj = datetime.fromisoformat(dt_limite_raw.replace("Z", "+00:00")).astimezone(fuso)
+                        dt_limite_formatada = dt_fim_obj.strftime('%d/%m às %H:%M')
+                        prazo_encerrado = agora > dt_fim_obj
+
+                    # Define a cor e o texto do status dinamicamente
+                    if not prova.get('ativa'):
+                        status_texto = "🔴 INATIVA"
+                        cor_status = "#dc3545" # Vermelho
+                    elif dt_ini_obj and agora < dt_ini_obj:
+                        status_texto = "🟡 AGENDADA"
+                        cor_status = "#d39e00" # Amarelo
+                    elif dt_fim_obj and agora > dt_fim_obj:
+                        status_texto = "🔴 ENCERRADA"
+                        cor_status = "#dc3545" # Vermelho
+                    else:
+                        status_texto = "🟢 ATIVA"
+                        cor_status = "#28a745" # Verde
+
+                    c1.markdown(f"### {prova.get('titulo', 'Sem título')}")
+                    c1.markdown(f"**De:** {dt_inicio_formatada} | **Até:** {dt_limite_formatada}")
+                    
+                    c2.markdown(f"**Status:**")
+                    c2.markdown(f"<span style='color:{cor_status}; font-weight:bold;'>{status_texto}</span>", unsafe_allow_html=True)
+                    
+                    # Formato da Prova
+                    q_total = prova.get('qtd_questoes', 0)
+                    q_sorteio = prova.get('qtd_sorteio', q_total)
+                    c3.markdown("**Formato:**")
+                    c3.caption(f"Banco: {q_total} | Sorteio: {q_sorteio}")
+                    
+                    serie_atual = prova.get('serie')
+                    prova_id = prova.get('id')
+                    
+                    # --- Cálculo de Engajamento ---
+                    try:
+                        prefixo_turma = str(serie_atual).replace(" Ano", "").strip()
+                        res_alunos = supabase_alunos.table("alunos").select("id").ilike("turma", f"{prefixo_turma}%").execute()
+                        total_alunos = len(res_alunos.data) if res_alunos.data else 0
+                        
+                        res_respostas = supabase.table("resultados_provas").select("aluno_id").eq("prova_id", prova_id).execute()
+                        alunos_que_fizeram = len(set([r['aluno_id'] for r in res_respostas.data])) if res_respostas.data else 0
+                        
+                        porcentagem = (alunos_que_fizeram / total_alunos * 100) if total_alunos > 0 else 0.0
+                        
+                        c4.markdown("**Engajamento:**")
+                        c4.markdown(f"**{alunos_que_fizeram} / {total_alunos}** alunos")
+                        cor_perc = "green" if porcentagem >= 70 else ("orange" if porcentagem >= 40 else "red")
+                        c4.markdown(f"<span style='color:{cor_perc}; font-weight:bold;'>{porcentagem:.1f}% concluído</span>", unsafe_allow_html=True)
+                    except:
+                        c4.markdown("**Engajamento:**")
+                        c4.caption("Erro ao carregar dados.")
+                    
+                    # --- COLUNA 5: AÇÕES ---
+                    with c5:
+                        if st.button("✏️ Editar", key=f"edit_prova_{prova_id}", use_container_width=True):
+                            st.session_state.editando_prova_id = prova_id
+                            st.rerun()
+
+                        texto_btn_status = "⏸️ Desativar" if prova.get('ativa') else "▶️ Ativar"
+                        if st.button(texto_btn_status, key=f"status_{prova_id}", use_container_width=True):
+                            novo_status = not prova.get('ativa')
+                            supabase.table("modelos_prova").update({"ativa": novo_status}).eq("id", prova_id).execute()
+                            st.rerun()
+                        
+                        if not prazo_encerrado and dt_limite_raw:
+                            if st.button("🔓 Liberar Notas", key=f"liberar_{prova_id}", use_container_width=True, help="Encerra o prazo agora para mostrar as notas aos alunos"):
+                                supabase.table("modelos_prova").update({"data_limite": agora.isoformat()}).eq("id", prova_id).execute()
+                                st.toast("Notas liberadas para os alunos!")
+                                time.sleep(1)
+                                st.rerun()
+
+                        if st.button("🗑️ Excluir", key=f"del_{prova_id}", type="primary", use_container_width=True):
+                            try:
+                                supabase.table("resultados_provas").delete().eq("prova_id", prova_id).execute()
+                                supabase.table("modelos_prova").delete().eq("id", prova_id).execute()
+                                st.success("Prova excluída!")
+                                time.sleep(1)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro: {e}")
+                                
+        else:
+            st.info("📌 Nenhuma prova foi elaborada ainda.")
 
 # --- 10. LISTA DE MATRÍCULAS PARA IMPRESSÃO (COM PDF) ---
 elif menu == "🖨️ Lista de Matrículas":
