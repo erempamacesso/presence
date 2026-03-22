@@ -10,6 +10,7 @@ import base64
 import re
 from datetime import datetime
 import time
+import google.generativeai as genai
 
 # --- PROTEÇÃO PARA O WHATSAPP (Nuvem vs Local) ---
 try:
@@ -56,7 +57,8 @@ menu = st.sidebar.radio("Navegação", [
     "📜 Gerar Modelo de Prova",
     "📂 Provas Elaboradas",  
     "🖨️ Lista de Matrículas",
-    "📲 Central de Avisos" # VÍRGULA CORRIGIDA AQUI!
+    "📲 Central de Avisos" ,
+    "🧠 Diagnósticos IA"
 ])
 
 # --- 5. LÓGICA DO DASHBOARD (NOVA ANÁLISE DE DADOS) ---
@@ -960,3 +962,92 @@ elif menu == "📲 Central de Avisos":
                 st.warning(f"Nenhum aluno cadastrado na turma {dados_p['serie']}.")
         else:
             st.warning("Nenhuma atividade cadastrada ainda.")
+
+ # --- 12. TELA: DIAGNÓSTICOS IA ---
+ 
+elif menu == "🧠 Diagnósticos IA":
+    st.title("🧠 Central de Diagnósticos Pedagógicos (Gemini)")
+    st.markdown("Analise o desempenho da turma e gere feedbacks personalizados com a IA da SEE-PE.")
+
+    # Inicializa o Gemini
+    try:
+        genai.configure(api_key=st.secrets["gemini"]["API_KEY"])
+        model_gemini = genai.GenerativeModel('gemini-1.5-flash')
+        ia_pronta = True
+    except Exception as e:
+        st.error(f"Erro ao conectar com o Gemini: {e}")
+        ia_pronta = False
+
+    if ia_pronta:
+        # Função interna para gerar o texto
+        def pedir_dica_ao_mestre(nome, lista_erros):
+            if not lista_erros:
+                return f"Parabéns, {nome}! Você dominou todos os conceitos desta avaliação. O Mestre Lardião está orgulhoso!"
+            
+            contexto = "\n".join([f"- {item}" for item in lista_erros])
+            prompt = f"""
+            Você é o Mestre Lardião, professor de Química de Pernambuco.
+            Seu aluno {nome} errou questões sobre:
+            {contexto}
+            
+            Escreva uma dica pedagógica curta (3 a 4 linhas), motivadora e com sotaque local. 
+            Não diga o número da questão, foque no conteúdo químico.
+            """
+            try:
+                response = model_gemini.generate_content(prompt)
+                return response.text
+            except:
+                return "Continue firme nos estudos, a evolução vem com a prática!"
+
+        # Seleção da Prova
+        res_p = supabase.table("modelos_prova").select("id, titulo").execute()
+        if res_p.data:
+            df_p = pd.DataFrame(res_p.data)
+            prova_escolhida = st.selectbox("Selecione a Prova para Diagnóstico:", df_p['titulo'].tolist())
+            id_prova_foco = df_p[df_p['titulo'] == prova_escolhida].iloc[0]['id']
+
+            if st.button("🚀 GERAR DIAGNÓSTICOS PARA TODOS OS ALUNOS", type="primary"):
+                with st.spinner("O Mestre Lardião está analisando as provas..."):
+                    
+                    # 1. Puxa resultados
+                    res_res = supabase.table("resultados_provas").select("*").eq("prova_id", id_prova_foco).execute()
+                    if not res_res.data:
+                        st.warning("Ninguém fez essa prova ainda!")
+                    else:
+                        df_res = pd.DataFrame(res_res.data)
+                        alunos_ids = df_res['aluno_id'].unique().tolist()
+                        
+                        # 2. Puxa nomes dos alunos
+                        res_aln = supabase_alunos.table("alunos").select("id, nome").in_("id", alunos_ids).execute()
+                        dict_nomes = {str(a['id']): a['nome'] for a in res_aln.data}
+                        
+                        # 3. Puxa textos das questões
+                        q_ids = df_res['questao_id'].unique().tolist()
+                        res_qst = supabase.table("questoes").select("id, enunciado").in_("id", q_ids).execute()
+                        dict_qst = {q['id']: q['enunciado'][:100] for q in res_qst.data}
+
+                        progresso = st.progress(0)
+                        lista_final_ia = []
+
+                        for i, a_id in enumerate(alunos_ids):
+                            nome_aluno = dict_nomes.get(str(a_id), "Estudante")
+                            erros = df_res[(df_res['aluno_id'] == a_id) & (df_res['acertou'] == False)]
+                            temas_erros = [dict_qst.get(row['questao_id'], "Química") for _, row in erros.iterrows()]
+                            
+                            texto_ia = pedir_dica_ao_mestre(nome_aluno, temas_erros)
+                            
+                            lista_final_ia.append({
+                                "aluno_id": str(a_id),
+                                "prova_id": str(id_prova_foco),
+                                "diagnostico_pedagogico": texto_ia
+                            })
+                            progresso.progress((i + 1) / len(alunos_ids))
+
+                        # 4. Salva no Banco Avaliador-Provas
+                        if lista_final_ia:
+                            for item in lista_final_ia:
+                                supabase.table("feedback_ia_alunos").delete().eq("aluno_id", item['aluno_id']).eq("prova_id", item['prova_id']).execute()
+                            
+                            supabase.table("feedback_ia_alunos").insert(lista_final_ia).execute()
+                            st.success(f"✅ {len(lista_final_ia)} Diagnósticos Gerados com Sucesso!")
+                            st.balloons()
