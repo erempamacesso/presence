@@ -279,7 +279,7 @@ elif st.session_state.etapa == "instrucoes":
         st.markdown(f"""
             **Instruções Importantes Pro:**
             1. Você terá estatisticamente {prova['tempo_duracao']} minutos para concluir após clicar no botão abaixo.
-            2. Não atualize ou feche o navegador SIGEREMPAM durante a prova, ou seu progresso será perdido.
+            2. Não atualize ou feche o navegador AVALARDIAO durante a prova, ou seu progresso será perdido.
             3. Responda todas as questões e clique em 'Enviar' ao final.
         """)
         
