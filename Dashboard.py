@@ -10,6 +10,8 @@ import base64
 import re
 from datetime import datetime
 import time
+
+# --- PROTEÇÃO PARA O WHATSAPP (Nuvem vs Local) ---
 try:
     import pywhatkit as kit
     WHATSAPP_LOCAL = True
@@ -53,7 +55,8 @@ menu = st.sidebar.radio("Navegação", [
     "📚 Biblioteca de Questões", 
     "📜 Gerar Modelo de Prova",
     "📂 Provas Elaboradas",  
-    "🖨️ Lista de Matrículas"
+    "🖨️ Lista de Matrículas",
+    "📲 Central de Avisos" # VÍRGULA CORRIGIDA AQUI!
 ])
 
 # --- 5. LÓGICA DO DASHBOARD (NOVA ANÁLISE DE DADOS) ---
@@ -137,9 +140,9 @@ if menu == "📊 Análise de Dados":
                     # A Ponte (Join)
                     df_join = pd.merge(df_raw, df_alunos_join, left_on="aluno_id", right_on="id")
                     
-                    # Aplica o filtro da tela (Se escolheu "3º Ano", busca turmas que começam com "3")
+                    # Aplica o filtro da tela
                     if serie_foco != "Todas":
-                        prefixo_serie = serie_foco[0] # Pega só o número (ex: "3")
+                        prefixo_serie = serie_foco[0] 
                         df_join = df_join[df_join['turma'].astype(str).str.startswith(prefixo_serie)]
                         
                     # Agrupa e Conta
@@ -153,7 +156,6 @@ if menu == "📊 Análise de Dados":
                         hole=.4,
                         color_discrete_sequence=px.colors.qualitative.Pastel
                     )
-                    # Dá um leve espaçamento entre as fatias pra ficar mais bonito
                     fig2.update_traces(textposition='inside', textinfo='percent+label', pull=[0.02] * len(df_pizza))
                     st.plotly_chart(fig2, use_container_width=True)
                 else:
@@ -288,7 +290,6 @@ elif menu == "📝 Cadastrar Questões":
                 supabase.table("questoes").insert(dados_m).execute()
                 st.success("Questão salva com sucesso!")
 
-
 # --- 7. BIBLIOTECA DE QUESTÕES ---
 elif menu == "📚 Biblioteca de Questões":
     if 'editando_id' not in st.session_state:
@@ -296,7 +297,7 @@ elif menu == "📚 Biblioteca de Questões":
 
     # BUSCA ASSUNTOS EXISTENTES PARA PADRONIZAÇÃO
     res_assuntos_db = supabase.table("questoes").select("assunto").execute()
-    assuntos_existentes = sorted(list(set([x['assunto'] for x in res_assuntos_db.data if x['assunto']])))
+    assuntos_existentes = sorted(list(set([x['assunto'] for x in res_assuntos_db.data if x.get('assunto')])))
 
     if st.session_state.editando_id is not None:
         st.title("✏️ Editar e Validar Questão")
@@ -314,7 +315,7 @@ elif menu == "📚 Biblioteca de Questões":
             with st.form(key=f"form_edita_{q['id']}"):
                 st.markdown("### ⚙️ Configurações e Validação")
                 
-                # --- NOVA LÓGICA DE ASSUNTO ---
+                # --- LÓGICA DE ASSUNTO ---
                 st.markdown("🔍 **Classificação do Assunto**")
                 c_serie, c_diff = st.columns(2)
                 
@@ -330,10 +331,7 @@ elif menu == "📚 Biblioteca de Questões":
                 c_sel, c_novo = st.columns([1, 1])
                 
                 with c_sel:
-                    # Adicionamos uma opção neutra no topo
                     opcoes_assunto = ["-- SELECIONE UM EXISTENTE --"] + assuntos_existentes
-                    
-                    # Tenta pré-selecionar o assunto atual da questão se ele já estiver na lista
                     idx_atual = 0
                     if q.get('assunto') in assuntos_existentes:
                         idx_atual = assuntos_existentes.index(q.get('assunto')) + 1
@@ -345,7 +343,6 @@ elif menu == "📚 Biblioteca de Questões":
                     )
 
                 with c_novo:
-                    # Campo para sobrescrever ou criar um novo
                     assunto_manual = st.text_input(
                         "Ou crie um NOVO nome (Substitui a seleção ao lado):", 
                         value="", 
@@ -363,10 +360,8 @@ elif menu == "📚 Biblioteca de Questões":
                 
                 # --- LÓGICA DE SEGURANÇA PARA O GABARITO ---
                 opcoes_gabarito = ["A", "B", "C", "D"]
-                # Limpa o dado que vem do banco (remove espaços e põe em maiúsculo)
                 resposta_vinda_do_banco = str(q.get('resposta_correta', "A")).strip().upper()
 
-                # Verifica se a resposta é válida, se não for, define o índice como 0 (Alternativa A)
                 if resposta_vinda_do_banco in opcoes_gabarito:
                     idx_gabarito = opcoes_gabarito.index(resposta_vinda_do_banco)
                 else:
@@ -387,42 +382,35 @@ elif menu == "📚 Biblioteca de Questões":
                     with cj: edit_justs[letra] = st.text_input(f"Diagnóstico {letra}", value=justs.get(letra, ""))
                 
                 st.divider()
-                # Botão de Salvar que valida a questão
+                
+                # --- LÓGICA CORRIGIDA: SALVAR EDIÇÕES DA QUESTÃO ---
                 btn_salvar = st.form_submit_button("✅ SALVAR E MARCAR COMO PRONTA", type="primary", use_container_width=True)
                 
                 if btn_salvar:
-                    if not tit:
-                        st.error("Erro: Defina um título para a prova.")
-                    else:
-                        with st.spinner("Atualizando prova..."):
-                            # 1. Cria a data e hora informada no formulário
-                            naive_inicio = datetime.combine(data_inicio, hora_inicio)
-                            naive_limite = datetime.combine(data_limite, hora_limite)
+                    # Verifica se usou o campo manual ou a caixa de seleção para o assunto
+                    assunto_final = assunto_manual.strip() if assunto_manual.strip() != "" else assunto_selecionado
+                    if assunto_final == "-- SELECIONE UM EXISTENTE --":
+                        assunto_final = q.get('assunto', 'Geral')
 
-                            # 2. Aplica o fuso horário do Nordeste (-03:00) explicitamente
-                            aware_inicio = fuso.localize(naive_inicio)
-                            aware_limite = fuso.localize(naive_limite)
-
-                            # 3. Converte para texto no formato ISO para o banco de dados
-                            data_hora_inicio_iso = aware_inicio.isoformat()
-                            data_hora_limite_iso = aware_limite.isoformat()
-
-                            dados_upd = {
-                                "titulo": tit, 
-                                "serie": ser, 
-                                "data_inicio": data_hora_inicio_iso, 
-                                "data_limite": data_hora_limite_iso, 
-                                "tempo_duracao": tempo_duracao,
-                                "qtd_questoes": qtd_questoes, 
-                                "qtd_sorteio": qtd_sorteio, 
-                                "valor_questao": valor_questao
-                            }
-                            supabase.table("modelos_prova").update(dados_upd).eq("id", p['id']).execute()
-                        
-                        st.session_state.editando_prova_id = None
-                        st.success("Configurações da prova atualizadas!")
-                        time.sleep(1) 
-                        st.rerun()
+                    with st.spinner("Atualizando questão..."):
+                        dados_upd_questao = {
+                            "serie": edit_serie,
+                            "dificuldade": edit_diff,
+                            "assunto": assunto_final,
+                            "enunciado": edit_enunciado,
+                            "resposta_correta": edit_gabarito,
+                            "alternativas": edit_alts,
+                            "justificativas": edit_justs,
+                            "revisada": True
+                        }
+                        try:
+                            supabase.table("questoes").update(dados_upd_questao).eq("id", q['id']).execute()
+                            st.session_state.editando_id = None
+                            st.success("✅ Questão atualizada e validada com sucesso!")
+                            time.sleep(1) 
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao salvar questão: {e}")
 
     else:
         st.title("📚 Biblioteca de Questões")
@@ -449,9 +437,7 @@ elif menu == "📚 Biblioteca de Questões":
             st.write(f"🔍 Encontradas: **{len(data)}** questões")
             st.divider()
             
-            import re # Garantindo que o re está importado caso não esteja no topo
-            
-            # Cabeçalho da Tabela - Adicionada a coluna h_c0 para Seleção
+            # Cabeçalho da Tabela
             h_c0, h_c1, h_c2, h_c3, h_c4, h_c5, h_c6 = st.columns([0.3, 0.6, 0.8, 1.2, 4, 0.5, 0.8])
             h_c0.caption("SEL.")
             h_c1.caption("ID")
@@ -461,32 +447,27 @@ elif menu == "📚 Biblioteca de Questões":
             h_c5.caption("GAB.")
             h_c6.caption("AÇÕES")
             
-            # Lista para armazenar as questões selecionadas em massa
-            questoes_selecionadas = []
+            questoes_selecionadas_bib = []
             
             for q in data:
                 texto_puro = re.sub('<[^<]+>', '', str(q['enunciado']))
                 previa = texto_puro[:90] + "..." if len(texto_puro) > 90 else texto_puro
-                
                 is_revisada = q.get('revisada', False)
                 
                 with st.container(border=True):
-                    # Adicionada a coluna c0 para Seleção
                     c0, c1, c2, c3, c4, c5, c6 = st.columns([0.3, 0.6, 0.8, 1.2, 4, 0.5, 0.8], gap="small")
                     
-                    # Checkbox de seleção em massa
                     if c0.checkbox("", key=f"batch_sel_{q['id']}"):
-                        questoes_selecionadas.append(q['id'])
+                        questoes_selecionadas_bib.append(q['id'])
                         
                     c1.write(f"#{str(q['id'])[:4]}")
                     
-                    # Badge de Status Dinâmico
                     if is_revisada:
                         c2.markdown('<span style="color: #155724; background-color: #d4edda; padding: 4px; border-radius: 4px; font-size: 10px; font-weight: bold;">✅ PRONTA</span>', unsafe_allow_html=True)
                     else:
                         c2.markdown('<span style="color: #856404; background-color: #fff3cd; padding: 4px; border-radius: 4px; font-size: 10px; font-weight: bold;">⚠️ PENDENTE</span>', unsafe_allow_html=True)
                     
-                    c3.markdown(f"**{q['serie']}**<br><span style='color:#007bff; font-size:11px;'>{q['assunto'].upper()}</span>", unsafe_allow_html=True)
+                    c3.markdown(f"**{q['serie']}**<br><span style='color:#007bff; font-size:11px;'>{str(q.get('assunto', 'Geral')).upper()}</span>", unsafe_allow_html=True)
                     c4.write(previa)
                     c5.markdown(f"**{q['resposta_correta']}**")
                     
@@ -499,14 +480,13 @@ elif menu == "📚 Biblioteca de Questões":
                         st.rerun()
 
             # --- LÓGICA DE APROVAÇÃO EM MASSA ---
-            if len(questoes_selecionadas) > 0:
+            if len(questoes_selecionadas_bib) > 0:
                 st.divider()
-                if st.button(f"✅ Marcar {len(questoes_selecionadas)} questões selecionadas como PRONTAS", type="primary"):
+                if st.button(f"✅ Marcar {len(questoes_selecionadas_bib)} questões selecionadas como PRONTAS", type="primary"):
                     with st.spinner("Atualizando questões..."):
-                        for q_id in questoes_selecionadas:
+                        for q_id in questoes_selecionadas_bib:
                             supabase.table("questoes").update({"revisada": True}).eq("id", q_id).execute()
-                    st.success(f"{len(questoes_selecionadas)} questões validadas com sucesso!")
-                    import time
+                    st.success(f"{len(questoes_selecionadas_bib)} questões validadas com sucesso!")
                     time.sleep(1)
                     st.rerun()
 
@@ -533,13 +513,12 @@ elif menu == "📜 Gerar Modelo de Prova":
             st.write("---")
             c_dat, c_hor, c_dur = st.columns([1.5, 1.5, 1])
             with c_dat: 
-                # Tratamento preventivo para evitar que o Streamlit crie intervalos (ranges)
                 d_ini_raw = st.date_input("🟢 Data Início", key="di_8")
                 d_fim_raw = st.date_input("🔴 Data Limite", key="df_8")
                 
-                # FUNÇÃO INTERNA PARA LIMPAR LISTAS/TUPLAS
-                data_inicio = d_ini_raw[0] if isinstance(d_ini_raw, (list, tuple)) else d_ini_raw
-                data_limite = d_fim_raw[0] if isinstance(d_fim_raw, (list, tuple)) else d_fim_raw
+                # Proteção garantida contra tuplas/listas no date_input
+                data_inicio = d_ini_raw[0] if isinstance(d_ini_raw, (list, tuple)) and len(d_ini_raw) > 0 else (d_ini_raw if not isinstance(d_ini_raw, (list, tuple)) else datetime.today().date())
+                data_limite = d_fim_raw[0] if isinstance(d_fim_raw, (list, tuple)) and len(d_fim_raw) > 0 else (d_fim_raw if not isinstance(d_fim_raw, (list, tuple)) else datetime.today().date())
 
             with c_hor: 
                 hora_inicio = st.time_input("🟢 Hora Início", key="hi_8")
@@ -554,31 +533,52 @@ elif menu == "📜 Gerar Modelo de Prova":
                 valor_questao = st.number_input("⭐ Valor/Questão", min_value=0.1, value=1.0)
                 qtd_sorteio = st.number_input("🎲 Sorteio", min_value=1, max_value=int(qtd_questoes), value=int(qtd_questoes))
         
-        # ... (Parte de seleção de questões permanece igual) ...
-        questoes_selecionadas = []
+        # Seleção de Questões
+        questoes_selecionadas_prova = []
         qs_disp = df_q[df_q['serie'] == ser]
-        for _, row in qs_disp.iterrows():
-            with st.container(border=True):
-                c1, c2, c3, c4, c5 = st.columns([0.8, 1.2, 5, 0.5, 0.5])
-                c3.write(re.sub('<[^<]+>', '', str(row['enunciado']))[:100] + "...")
-                if c5.checkbox("", key=f"sel_{row['id']}"):
-                    questoes_selecionadas.append(row['id'])
+        
+        if qs_disp.empty:
+            st.warning(f"Nenhuma questão REVISADA e PRONTA encontrada para o {ser}.")
+        else:
+            for _, row in qs_disp.iterrows():
+                with st.container(border=True):
+                    c1, c2, c3, c4, c5 = st.columns([0.8, 1.2, 5, 0.5, 0.5])
+                    texto_q = re.sub('<[^<]+>', '', str(row['enunciado']))
+                    c3.write(texto_q[:100] + ("..." if len(texto_q) > 100 else ""))
+                    
+                    if c5.checkbox("", key=f"sel_prova_{row['id']}"):
+                        questoes_selecionadas_prova.append(row['id'])
 
-        if st.button("🚀 Publicar Prova", type="primary"):
-            if len(questoes_selecionadas) != qtd_questoes:
-                st.error(f"Selecione {qtd_questoes} questões.")
-            else:
-                aware_inicio = fuso.localize(datetime.combine(data_inicio, hora_inicio))
-                aware_limite = fuso.localize(datetime.combine(data_limite, hora_limite))
-                supabase.table("modelos_prova").insert({
-                    "titulo": tit, "serie": ser, "questoes_ids": questoes_selecionadas, 
-                    "ativa": True, "data_inicio": aware_inicio.isoformat(), 
-                    "data_limite": aware_limite.isoformat(), "tempo_duracao": tempo_duracao,
-                    "qtd_questoes": qtd_questoes, "qtd_sorteio": qtd_sorteio, "valor_questao": valor_questao
-                }).execute()
-                st.success("Prova publicada!")
-                st.rerun()
-
+            if st.button("🚀 Publicar Prova", type="primary"):
+                if len(questoes_selecionadas_prova) != qtd_questoes:
+                    st.error(f"Você escolheu {len(questoes_selecionadas_prova)} questões, mas o Banco de Questões exige {qtd_questoes}. Ajuste o número ou a seleção.")
+                elif not tit:
+                    st.error("O Título da prova não pode ficar em branco.")
+                else:
+                    with st.spinner("Publicando prova..."):
+                        aware_inicio = fuso.localize(datetime.combine(data_inicio, hora_inicio))
+                        aware_limite = fuso.localize(datetime.combine(data_limite, hora_limite))
+                        
+                        try:
+                            supabase.table("modelos_prova").insert({
+                                "titulo": tit, 
+                                "serie": ser, 
+                                "questoes_ids": questoes_selecionadas_prova, 
+                                "ativa": True, 
+                                "data_inicio": aware_inicio.isoformat(), 
+                                "data_limite": aware_limite.isoformat(), 
+                                "tempo_duracao": tempo_duracao,
+                                "qtd_questoes": qtd_questoes, 
+                                "qtd_sorteio": qtd_sorteio, 
+                                "valor_questao": valor_questao
+                            }).execute()
+                            st.success("🎉 Prova publicada com sucesso!")
+                            time.sleep(1)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao publicar a prova: {e}")
+    else:
+        st.info("⚠️ Nenhuma questão cadastrada ou revisada na biblioteca. Vá em 'Biblioteca de Questões' e valide algumas antes de gerar a prova.")
 
 # --- 9. GERENCIAMENTO DE PROVAS ELABORADAS ---
 elif menu == "📂 Provas Elaboradas":
@@ -883,7 +883,7 @@ elif menu == "🖨️ Lista de Matrículas":
 
 # --- 11. CENTRAL DE AVISOS WHATSAPP ---
 elif menu == "📲 Central de Avisos":
-    st.title("📲 Disparador de Avisos - EREMPAM")
+    st.title("📲 Disparador de Avisos - AVALARDIAO")
     
     # --- A TRAVA DE SEGURANÇA QUE FALTAVA ---
     # Verifica se a variável existe e se é verdadeira
