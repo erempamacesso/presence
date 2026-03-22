@@ -1,4 +1,3 @@
-import google.generativeai as genai
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
@@ -447,93 +446,39 @@ elif st.session_state.etapa == "em_prova":
 # ==========================================
 elif st.session_state.etapa == "resultado_final":
     aluno = st.session_state.aluno
-    res_JF = db_provas.table("resultados_provas").select("acertos").eq("aluno_id", str(aluno['id'])).eq("prova_id", st.session_state.prova_config['id']).limit(1).execute()
-    total_acertos = res_JF.data[0]['acertos'] if res_JF.data else 0
-    total_questoes = len(st.session_state.questoes)
+
+    # Como a nota e as respostas já foram salvas no banco de dados na etapa anterior,
+    # não precisamos mais fazer a busca aqui, já que não vamos mostrar a nota agora.
 
     st.balloons() 
     st.markdown(f"""
         <div style="text-align: center; margin-top: 3rem;">
-            <h1 style="color: {C_PRIMARY}; font-size: 40px; font-weight: bold;">🎉 Avaliação Concluída!</h1>
-            <p style="color: {C_TEXT_MUTED}; font-size: 18px; margin-top: 10px;">Parabéns, {aluno['nome']}. Suas respostas foram enviadas e processadas.</p>
+            <h1 style="color: {{C_PRIMARY}}; font-size: 40px; font-weight: bold;">🎉 Avaliação Concluída!</h1>
+            <p style="color: {{C_TEXT_MUTED}}; font-size: 18px; margin-top: 10px;">Parabéns, {aluno['nome']}. Suas respostas foram enviadas e salvas com sucesso!</p>
         </div>
     """, unsafe_allow_html=True)
     
+    st.divider()
+
+    # --- A NOVA CAIXA DE MISTÉRIO (Substitui a nota e a IA) ---
     with st.container(border=True):
         st.markdown(f"""
-            <div style="text-align: center; padding: 15px;">
-                <h2 style="color: {C_TEXT}; margin-bottom: 10px; font-size: 24px;">Sua Nota PRO na {st.session_state.prova_config['titulo']}</h2>
-                <div style="font-size: 60px; font-weight: bold; color: {C_SECONDARY}; margin: 10px 0;">
-                    {total_acertos * st.session_state.prova_config.get('valor_questao', 1.0):.1f}
-                </div>
-                <p style="color: {C_TEXT_MUTED}; font-size: 18px;">Você acertou <strong>{total_acertos}</strong> de <strong>{total_questoes}</strong> questões Pro.</p>
+            <div style="text-align: center; padding: 20px;">
+                <h2 style="color: {{C_SECONDARY}}; margin-bottom: 15px; font-size: 26px;">🤫 Segredo do Mestre!</h2>
+                <p style="color: {{C_TEXT}}; font-size: 18px; line-height: 1.6;">
+                    Para manter o suspense e evitar <em>spoilers</em> para os colegas que ainda farão a prova, 
+                    <strong>sua nota, o gabarito e o feedback personalizado do Mestre Lardião</strong> 
+                    só serão liberados após o encerramento do prazo desta atividade.
+                </p>
+                <p style="color: {{C_TEXT_MUTED}}; font-size: 16px; margin-top: 15px;">
+                    Fique de olho! O professor avisará quando o portal de resultados for aberto.
+                </p>
             </div>
         """, unsafe_allow_html=True)
 
     st.divider()
-
-    colR1, colR2 = st.columns(2)
     
-    with colR1:
-        with st.container(border=True):
-            st.markdown(f"""
-                <div style="text-align: center;">
-                    <h3 style="color: {C_PRIMARY}; font-size: 20px;">🌎 Ranking Gamificado Pro</h3>
-                    <p style="color: orange; font-weight: bold; font-size: 16px; margin: 15px 0;">⌛ CALCULANDO...</p>
-                    <p style="color: {C_TEXT_MUTED}; font-size: 14px;">O sistema calculará sua posição Pro na turma e entre todos os terceiros!</p>
-                </div>
-            """, unsafe_allow_html=True)
-        
-    with colR2:
-        with st.container(border=True):
-            st.markdown(f"<h3 style='text-align: center; color: {C_PRIMARY}; font-size: 20px; margin-bottom: 15px;'>🧠 Feedback do Mestre Pro</h3>", unsafe_allow_html=True)
-            
-            with st.spinner("O Mestre Lardião está analisando suas respostas..."):
-                try:
-                    # 1. Identificar a primeira questão que o aluno errou
-                    erro_encontrado = None
-                    for q in st.session_state.questoes:
-                        resp_aluno = st.session_state.respostas.get(q['id'])
-                        if resp_aluno and resp_aluno != q.get('resposta_correta'):
-                            # Pega a justificativa específica da letra que o aluno marcou
-                            justificativa_db = q.get('justificativas', {})
-                            texto_ajuda = justificativa_db.get(resp_aluno, "Estude mais esse conceito!")
-                            
-                            erro_encontrado = {
-                                "assunto": q.get('assunto', 'Química'),
-                                "justificativa": texto_ajuda,
-                                "marcou": resp_aluno
-                            }
-                            break # Foca no primeiro erro
-                    
-                    if not erro_encontrado:
-                        feedback_ia = f"Oxente, {aluno['nome']}, você não deu chance pro erro! Gabaritou tudo, visse? Continue nesse brilho!"
-                    else:
-                        # 2. Chama a IA usando a sua justificativa do banco como base
-                        genai.configure(api_key=st.secrets["gemini"]["API_KEY"])
-                        modelo_ia = genai.GenerativeModel('gemini-1.5-flash')
-                        
-                        prompt = f"""
-                        Você é o Mestre Lardião, professor de Química de Pernambuco.
-                        O aluno errou uma questão de {erro_encontrado['assunto']}.
-                        Ele marcou a alternativa {erro_encontrado['marcou']}.
-                        A base do seu feedback deve ser esta justificativa técnica: "{erro_encontrado['justificativa']}"
-                        
-                        Transforme essa justificativa em uma dica curta (10 linhas), motivadora e com sotaque pernambucano (visse, arretado, oxente). Não mencione número de questão nem letra marcada, porém, Você pontuará cada erro do estudante indicando o que o mesmo precisa estudar mais.
-                        """
-                        resposta = modelo_ia.generate_content(prompt)
-                        feedback_ia = resposta.text
-                    
-                    st.success(feedback_ia)
-
-                except Exception as e:
-                    # Plano B: se a IA falhar, mostra a justificativa pura do banco
-                    if 'erro_encontrado' in locals() and erro_encontrado:
-                        st.info(f"Dica do Mestre: {erro_encontrado['justificativa']}")
-                    else:
-                        st.warning("O Mestre está corrigindo muitas provas agora, mas continue firme nos estudos! A evolução vem com a prática.")
-
-    st.divider()
+    # Botão de voltar mantido intacto para o aluno sair do app
     if st.button("⬅️ Voltar para o Portal Pro", type="secondary", use_container_width=True):
         st.session_state.clear() 
         st.rerun()
