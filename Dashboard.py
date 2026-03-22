@@ -686,14 +686,23 @@ elif menu == "📂 Provas Elaboradas":
                         st.error("Erro: Defina um título para a prova.")
                     else:
                         with st.spinner("Atualizando prova..."):
-                            data_hora_limite_iso = datetime.combine(data_limite, hora_limite).isoformat()
-                            data_hora_inicio_iso = datetime.combine(data_inicio, hora_inicio).isoformat()
+                            # 1. Combina a data e hora digitada (ainda sem fuso)
+                            naive_inicio = datetime.combine(data_inicio, hora_inicio)
+                            naive_limite = datetime.combine(data_limite, hora_limite)
+
+                            # 2. Carimba com o fuso horário de Recife
+                            aware_inicio = fuso.localize(naive_inicio)
+                            aware_limite = fuso.localize(naive_limite)
+
+                            # 3. Transforma pro formato do banco de dados (já com o -03:00)
+                            data_hora_inicio_iso = aware_inicio.isoformat()
+                            data_hora_limite_iso = aware_limite.isoformat()
 
                             dados_upd = {
                                 "titulo": tit, 
                                 "serie": ser, 
-                                "data_inicio": data_hora_inicio_iso, # NOVA COLUNA
-                                "data_limite": data_hora_limite_iso, 
+                                "data_inicio": data_hora_inicio_iso, # AGORA VAI COM FUSO
+                                "data_limite": data_hora_limite_iso, # AGORA VAI COM FUSO
                                 "tempo_duracao": tempo_duracao,
                                 "qtd_questoes": qtd_questoes, 
                                 "qtd_sorteio": qtd_sorteio, 
