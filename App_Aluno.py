@@ -40,12 +40,27 @@ logo_lardiao_b64 = get_base64_image("logo_lardiao.png")
 
 st.markdown(f"""
     <style>
-        .stApp {{ background-color: {C_BG_DEEP}; color: {C_TEXT}; }}
+        /* 1. BLINDAGEM CONTRA O DARK MODE DO CELULAR */
+        .stApp {{ background-color: {C_BG_DEEP} !important; }}
+        
+        /* Força TODOS os textos normais, marcações e radio buttons a ficarem escuros */
+        .stApp p, .stApp span, .stApp label, .stMarkdown p {{
+            color: {C_TEXT} !important;
+        }}
+        
+        /* Força especificamente as alternativas (radio) a aparecerem e com bom tamanho */
+        div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p {{
+            color: {C_TEXT} !important;
+            font-size: 16px !important;
+        }}
+
+        /* 2. OCULTAR ELEMENTOS DO STREAMLIT */
         [data-testid="stSidebar"] {{display: none;}}
         #MainMenu {{visibility: hidden;}}
         footer {{visibility: hidden;}}
         .main .block-container {{padding-top: 1.5rem;}}
 
+        /* 3. ESTILOS DOS CARDS E BOTÕES (Seus estilos originais mantidos) */
         .login-card {{
             text-align: center; max-width: 500px; margin: 4rem auto; 
             padding: 45px 35px; border: 1px solid {C_BORDER}; 
