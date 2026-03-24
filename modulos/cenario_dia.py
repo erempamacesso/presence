@@ -1,6 +1,9 @@
 import streamlit as st
 import pandas as pd
 import datetime
+import io
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
 
 def exibir_cenario(supabase):
     st.title("📊 Cenário do Dia") 
@@ -116,7 +119,7 @@ def exibir_cenario(supabase):
     # ==========================================
     st.divider() 
     st.subheader(f"🚨 Estudantes Ausentes ({data_hoje.strftime('%d/%m/%Y')})")
-    st.caption("Selecione uma turma para ver quem faltou hoje")
+    st.caption("Selecione uma turma para ver quem faltou hoje e baixar o relatório.")
 
     try:
         # Busca todas as turmas para montar os botões (pills)
@@ -126,11 +129,11 @@ def exibir_cenario(supabase):
             lista_turmas = sorted(list(set([t['turma'] for t in res_t_raw if t.get('turma')])))
         
         if lista_turmas:
-            # O st.pills substitui o selectbox e fica ótimo no celular e no PC!
+            # O st.pills substitui o selectbox
             turma_selecionada = st.pills("Turmas disponíveis:", options=lista_turmas)
             
             if turma_selecionada:
-                # Busca na tabela de frequência apenas quem tirou falta (F) hoje, na turma escolhida
+                # Busca na tabela de frequência apenas quem tirou falta (F) hoje
                 res_f = supabase.table("frequencia") \
                     .select("aluno_nome") \
                     .eq("data_chamada", hoje_iso) \
@@ -141,20 +144,70 @@ def exibir_cenario(supabase):
                 if res_f:
                     df_faltosos = pd.DataFrame(res_f)
                     df_faltosos = df_faltosos.sort_values(by="aluno_nome")
-                    df_faltosos['Ícone'] = "❌"
-                    df_faltosos = df_faltosos[['Ícone', 'aluno_nome']] 
                     
-                    # Centraliza a tabela para manter a elegância visual
+                    # ---------------------------------------------------------
+                    # 🚀 NOVA LÓGICA: MOTOR DE GERAÇÃO DO PDF EM MEMÓRIA
+                    # ---------------------------------------------------------
+                    buffer = io.BytesIO()
+                    pdf = canvas.Canvas(buffer, pagesize=A4)
+                    
+                    # Título do PDF
+                    pdf.setFont("Helvetica-Bold", 16)
+                    pdf.drawString(50, 800, f"Relatório de Estudantes Ausentes - {turma_selecionada}")
+                    
+                    # Data
+                    pdf.setFont("Helvetica", 12)
+                    pdf.drawString(50, 780, f"Data da Falta: {data_hoje.strftime('%d/%m/%Y')}")
+                    
+                    # Subtítulo da lista
+                    y_pos = 740
+                    pdf.setFont("Helvetica-Bold", 12)
+                    pdf.drawString(50, y_pos, f"Total de ausentes: {len(df_faltosos)} estudantes")
+                    y_pos -= 20
+                    
+                    # Listando os nomes
+                    pdf.setFont("Helvetica", 12)
+                    for idx, row in df_faltosos.iterrows():
+                        pdf.drawString(60, y_pos, f"• {row['aluno_nome']}")
+                        y_pos -= 20
+                        
+                        # Se a página acabar, cria uma nova folha automaticamente
+                        if y_pos < 50:
+                            pdf.showPage()
+                            y_pos = 800
+                            pdf.setFont("Helvetica", 12)
+                            
+                    pdf.save()
+                    buffer.seek(0)
+                    pdf_bytes = buffer.getvalue()
+                    # ---------------------------------------------------------
+
+                    # Tratamento visual da tabela na tela
+                    df_exibicao = df_faltosos.copy()
+                    df_exibicao['Ícone'] = "❌"
+                    df_exibicao = df_exibicao[['Ícone', 'aluno_nome']] 
+                    
+                    # Centraliza a tabela e o botão para manter a elegância visual
                     col_vazia1, col_tabela, col_vazia2 = st.columns([1, 2, 1])
                     with col_tabela:
                         st.dataframe(
-                            df_faltosos,
+                            df_exibicao,
                             use_container_width=True,
                             hide_index=True,
                             column_config={
                                 "Ícone": st.column_config.TextColumn("", width="small"),
                                 "aluno_nome": st.column_config.TextColumn("Nome do Estudante")
                             }
+                        )
+                        
+                        # 📥 BOTÃO DE DOWNLOAD DO PDF
+                        st.download_button(
+                            label="📥 Baixar Lista em PDF",
+                            data=pdf_bytes,
+                            file_name=f"Faltas_{turma_selecionada}_{data_hoje.strftime('%d_%m_%Y')}.pdf",
+                            mime="application/pdf",
+                            type="primary",
+                            use_container_width=True
                         )
                 else:
                     st.success(f"🎉 Excelente! Nenhuma falta registrada para a turma {turma_selecionada} hoje.")
