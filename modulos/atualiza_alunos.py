@@ -1,172 +1,261 @@
 import streamlit as st
 import pandas as pd
+import datetime
+import io
 
-def exibir_importacao(supabase):
-    st.title("📤 Gestão e Importação de Dados")
+# Importações do ReportLab para os PDFs
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+
+def exibir_cenario(supabase):
+    st.title("📊 Cenário do Dia & Gestão de Frequência") 
     
-    aba_planilha, aba_texto = st.tabs(["📁 Upload do Excel Oficial", "📝 Colar Lista Rápida (Apenas Nomes)"])
+    # --- CALENDÁRIO PE 2026 ---
+    TRIMESTRES = {
+        "1º Tri": (datetime.date(2026, 2, 2), datetime.date(2026, 5, 20)),
+        "2º Tri": (datetime.date(2026, 5, 21), datetime.date(2026, 9, 11)),
+        "3º Tri": (datetime.date(2026, 9, 12), datetime.date(2026, 12, 30))
+    }
+    RECESSO = (datetime.date(2026, 7, 10), datetime.date(2026, 7, 24))
 
     # ==========================================
-    # ABA 1: UPLOAD DO EXCEL COM RELATÓRIO DE DIFF
+    # 1. CONTROLE GLOBAL DE DATA
     # ==========================================
-    with aba_planilha:
-        st.subheader("Importação e Atualização em Massa (Excel)")
-        st.info("O sistema fará uma varredura cruzando o Excel com o banco atual e emitirá um relatório das mudanças.")
-        
-        # AJUSTE 1: Aceitar ambos os formatos no uploader
-        arquivo = st.file_uploader("Suba a planilha oficial da secretaria (.xlsx, .xls)", type=["xlsx", "xls"])
-        
-        if arquivo:
-            if st.button("🚀 Iniciar Sincronização e Gerar Relatório", type="primary"):
-                with st.spinner("Analisando dados e cruzando informações..."):
-                    try:
-                        # 1. Puxa o estado atual do banco para poder comparar
-                        res_banco = supabase.table("alunos").select("nome, turma").execute()
-                        banco_dict = {str(item['nome']).upper().strip(): item.get('turma', 'Sem Turma') for item in res_banco.data}
-                        
-                        # AJUSTE 2: Identificar o motor de leitura correto para cada extensão
-                        # Se for .xls usa 'xlrd', se for .xlsx usa 'openpyxl'
-                        engine_excel = 'xlrd' if arquivo.name.endswith('.xls') else 'openpyxl'
-                        xl = pd.ExcelFile(arquivo, engine=engine_excel)
-                        
-                        abas_turmas = [a for a in xl.sheet_names if "EM45" in a]
-                        
-                        if not abas_turmas:
-                            st.error("Nenhuma aba com o padrão 'EM45' foi encontrada no arquivo.")
-                        else:
-                            dados_upsert = []
-                            relatorio_inseridos = []
-                            relatorio_transferidos = []
-                            nomes_processados_neste_excel = set()
-                            duplicados_excel = 0
-                            
-                            barra = st.progress(0)
-                            
-                            # 2. Varredura do Excel
-                            for i, nome_aba in enumerate(abas_turmas):
-                                # Extrai a turma
-                                sigla = str(nome_aba).split('-')[-1].strip()
-                                if len(sigla) >= 2:
-                                    turma_nova = f"{sigla[0]}º {sigla[-1]}"
-                                else:
-                                    turma_nova = nome_aba
-                                    
-                                # AJUSTE 3: Aplicar o motor de leitura também no read_excel
-                                df = pd.read_excel(xl, sheet_name=nome_aba, engine=engine_excel)
-                                
-                                for _, linha in df.iterrows():
-                                    if pd.isna(linha.get('Nome')):
-                                        continue
-                                        
-                                    nome_limpo = str(linha['Nome']).upper().strip()
-                                    
-                                    if nome_limpo in nomes_processados_neste_excel:
-                                        duplicados_excel += 1
-                                        continue
-                                    nomes_processados_neste_excel.add(nome_limpo)
-                                    
-                                    # LÓGICA DE AUDITORIA
-                                    if nome_limpo not in banco_dict:
-                                        relatorio_inseridos.append({"Nome": nome_limpo, "Turma Atribuída": turma_nova})
-                                    else:
-                                        turma_antiga = banco_dict[nome_limpo]
-                                        if turma_antiga != turma_nova:
-                                            relatorio_transferidos.append({
-                                                "Nome": nome_limpo,
-                                                "Turma Antiga": turma_antiga,
-                                                "Nova Turma": turma_nova
-                                            })
-                                    
-                                    # Tratamento de datas e sexo
-                                    try:
-                                        dt_nasc = pd.to_datetime(linha['Data de nascimento'], dayfirst=True).strftime('%Y-%m-%d')
-                                    except:
-                                        dt_nasc = None
-                                    
-                                    sexo = str(linha.get('Sexo', '')).upper().strip()
-                                    sexo = sexo if sexo in ['M', 'F'] else None
+    col_data, col_vazia = st.columns([3, 7])
+    with col_data:
+        data_hoje = st.date_input("📅 Data de Análise:", value=datetime.date.today(), format="DD/MM/YYYY")
+    
+    hoje_iso = data_hoje.isoformat()
+    st.divider()
 
-                                    dados_upsert.append({
-                                        "nome": nome_limpo,
-                                        "turma": turma_nova,
-                                        "data_nascimento": dt_nasc,
-                                        "sexo": sexo
-                                    })
-                                
-                                barra.progress((i + 1) / len(abas_turmas))
-                            
-                            # 3. Executa a gravação no banco
-                            if dados_upsert:
-                                supabase.table("alunos").upsert(dados_upsert, on_conflict="nome").execute()
-                            
-                            # 4. EXIBIÇÃO DO RELATÓRIO FINAL
-                            st.divider()
-                            st.subheader("📋 Relatório de Sincronização")
-                            
-                            c1, c2, c3 = st.columns(3)
-                            c1.metric("Novos Alunos Cadastrados", len(relatorio_inseridos))
-                            c2.metric("Mudanças de Sala", len(relatorio_transferidos))
-                            c3.metric("Total Processado", len(dados_upsert))
-                            
-                            if duplicados_excel > 0:
-                                st.warning(f"⚠️ **{duplicados_excel} ocorrências duplicadas** ignoradas.")
-                            
-                            st.success("O Banco de Dados foi atualizado com sucesso!")
-                            
-                            if relatorio_inseridos:
-                                with st.expander(f"➕ Ver {len(relatorio_inseridos)} novos alunos", expanded=False):
-                                    st.dataframe(pd.DataFrame(relatorio_inseridos), use_container_width=True, hide_index=True)
-                            
-                            if relatorio_transferidos:
-                                with st.expander(f"🔄 Ver {len(relatorio_transferidos)} mudanças de sala", expanded=False):
-                                    st.dataframe(pd.DataFrame(relatorio_transferidos), use_container_width=True, hide_index=True)
-
-                    except Exception as e:
-                        st.error(f"❌ Erro crítico: {e}")
     # ==========================================
-    # ABA 2: COLAR NOMES (MANTIDA IGUAL PARA INSERÇÕES RÁPIDAS)
+    # 2. CRIAÇÃO DAS ABAS (NAVEGAÇÃO)
     # ==========================================
-    with aba_texto:
-        st.subheader("Adicionar Novatos em Lote")
-        st.write("Cole os nomes dos alunos (um por linha), escolha a turma e o sistema fará o filtro automático. (⚠️ Não insere data/sexo).")
-        
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            texto_nomes = st.text_area("Lista de Nomes (Cole aqui):", height=200)
-        with col2:
-            opcoes_turmas = ["1º A", "1º B", "1º C", "1º D", "1º E", "2º A", "2º B", "2º C", "2º D", "3º A", "3º B", "3º C", "3º D"]
-            turma_selecionada = st.selectbox("Selecione a Turma:", opcoes_turmas)
-        
-        if st.button("🔍 Verificar Nomes"):
-            if not texto_nomes.strip():
-                st.warning("⚠️ Cole pelo menos um nome na caixa de texto.")
-            else:
-                lista_digitada = [n.upper().strip() for n in texto_nomes.split('\n') if n.strip()]
-                res = supabase.table("alunos").select("nome").execute()
-                nomes_no_banco = {str(item['nome']).upper().strip() for item in res.data}
-                
-                novatos = [{"nome": n, "turma": turma_selecionada} for n in lista_digitada if n not in nomes_no_banco]
-                
-                st.session_state['lista_novatos'] = novatos
-                st.session_state['total_digitado'] = len(lista_digitada)
+    tab_presenca, tab_evasao = st.tabs(["📋 Panorama de Presença (Diária)", "🏃‍♂️ Mapa de Evasões (Gazeadores)"])
 
-        if 'lista_novatos' in st.session_state:
-            novatos = st.session_state['lista_novatos']
-            total = st.session_state['total_digitado']
+    # #####################################################################
+    # ABA 1: PANORAMA DE PRESENÇA (SEU CÓDIGO ORIGINAL + PDF DE FALTAS)
+    # #####################################################################
+    with tab_presenca:
+        col_esq, col_dir = st.columns([7, 3], gap="large")
+        
+        df_presentes_hoje = pd.DataFrame()
+        n_presentes, total_alunos, n_faltas, perc = 0, 0, 0, 0
+
+        try:
+            # Pega total de alunos
+            res_total = supabase.table("alunos").select("id", count="exact").execute()
+            total_alunos = res_total.count if res_total.count else 0
             
+            # Pega presentes do dia
+            res_freq = supabase.table("frequencia").select("*").eq("data_chamada", hoje_iso).eq("status", "P").execute()
+            
+            if res_freq.data:
+                df_presentes_hoje = pd.DataFrame(res_freq.data)
+                col_nome = next((c for c in ['aluno_nome', 'nome_aluno'] if c in df_presentes_hoje.columns), None)
+                
+                if col_nome:
+                    n_presentes = len(df_presentes_hoje[col_nome].unique())
+                else:
+                    n_presentes = len(df_presentes_hoje)
+                    
+            # Cálculos de faltas e percentual
+            n_faltas = total_alunos - n_presentes
+            perc = (n_presentes / total_alunos * 100) if total_alunos > 0 else 0
+            
+        except Exception as e:
+            st.error(f"⚠️ Erro na conexão: {e}")
+
+        # LADO ESQUERDO (Métricas e Gráfico)
+        with col_esq:
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Presentes", n_presentes)
+            c2.metric("Ausentes do Dia", n_faltas, delta=f"{n_faltas}", delta_color="inverse")
+            c3.metric("% Freq", f"{perc:.1f}%")
+            c4.metric("Matrícula", total_alunos)
+
+            if RECESSO[0] <= data_hoje <= RECESSO[1]:
+                st.info("ℹ️ Período de Recesso Escolar")
+
             st.divider()
-            
-            if novatos:
-                st.success(f"✅ Dos {total} nomes colados, encontramos **{len(novatos)} novatos** para a turma {turma_selecionada}.")
-                with st.expander("👀 Ver Lista", expanded=True):
-                    st.dataframe(pd.DataFrame(novatos), use_container_width=True)
-                
-                if st.button("💾 Salvar Novatos no Banco", type="primary"):
-                    try:
-                        supabase.table("alunos").insert(novatos).execute()
-                        st.success("🎉 Alunos salvos com sucesso!")
-                        del st.session_state['lista_novatos']
-                    except Exception as e:
-                        st.error(f"❌ Erro ao salvar: {e}")
+
+            try:
+                if not df_presentes_hoje.empty and 'turma' in df_presentes_hoje.columns:
+                    st.subheader("🏫 Presença por Turma")
+                    df_turmas = df_presentes_hoje.groupby('turma').size().reset_index(name='Presentes')
+                    st.bar_chart(data=df_turmas, x="turma", y="Presentes", color="#00C896", height=450, use_container_width=True)
+                else:
+                    st.info("Aguardando registros de chamada para gerar o gráfico.")
+            except:
+                pass
+
+        # LADO DIREITO (Tabela Resumo)
+        with col_dir:
+            st.subheader("📋 Resumo por Sala")
+            if not df_presentes_hoje.empty and 'turma' in df_presentes_hoje.columns:
+                df_resumo = df_presentes_hoje.groupby('turma').size().reset_index(name='Qtd')
+                df_resumo = df_resumo.sort_values(by='turma')
+                st.dataframe(
+                    df_resumo, use_container_width=True, hide_index=True, height=530,
+                    column_config={"turma": st.column_config.TextColumn("Turma"), "Qtd": st.column_config.NumberColumn("Presentes")}
+                )
             else:
-                st.info(f"ℹ️ Todos os {total} nomes já estão cadastrados. Nenhum aluno novo.")
+                st.info("Nenhuma presença registrada.")
+
+        # ÁREA INFERIOR (Alunos Ausentes + PDF)
+        st.divider() 
+        st.subheader(f"🚨 Estudantes Ausentes ({data_hoje.strftime('%d/%m/%Y')})")
+        st.caption("Selecione uma turma para ver quem faltou hoje e baixar a lista.")
+
+        try:
+            res_t_raw = supabase.table("alunos").select("turma").execute().data
+            lista_turmas = []
+            if res_t_raw:
+                lista_turmas = sorted(list(set([t['turma'] for t in res_t_raw if t.get('turma')])))
+            
+            if lista_turmas:
+                turma_selecionada = st.pills("Turmas disponíveis:", options=lista_turmas, key="pills_faltas")
+                
+                if turma_selecionada:
+                    res_f = supabase.table("frequencia").select("aluno_nome").eq("data_chamada", hoje_iso).eq("turma", turma_selecionada).eq("status", "F").execute().data
+                    
+                    if res_f:
+                        df_faltosos = pd.DataFrame(res_f).sort_values(by="aluno_nome")
+                        
+                        # --- GERADOR DE PDF DE FALTAS ---
+                        buffer_faltas = io.BytesIO()
+                        pdf_f = canvas.Canvas(buffer_faltas, pagesize=A4)
+                        pdf_f.setFont("Helvetica-Bold", 16)
+                        pdf_f.drawString(50, 800, f"Lista de Ausentes - {turma_selecionada}")
+                        pdf_f.setFont("Helvetica", 12)
+                        pdf_f.drawString(50, 780, f"Data: {data_hoje.strftime('%d/%m/%Y')}")
+                        y_pos = 740
+                        pdf_f.setFont("Helvetica-Bold", 12)
+                        pdf_f.drawString(50, y_pos, f"Total de ausentes: {len(df_faltosos)}")
+                        y_pos -= 20
+                        pdf_f.setFont("Helvetica", 12)
+                        for idx, row in df_faltosos.iterrows():
+                            pdf_f.drawString(60, y_pos, f"• {row['aluno_nome']}")
+                            y_pos -= 20
+                            if y_pos < 50:
+                                pdf_f.showPage()
+                                y_pos = 800
+                                pdf_f.setFont("Helvetica", 12)
+                        pdf_f.save()
+                        buffer_faltas.seek(0)
+                        
+                        # Exibição na Tela
+                        df_exibicao = df_faltosos.copy()
+                        df_exibicao['Ícone'] = "❌"
+                        df_exibicao = df_exibicao[['Ícone', 'aluno_nome']] 
+                        
+                        col_vazia1, col_tabela, col_vazia2 = st.columns([1, 2, 1])
+                        with col_tabela:
+                            st.dataframe(df_exibicao, use_container_width=True, hide_index=True, column_config={"Ícone": st.column_config.TextColumn("", width="small"), "aluno_nome": st.column_config.TextColumn("Nome do Estudante")})
+                            st.download_button(
+                                label="📥 Baixar Lista de Ausentes (PDF)",
+                                data=buffer_faltas.getvalue(),
+                                file_name=f"Faltas_{turma_selecionada}_{data_hoje.strftime('%d_%m_%Y')}.pdf",
+                                mime="application/pdf",
+                                type="primary",
+                                use_container_width=True
+                            )
+                    else:
+                        st.success(f"🎉 Excelente! Nenhuma falta registrada para a turma {turma_selecionada} hoje.")
+        except Exception as e:
+            st.error(f"Erro ao carregar lista de ausentes: {e}")
+
+    # #####################################################################
+    # ABA 2: MAPA DE EVASÕES (GAZEADORES)
+    # #####################################################################
+    with tab_evasao:
+        st.subheader(f"🏃‍♂️ Mapa de Infrequência Seletiva ({data_hoje.strftime('%d/%m/%Y')})")
+        st.caption("Análise de estudantes que se ausentam durante as aulas específicas.")
+
+        try:
+            res_ev = supabase.table("evasoes").select("*").eq("data_registro", hoje_iso).execute()
+            df_ev = pd.DataFrame(res_ev.data)
+
+            if not df_ev.empty:
+                # KPIs
+                total_evasoes = len(df_ev)
+                pico_aula = df_ev['aula_periodo'].value_counts().idxmax()
+                turma_critica = df_ev['turma'].value_counts().idxmax()
+
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Total de Fugas Registradas", total_evasoes)
+                c2.metric("Horário de Maior Fuga", pico_aula)
+                c3.metric("Turma com Mais Ocorrências", turma_critica)
+
+                st.divider()
+
+                # Gráficos e Rankings
+                col_chart, col_rank = st.columns([6, 4])
+                with col_chart:
+                    st.write("**Frequência de Evasão por Aula/Período**")
+                    df_aula = df_ev.groupby('aula_periodo').size().reset_index(name='Qtd')
+                    st.bar_chart(df_aula, x="aula_periodo", y="Qtd", color="#FF8000")
+
+                with col_rank:
+                    st.write("**🏆 Top Gazeadores do Dia**")
+                    df_rank = df_ev['aluno_nome'].value_counts().reset_index()
+                    df_rank.columns = ['Estudante', 'Nº de Fugas']
+                    st.dataframe(df_rank, use_container_width=True, hide_index=True)
+
+                # Tabela de Detalhes
+                st.write("**📋 Registro Detalhado**")
+                st.dataframe(
+                    df_ev[['turma', 'aluno_nome', 'aula_periodo', 'observacao']].sort_values(by=['turma', 'aluno_nome']),
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                # --- GERADOR DE PDF DO MAPA DE EVASÕES ---
+                st.divider()
+                buffer_ev = io.BytesIO()
+                doc = SimpleDocTemplate(buffer_ev, pagesize=A4)
+                elements = []
+                styles = getSampleStyleSheet()
+
+                elements.append(Paragraph(f"<b>RELATÓRIO DE EVASÃO ESCOLAR (GAZEADORES) - EREMPAM</b>", styles['Title']))
+                elements.append(Paragraph(f"Data: {data_hoje.strftime('%d/%m/%Y')}", styles['Normal']))
+                elements.append(Paragraph(f"Total de Registros: {total_evasoes}", styles['Normal']))
+                elements.append(Spacer(1, 20))
+
+                data_pdf = [["Turma", "Nome do Estudante", "Aula/Período"]]
+                for _, row in df_ev.sort_values(by=['turma', 'aluno_nome']).iterrows():
+                    data_pdf.append([str(row['turma']), str(row['aluno_nome']), str(row['aula_periodo'])])
+
+                t = Table(data_pdf, colWidths=[80, 280, 100])
+                t.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.orange),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 12),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.whitesmoke, colors.lightgrey])
+                ]))
+                
+                elements.append(t)
+                doc.build(elements)
+                
+                col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
+                with col_btn2:
+                    st.download_button(
+                        label="📥 Imprimir Mapa de Evasão Completo (PDF)",
+                        data=buffer_ev.getvalue(),
+                        file_name=f"Mapa_Evasao_{data_hoje.strftime('%d_%m_%Y')}.pdf",
+                        mime="application/pdf",
+                        type="primary",
+                        use_container_width=True
+                    )
+            else:
+                st.success(f"✅ Nenhum registro de evasão (fuga de aula) para o dia {data_hoje.strftime('%d/%m/%Y')}. Tudo sob controle!")
+
+        except Exception as e:
+            st.error(f"Erro ao processar mapa de evasão: {e}")
