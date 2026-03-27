@@ -35,49 +35,89 @@ def listar_arquivos_bucket(_supabase):
 def gerar_pdf_relatorio(df, titulo_relatorio, data_hoje):
     try:
         pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", "B", 16)
-        pdf.cell(190, 10, "Relatorio de Busca Ativa", ln=True, align="C")
-        pdf.set_font("Arial", "", 10)
-        pdf.cell(190, 10, f"Gerado em: {data_hoje}", ln=True, align="C")
-        pdf.ln(10)
         
-        pdf.set_font("Arial", "B", 12)
-        titulo_safe = str(titulo_relatorio).encode('latin-1', 'replace').decode('latin-1')
-        pdf.cell(190, 10, titulo_safe.upper(), ln=True, align="L")
-        pdf.ln(5)
-        
-        pdf.set_fill_color(230, 230, 230)
-        pdf.set_font("Arial", "B", 10)
-        
-        # Ajustando larguras dinamicamente com base nas colunas
+        # O PULO DO GATO: Verifica se o Dataframe tem a coluna Turma para fazer as quebras de página
         colunas = list(df.columns)
-        if "Aluno" in colunas and "Turma" in colunas:
-            pdf.cell(100, 10, " Estudante", 1, 0, "L", True)
-            pdf.cell(40, 10, " Turma", 1, 0, "C", True)
-            pdf.cell(50, 10, " Info", 1, 1, "C", True)
-            
-            pdf.set_font("Arial", "", 10)
-            for _, row in df.iterrows():
-                nome = str(row.get('Aluno', row.get('nome', ''))).encode('latin-1', 'replace').decode('latin-1')
-                turma = str(row.get('Turma', row.get('turma', ''))).encode('latin-1', 'replace').decode('latin-1')
-                info = str(row.get('Faltas', row.get('Total de Fugas', 'S/R'))).encode('latin-1', 'replace').decode('latin-1')
-                
-                pdf.cell(100, 10, f" {nome[:45]}", 1)
-                pdf.cell(40, 10, f" {turma}", 1, 0, "C")
-                pdf.cell(50, 10, f" {info}", 1, 1, "C")
+        has_turma = "Turma" in colunas
+
+        if has_turma:
+            turmas = sorted(df['Turma'].unique().tolist())
         else:
-            # Fallback genérico para outras tabelas
-            for col in colunas[:3]: # Pega até 3 colunas
-                pdf.cell(63, 10, str(col)[:15], 1, 0, "C", True)
-            pdf.ln()
+            turmas = [None] # Roda uma vez só caso não tenha turma separada
+
+        # Loop que cria uma página nova para cada Turma
+        for idx, turma in enumerate(turmas):
+            pdf.add_page()
+            pdf.set_font("Arial", "B", 16)
+            pdf.cell(190, 10, "Relatorio de Busca Ativa", ln=True, align="C")
             pdf.set_font("Arial", "", 10)
-            for _, row in df.iterrows():
-                for col in colunas[:3]:
-                    val = str(row[col]).encode('latin-1', 'replace').decode('latin-1')
-                    pdf.cell(63, 10, f" {val[:25]}", 1, 0, "L")
-                pdf.ln()
+            pdf.cell(190, 10, f"Gerado em: {data_hoje}", ln=True, align="C")
+            pdf.ln(8)
             
+            pdf.set_font("Arial", "B", 12)
+            titulo_safe = str(titulo_relatorio).encode('latin-1', 'replace').decode('latin-1')
+            
+            # Ajusta o título para incluir a Turma atual
+            if turma:
+                if "Turma" in titulo_safe:
+                    titulo_tela = titulo_safe
+                else:
+                    titulo_tela = f"{titulo_safe} - Turma: {turma}"
+            else:
+                titulo_tela = titulo_safe
+                
+            pdf.cell(190, 10, titulo_tela.upper(), ln=True, align="L")
+            pdf.ln(5)
+            
+            pdf.set_fill_color(230, 230, 230)
+            pdf.set_font("Arial", "B", 9)
+            
+            # Filtra os dados só para a turma da página atual
+            df_turma = df[df['Turma'] == turma] if has_turma else df
+            
+            # Lógica dinâmica de colunas para suportar o Mapa de Evolução
+            if "Aluno" in colunas and has_turma:
+                cols_to_print = [c for c in df_turma.columns if c != 'Turma']
+                
+                # Cálculo de largura para caber todas as colunas de datas
+                w_aluno = 70
+                w_remaining = 190 - w_aluno
+                num_cols = len(cols_to_print) - 1
+                w_col = w_remaining / num_cols if num_cols > 0 else 0
+                
+                # Cabeçalho da Tabela
+                pdf.cell(w_aluno, 8, " Estudante", 1, 0, "L", True)
+                for col in cols_to_print:
+                    if col == "Aluno": continue
+                    header_str = "Total" if col == "Total de Fugas" else str(col)
+                    pdf.cell(w_col, 8, f"{header_str[:10]}", 1, 0, "C", True)
+                pdf.ln()
+                
+                # Linhas da Tabela
+                pdf.set_font("Arial", "", 8)
+                for _, row in df_turma.iterrows():
+                    nome = str(row.get('Aluno', '')).encode('latin-1', 'replace').decode('latin-1')
+                    pdf.cell(w_aluno, 8, f" {nome[:35]}", 1, 0, "L")
+                    
+                    for col in cols_to_print:
+                        if col == "Aluno": continue
+                        val = str(row.get(col, '')).encode('latin-1', 'replace').decode('latin-1')
+                        pdf.cell(w_col, 8, f"{val[:15]}", 1, 0, "C")
+                    pdf.ln()
+            else:
+                # Fallback genérico original para caso passe uma tabela diferente
+                cols_print = colunas[:4]
+                w_col = 190 / len(cols_print) if cols_print else 190
+                for col in cols_print:
+                    pdf.cell(w_col, 8, str(col)[:15], 1, 0, "C", True)
+                pdf.ln()
+                pdf.set_font("Arial", "", 8)
+                for _, row in df_turma.iterrows():
+                    for col in cols_print:
+                        val = str(row[col]).encode('latin-1', 'replace').decode('latin-1')
+                        pdf.cell(w_col, 8, f" {val[:20]}", 1, 0, "L")
+                    pdf.ln()
+                    
         saida = pdf.output(dest='S')
         return saida.encode('latin-1') if isinstance(saida, str) else bytes(saida)
     except Exception as e:
@@ -188,7 +228,7 @@ def exibir_busca_ativa(supabase):
     aba_ranking, aba_zero, aba_lista, aba_registro = st.tabs([
         "🚨 Alertas & Ranking", 
         "❌ Presença Zero", 
-        "🗺️ Lista Geral", 
+        "🗺️ Mapa de Intensidade", 
         "📝 Registrar Ação"
     ])
 
@@ -266,11 +306,11 @@ def exibir_busca_ativa(supabase):
             st.error(f"Erro ao processar abandono: {e}")
 
     # ------------------------------------------
-    # ABA 3: LISTA GERAL / MAPA DE FUGAS
+    # ABA 3: MAPA DE INTENSIDADE / FUGAS
     # ------------------------------------------
     with aba_lista:
-        st.subheader("🗺️ Lista e Histórico de Evasões")
-        st.write("Visão geral de evasões organizadas por nome e turma.")
+        st.subheader("🗺️ Mapa de Intensidade de Evasões")
+        st.write("Acompanhe o comportamento (frequência salteada) dos estudantes em um período de tempo.")
 
         col_f1, col_f2 = st.columns([1, 2])
         with col_f1:
@@ -284,7 +324,8 @@ def exibir_busca_ativa(supabase):
             with col_f2:
                 turma_filtro = st.selectbox("Selecione a Turma:", ["Geral (Todas as Turmas)"] + lista_t, key="lista_turma")
 
-            query = supabase.table("evasoes").select("aluno_nome, turma, aula_periodo")\
+            # INCLUÍDA A DATA DE REGISTRO NA CONSULTA!
+            query = supabase.table("evasoes").select("aluno_nome, turma, aula_periodo, data_registro")\
                 .gte("data_registro", data_inicio.strftime('%Y-%m-%d'))\
                 .lte("data_registro", data_fim.strftime('%Y-%m-%d'))
             
@@ -295,18 +336,58 @@ def exibir_busca_ativa(supabase):
 
             if res_evas_mapa.data:
                 df_mapa = pd.DataFrame(res_evas_mapa.data)
-                resumo_evas = df_mapa.groupby(['turma', 'aluno_nome']).agg(
-                    Total_Evasoes=('aula_periodo', 'count'),
-                    Aulas_Evadidas=('aula_periodo', lambda x: ', '.join(x.unique()))
-                ).reset_index()
                 
-                resumo_evas = resumo_evas.sort_values(by=['turma', 'aluno_nome'])
-                resumo_evas.columns = ['Turma', 'Aluno', 'Total de Fugas', 'Aulas Gazeáveis (Histórico)']
+                # --- O CÓDIGO DO MAPA DE CALOR COMEÇA AQUI ---
+                df_mapa['data_dt'] = pd.to_datetime(df_mapa['data_registro'])
+                
+                # Cria a Tabela Dinâmica contando as fugas por dia
+                mapa_evolucao = df_mapa.pivot_table(
+                    index=['turma', 'aluno_nome'], 
+                    columns='data_dt', 
+                    values='aula_periodo', 
+                    aggfunc='count'
+                ).fillna(0).astype(int)
+                
+                # Calcula o Total de Fugas no período
+                mapa_evolucao['Total de Fugas'] = mapa_evolucao.sum(axis=1)
+                
+                mapa_evolucao = mapa_evolucao.reset_index()
+                mapa_evolucao.rename(columns={'turma': 'Turma', 'aluno_nome': 'Aluno'}, inplace=True)
+                
+                # Renomeia as colunas de data (de formato DateTime para String 'DD/MM')
+                novas_colunas = []
+                colunas_datas = []
+                for c in mapa_evolucao.columns:
+                    if isinstance(c, pd.Timestamp):
+                        str_data = c.strftime('%d/%m')
+                        novas_colunas.append(str_data)
+                        colunas_datas.append(str_data)
+                    else:
+                        novas_colunas.append(c)
+                mapa_evolucao.columns = novas_colunas
+                
+                # Reorganiza a ordem de visualização
+                ordem_colunas = ['Turma', 'Aluno', 'Total de Fugas'] + colunas_datas
+                mapa_evolucao = mapa_evolucao[ordem_colunas]
+                mapa_evolucao = mapa_evolucao.sort_values(by=['Turma', 'Total de Fugas'], ascending=[True, False])
 
-                st.dataframe(resumo_evas, use_container_width=True, hide_index=True)
+                # Exibe na tela COM GRADIENTE DE CORES!
+                st.dataframe(
+                    mapa_evolucao.style.background_gradient(subset=colunas_datas, cmap='YlOrRd'),
+                    use_container_width=True, 
+                    hide_index=True
+                )
                 
-                pdf_evas = gerar_pdf_relatorio(resumo_evas, f"Relatorio de Evasoes - {turma_filtro}", data_hora_atual)
-                st.download_button("📄 Baixar Relatório de Evasões", pdf_evas, f"evasoes_{hoje}.pdf", "application/pdf", use_container_width=True)
+                # Botão do PDF. Ele vai separar 1 página por Turma automaticamente!
+                pdf_evas = gerar_pdf_relatorio(mapa_evolucao, f"Mapa de Evolucao de Evasoes", data_hora_atual)
+                st.download_button(
+                    label="📄 Baixar Mapa de Evasões (Separado por Turma)", 
+                    data=pdf_evas, 
+                    file_name=f"mapa_evasoes_{hoje}.pdf", 
+                    mime="application/pdf", 
+                    use_container_width=True,
+                    type="primary"
+                )
             else:
                 st.success("Nenhuma evasão encontrada para os filtros selecionados.")
                 
