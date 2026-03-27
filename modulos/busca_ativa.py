@@ -34,76 +34,151 @@ def listar_arquivos_bucket(_supabase):
 
 def gerar_pdf_relatorio(df, titulo_relatorio, data_hoje):
     try:
-        pdf = FPDF()
+        # Detecta automaticamente se é a aba do Mapa de Evolução
+        colunas = list(df.columns)
+        is_heatmap = 'Total de Fugas' in colunas
+        
+        # Paisagem (L) para Mapa de Calor, Retrato (P) para os outros
+        orientacao = 'L' if is_heatmap else 'P'
+        largura_pagina = 277 if is_heatmap else 190 # Área útil aproximada
+        
+        pdf = FPDF(orientation=orientacao, unit='mm', format='A4')
         pdf.set_auto_page_break(auto=True, margin=15)
         
-        colunas = list(df.columns)
         has_turma = "Turma" in colunas
+        turmas = sorted(df['Turma'].unique().tolist()) if has_turma else [None]
 
-        if has_turma:
-            turmas = sorted(df['Turma'].unique().tolist())
-        else:
-            turmas = [None]
-
-        for idx, turma in enumerate(turmas):
+        for turma in turmas:
             pdf.add_page()
-            pdf.set_font("Arial", "B", 16)
-            pdf.cell(190, 10, "Relatorio de Busca Ativa", ln=True, align="C")
-            pdf.set_font("Arial", "", 10)
-            pdf.cell(190, 10, f"Gerado em: {data_hoje}", ln=True, align="C")
-            pdf.ln(8)
             
+            # Cabeçalho Geral
+            pdf.set_font("Arial", "B", 16)
+            pdf.cell(0, 10, "RELATORIO DE BUSCA ATIVA", ln=True, align="C")
+            pdf.set_font("Arial", "", 10)
+            pdf.cell(0, 5, f"Gerado em: {data_hoje}", ln=True, align="C")
+            pdf.ln(5)
+            
+            # Título da Tabela/Turma
             pdf.set_font("Arial", "B", 12)
             titulo_safe = str(titulo_relatorio).encode('latin-1', 'replace').decode('latin-1')
-            
             if turma:
                 titulo_tela = titulo_safe if "Turma" in titulo_safe else f"{titulo_safe} - Turma: {turma}"
             else:
                 titulo_tela = titulo_safe
                 
-            pdf.cell(190, 10, titulo_tela.upper(), ln=True, align="L")
+            pdf.cell(0, 10, titulo_tela.upper(), ln=True, align="L")
             pdf.ln(5)
-            
-            pdf.set_fill_color(230, 230, 230)
-            pdf.set_font("Arial", "B", 9)
             
             df_turma = df[df['Turma'] == turma] if has_turma else df
             
-            if "Aluno" in colunas and has_turma:
-                cols_to_print = [c for c in df_turma.columns if c != 'Turma']
-                w_aluno = 70
-                w_remaining = 190 - w_aluno
-                num_cols = len(cols_to_print) - 1
-                w_col = w_remaining / num_cols if num_cols > 0 else 0
+            # ==========================================
+            # LAYOUT 1: MAPA DE CALOR (COM DATAS NA VERTICAL)
+            # ==========================================
+            if is_heatmap:
+                w_aluno = 65
+                w_total = 12
+                w_data = 10 # Células finas para caber muitos dias
                 
-                pdf.cell(w_aluno, 8, " Estudante", 1, 0, "L", True)
-                for col in cols_to_print:
-                    if col == "Aluno": continue
-                    header_str = "Total" if col == "Total de Fugas" else str(col)
-                    pdf.cell(w_col, 8, f"{header_str[:10]}", 1, 0, "C", True)
-                pdf.ln()
+                pdf.set_fill_color(200, 200, 200)
+                pdf.set_font("Arial", "B", 8)
                 
-                pdf.set_font("Arial", "", 8)
+                pdf.cell(w_aluno, 20, " Estudante", 1, 0, "L", True)
+                pdf.cell(w_total, 20, " Total", 1, 0, "C", True)
+                
+                curr_x = pdf.get_x()
+                curr_y = pdf.get_y()
+                cols_dados = [c for c in colunas if c not in ['Turma', 'Aluno', 'Total de Fugas']]
+                
+                # Imprime as datas giradas em 90 graus
+                for data_col in cols_dados:
+                    # Limita para não estourar a página (aproximadamente 20 colunas de datas)
+                    if curr_x + w_data > 280: 
+                        break 
+                    
+                    pdf.rect(curr_x, curr_y, w_data, 20, 'F')
+                    pdf.rect(curr_x, curr_y, w_data, 20)
+                    
+                    pdf.set_xy(curr_x + (w_data/2) + 1, curr_y + 18)
+                    pdf.rotate(90, pdf.get_x(), pdf.get_y())
+                    pdf.cell(16, 5, str(data_col), 0, 0, "L")
+                    pdf.rotate(0)
+                    
+                    curr_x += w_data
+                
+                pdf.set_xy(pdf.get_margin(), curr_y + 20)
+                
+                # Linhas dos alunos no Mapa
                 for _, row in df_turma.iterrows():
-                    nome = str(row.get('Aluno', '')).encode('latin-1', 'replace').decode('latin-1')
-                    pdf.cell(w_aluno, 8, f" {nome[:35]}", 1, 0, "L")
+                    pdf.set_font("Arial", "", 8)
+                    pdf.set_fill_color(255, 255, 255)
+                    nome = str(row.get('Aluno', ''))[:35].encode('latin-1', 'replace').decode('latin-1')
+                    pdf.cell(w_aluno, 7, f" {nome}", 1, 0, "L")
+                    
+                    pdf.set_font("Arial", "B", 8)
+                    pdf.cell(w_total, 7, str(row.get('Total de Fugas', 0)), 1, 0, "C")
+                    
+                    pdf.set_font("Arial", "B", 8)
+                    curr_x = pdf.get_x()
+                    for data_col in cols_dados:
+                        if curr_x + w_data > 280: break # Trava de segurança da largura
+                        
+                        val = row.get(data_col, 0)
+                        try: val = int(val)
+                        except: val = 0
+                        
+                        # Sistema de Cores
+                        if val == 0: pdf.set_fill_color(255, 255, 255) # Branco
+                        elif val == 1: pdf.set_fill_color(255, 245, 150) # Amarelo
+                        elif val == 2: pdf.set_fill_color(255, 200, 100) # Laranja
+                        elif val >= 3: pdf.set_fill_color(255, 120, 120) # Vermelho
+                        
+                        fill = True if val > 0 else False
+                        txt_val = str(val) if val > 0 else "-"
+                        pdf.cell(w_data, 7, txt_val, 1, 0, "C", fill)
+                        curr_x = pdf.get_x()
+                    pdf.ln()
+
+            # ==========================================
+            # LAYOUT 2: TABELAS NORMAIS (RANKING / ZERO)
+            # ==========================================
+            else:
+                pdf.set_fill_color(230, 230, 230)
+                pdf.set_font("Arial", "B", 9)
+                
+                if "Aluno" in colunas and has_turma:
+                    cols_to_print = [c for c in df_turma.columns if c != 'Turma']
+                    w_aluno = 70
+                    w_remaining = largura_pagina - w_aluno
+                    num_cols = len(cols_to_print) - 1
+                    w_col = w_remaining / num_cols if num_cols > 0 else 0
+                    
+                    pdf.cell(w_aluno, 8, " Estudante", 1, 0, "L", True)
                     for col in cols_to_print:
                         if col == "Aluno": continue
-                        val = str(row.get(col, '')).encode('latin-1', 'replace').decode('latin-1')
-                        pdf.cell(w_col, 8, f"{val[:15]}", 1, 0, "C")
+                        pdf.cell(w_col, 8, f"{str(col)[:10]}", 1, 0, "C", True)
                     pdf.ln()
-            else:
-                cols_print = colunas[:4]
-                w_col = 190 / len(cols_print) if cols_print else 190
-                for col in cols_print:
-                    pdf.cell(w_col, 8, str(col)[:15], 1, 0, "C", True)
-                pdf.ln()
-                pdf.set_font("Arial", "", 8)
-                for _, row in df_turma.iterrows():
+                    
+                    pdf.set_font("Arial", "", 8)
+                    for _, row in df_turma.iterrows():
+                        nome = str(row.get('Aluno', '')).encode('latin-1', 'replace').decode('latin-1')
+                        pdf.cell(w_aluno, 8, f" {nome[:35]}", 1, 0, "L")
+                        for col in cols_to_print:
+                            if col == "Aluno": continue
+                            val = str(row.get(col, '')).encode('latin-1', 'replace').decode('latin-1')
+                            pdf.cell(w_col, 8, f"{val[:15]}", 1, 0, "C")
+                        pdf.ln()
+                else:
+                    cols_print = colunas[:4]
+                    w_col = largura_pagina / len(cols_print) if cols_print else largura_pagina
                     for col in cols_print:
-                        val = str(row[col]).encode('latin-1', 'replace').decode('latin-1')
-                        pdf.cell(w_col, 8, f" {val[:20]}", 1, 0, "L")
+                        pdf.cell(w_col, 8, str(col)[:15], 1, 0, "C", True)
                     pdf.ln()
+                    pdf.set_font("Arial", "", 8)
+                    for _, row in df_turma.iterrows():
+                        for col in cols_print:
+                            val = str(row[col]).encode('latin-1', 'replace').decode('latin-1')
+                            pdf.cell(w_col, 8, f" {val[:20]}", 1, 0, "L")
+                        pdf.ln()
                     
         saida = pdf.output(dest='S')
         return saida.encode('latin-1') if isinstance(saida, str) else bytes(saida)
@@ -215,14 +290,11 @@ def exibir_busca_ativa(supabase):
                 
                 # Pivot Table
                 m_ev = df_m.pivot_table(index=['turma', 'aluno_nome'], columns='data_dt', values='aula_periodo', aggfunc='count').fillna(0).astype(int)
-                
-                # --- CORREÇÃO CRUCIAL AQUI: select_dtypes garante que só some as colunas de datas ---
                 m_ev['Total de Fugas'] = m_ev.select_dtypes(include=['number']).sum(axis=1)
                 
                 m_ev = m_ev.reset_index()
                 m_ev.rename(columns={'turma': 'Turma', 'aluno_nome': 'Aluno'}, inplace=True)
                 
-                # Formata cabeçalho das datas
                 cols_datas = []
                 novas_cols = []
                 for c in m_ev.columns:
@@ -236,10 +308,15 @@ def exibir_busca_ativa(supabase):
                 ordem = ['Turma', 'Aluno', 'Total de Fugas'] + cols_datas
                 m_ev = m_ev[ordem].sort_values(by=['Turma', 'Total de Fugas'], ascending=[True, False])
 
+                # Legenda de cores
+                st.markdown("""
+                **Legenda de Gravidade (Evasões no mesmo dia):** 🟢 `0 Fugas` | 🟡 `1 Fuga` | 🟠 `2 Fugas` | 🔴 `3+ Fugas`
+                """)
+                
                 st.dataframe(m_ev.style.background_gradient(subset=cols_datas, cmap='YlOrRd'), use_container_width=True, hide_index=True)
                 
                 pdf_e = gerar_pdf_relatorio(m_ev, "Mapa de Evasoes", data_hora_atual)
-                st.download_button("📄 Baixar Mapa (PDF)", pdf_e, "mapa_evasoes.pdf", use_container_width=True)
+                st.download_button("📄 Baixar Mapa (PDF)", pdf_e, "mapa_evasoes.pdf", use_container_width=True, type="primary")
             else: st.success("Sem evasões no período.")
         except Exception as e: st.error(f"Erro: {e}")
 
@@ -271,6 +348,4 @@ def exibir_busca_ativa(supabase):
         except Exception as e: st.error(f"Erro: {e}")
 
 if __name__ == "__main__":
-    # Aqui você deve passar sua instância do supabase
-    # exibir_busca_ativa(supabase)
     pass
