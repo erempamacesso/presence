@@ -281,82 +281,79 @@ def exibir_busca_ativa(supabase):
 
     with aba_lista:
         st.subheader("🗺️ Mapa de Intensidade de Evasões")
-        col_i, col_f = st.columns(2)
+        
+        # MUDANÇA AQUI: Criamos 3 colunas com proporção [1, 1, 2] para a Turma ficar maior
+        col_i, col_f, col_t = st.columns([1, 1, 2])
         d_i = col_i.date_input("Início", datetime.now(fuso).date() - pd.Timedelta(days=7))
         d_f = col_f.date_input("Fim", datetime.now(fuso).date())
         
         try:
+            # 1. Puxa as turmas cadastradas para o SelectBox ficar sempre bonitão
+            r_turmas = supabase.table("alunos").select("turma").execute()
+            lista_turmas = ["Geral (Todas as Turmas)"]
+            if r_turmas.data:
+                # Remove duplicatas e organiza em ordem alfabética
+                lista_turmas += sorted(list(set([x['turma'] for x in r_turmas.data if x['turma']])))
+                
+            t_escolhida = col_t.selectbox("Selecione a Turma:", lista_turmas)
+
+            # 2. Puxa as evasões do banco de dados no período
             res_e_mapa = supabase.table("evasoes").select("aluno_nome, turma, aula_periodo, data_registro")\
                 .gte("data_registro", d_i.strftime('%Y-%m-%d'))\
                 .lte("data_registro", d_f.strftime('%Y-%m-%d')).execute()
 
             if res_e_mapa.data:
                 df_m = pd.DataFrame(res_e_mapa.data)
-                df_m['data_dt'] = pd.to_datetime(df_m['data_registro'])
                 
-                m_ev = df_m.pivot_table(index=['turma', 'aluno_nome'], columns='data_dt', values='aula_periodo', aggfunc='count').fillna(0).astype(int)
-                m_ev['Total de Fugas'] = m_ev.select_dtypes(include=['number']).sum(axis=1)
+                # 3. FILTRA A TURMA (Se o usuário não escolheu "Geral")
+                if t_escolhida != "Geral (Todas as Turmas)":
+                    df_m = df_m[df_m['turma'] == t_escolhida]
                 
-                m_ev = m_ev.reset_index()
-                m_ev.rename(columns={'turma': 'Turma', 'aluno_nome': 'Aluno'}, inplace=True)
-                
-                cols_datas = []
-                novas_cols = []
-                for c in m_ev.columns:
-                    if isinstance(c, pd.Timestamp):
-                        sd = c.strftime('%d/%m')
-                        novas_cols.append(sd)
-                        cols_datas.append(sd)
-                    else: novas_cols.append(c)
-                m_ev.columns = novas_cols
-                
-                ordem = ['Turma', 'Aluno', 'Total de Fugas'] + cols_datas
-                m_ev = m_ev[ordem].sort_values(by=['Turma', 'Total de Fugas'], ascending=[True, False])
-
-                st.markdown("**Legenda de Gravidade:** 🟢 `0 Fugas` | 🟡 `1 Fuga` | 🟠 `2 Fugas` | 🔴 `3+ Fugas`")
-                
-                df_exibicao = m_ev.style.format(lambda v: "" if v == 0 else v, subset=cols_datas)\
-                                        .background_gradient(subset=cols_datas, cmap='YlOrRd')
-                
-                st.dataframe(df_exibicao, use_container_width=True, hide_index=True)
-                
-                pdf_e = gerar_pdf_relatorio(m_ev, "Mapa de Evasoes", data_hora_atual)
-                
-                # Exibe o botão se OK, ou exibe o código do erro na tela se falhar!
-                if isinstance(pdf_e, bytes):
-                    st.download_button("📄 Baixar Mapa (PDF)", pdf_e, "mapa_evasoes.pdf", use_container_width=True, type="primary")
-                else:
-                    st.error("⚠️ Não foi possível gerar o PDF. Tire um print do erro abaixo:")
-                    st.code(pdf_e)
+                if not df_m.empty:
+                    df_m['data_dt'] = pd.to_datetime(df_m['data_registro'])
                     
-            else: st.success("Sem evasões no período.")
-        except Exception as e: st.error(f"Erro: {e}")
+                    m_ev = df_m.pivot_table(index=['turma', 'aluno_nome'], columns='data_dt', values='aula_periodo', aggfunc='count').fillna(0).astype(int)
+                    m_ev['Total de Fugas'] = m_ev.select_dtypes(include=['number']).sum(axis=1)
+                    
+                    m_ev = m_ev.reset_index()
+                    m_ev.rename(columns={'turma': 'Turma', 'aluno_nome': 'Aluno'}, inplace=True)
+                    
+                    cols_datas = []
+                    novas_cols = []
+                    for c in m_ev.columns:
+                        if isinstance(c, pd.Timestamp):
+                            sd = c.strftime('%d/%m')
+                            novas_cols.append(sd)
+                            cols_datas.append(sd)
+                        else: novas_cols.append(c)
+                    m_ev.columns = novas_cols
+                    
+                    ordem = ['Turma', 'Aluno', 'Total de Fugas'] + cols_datas
+                    m_ev = m_ev[ordem].sort_values(by=['Turma', 'Total de Fugas'], ascending=[True, False])
 
-    with aba_registro:
-        st.subheader("➕ Registrar Ação / Ocorrência")
-        try:
-            r_al = supabase.table("alunos").select("id, nome, turma").order("nome").execute()
-            if r_al.data:
-                df_al = pd.DataFrame(r_al.data)
-                t_escolhida = st.selectbox("Selecione a Turma:", sorted(df_al['turma'].unique()))
-                al_da_t = df_al[df_al['turma'] == t_escolhida]
-                al_dict = dict(zip(al_da_t['nome'], al_da_t['id']))
-                n_escolhido = st.selectbox("Selecione o Estudante:", list(al_dict.keys()))
-
-                with st.form("form_oc"):
-                    t_ac = st.selectbox("Ação:", ["Ligação para Família", "Advertência", "Suspensão", "Visita Domiciliar", "Conselho Tutelar"])
-                    mot = st.text_area("Motivo:")
-                    mat = st.text_input("Sua Matrícula:")
-                    if st.form_submit_button("🚨 Gravar", type="primary"):
-                        if mot and mat:
-                            supabase.table("ocorrencias_disciplinares").insert({
-                                "aluno_id": al_dict[n_escolhido], "aluno_nome": n_escolhido,
-                                "turma": t_escolhida, "tipo_ocorrencia": t_ac,
-                                "motivo": mot, "quem_registrou": mat, "status": "Ativa"
-                            }).execute()
-                            st.success("Gravado!")
-                            st.balloons()
-                        else: st.warning("Preencha tudo.")
+                    st.markdown("**Legenda de Gravidade:** 🟢 `0 Fugas` | 🟡 `1 Fuga` | 🟠 `2 Fugas` | 🔴 `3+ Fugas`")
+                    
+                    df_exibicao = m_ev.style.format(lambda v: "" if v == 0 else v, subset=cols_datas)\
+                                            .background_gradient(subset=cols_datas, cmap='YlOrRd')
+                    
+                    st.dataframe(df_exibicao, use_container_width=True, hide_index=True)
+                    
+                    # Nome do PDF dinâmico dependendo da turma
+                    titulo_pdf = "Relatorio de Fuga de Aula"
+                    if t_escolhida != "Geral (Todas as Turmas)":
+                        titulo_pdf += f" - Turma {t_escolhida}"
+                        
+                    pdf_e = gerar_pdf_relatorio(m_ev, titulo_pdf, data_hora_atual)
+                    
+                    if isinstance(pdf_e, bytes):
+                        st.download_button("📄 Baixar Mapa (PDF)", pdf_e, "mapa_evasoes.pdf", use_container_width=True, type="primary")
+                    else:
+                        st.error("⚠️ Não foi possível gerar o PDF. Tire um print do erro abaixo:")
+                        st.code(pdf_e)
+                else:
+                    st.info(f"Nenhuma evasão encontrada para a turma {t_escolhida} neste período.")
+            else: 
+                st.success("Sem evasões no período geral.")
         except Exception as e: st.error(f"Erro: {e}")
 
 if __name__ == "__main__":
