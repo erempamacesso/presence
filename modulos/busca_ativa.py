@@ -41,7 +41,7 @@ def gerar_pdf_relatorio(df, titulo_relatorio, data_hoje):
         orientacao = 'L' if is_heatmap else 'P'
         largura_pagina = 277 if is_heatmap else 190
         
-        # Inicia o FPDF2
+        # Inicia o FPDF
         pdf = FPDF(orientation=orientacao, unit='mm', format='A4')
         pdf.set_auto_page_break(auto=True, margin=15)
         
@@ -96,13 +96,13 @@ def gerar_pdf_relatorio(df, titulo_relatorio, data_hoje):
                     pdf.set_xy(curr_x, curr_y)
                     pdf.cell(w_data, 20, "", border=1, fill=True)
                     
-                    # Rotação do FPDF2 (CORRIGIDO: sem usar txt= ou text= para evitar choque de versão)
                     with pdf.rotation(90, x=curr_x + (w_data/2) + 1.5, y=curr_y + 18):
                         pdf.text(curr_x + (w_data/2) + 1.5, curr_y + 18, str(data_col))
                     
                     curr_x += w_data
                 
-                pdf.set_xy(pdf.get_margin(), curr_y + 20)
+                # CORREÇÃO DEFINITIVA AQUI: Usando o valor direto da margem (10) em vez do comando get_margin()
+                pdf.set_xy(10, curr_y + 20)
                 
                 # Linhas dos alunos
                 for _, row in df_turma.iterrows():
@@ -130,7 +130,6 @@ def gerar_pdf_relatorio(df, titulo_relatorio, data_hoje):
                         
                         fill = True if val > 0 else False
                         
-                        # Deixa VAZIO se for 0, senão mostra o número
                         txt_val = str(val) if val > 0 else ""
                         pdf.cell(w_data, 7, txt_val, border=1, align="C", fill=fill)
                     pdf.ln()
@@ -179,9 +178,8 @@ def gerar_pdf_relatorio(df, titulo_relatorio, data_hoje):
         
         return bytes(pdf.output())
     except Exception as e:
-        # Pega o rastro do erro para mostrar no painel
         return f"ERRO INTERNO DO PDF:\n{traceback.format_exc()}"
-
+    
 # ==========================================
 # 2. TELA PRINCIPAL
 # ==========================================
