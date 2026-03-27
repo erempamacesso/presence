@@ -5,6 +5,7 @@ import pytz
 import unicodedata
 from urllib.parse import quote
 from fpdf import FPDF 
+import traceback # Para capturar e mostrar o erro exato na tela
 
 # ==========================================
 # 1. FUNÇÕES DE APOIO
@@ -95,9 +96,9 @@ def gerar_pdf_relatorio(df, titulo_relatorio, data_hoje):
                     pdf.set_xy(curr_x, curr_y)
                     pdf.cell(w_data, 20, "", border=1, fill=True)
                     
-                    # Rotação do FPDF2 (CORREÇÃO AQUI: txt= em vez de text=)
+                    # Rotação do FPDF2 (CORRIGIDO: sem usar txt= ou text= para evitar choque de versão)
                     with pdf.rotation(90, x=curr_x + (w_data/2) + 1.5, y=curr_y + 18):
-                        pdf.text(x=curr_x + (w_data/2) + 1.5, y=curr_y + 18, txt=str(data_col))
+                        pdf.text(curr_x + (w_data/2) + 1.5, curr_y + 18, str(data_col))
                     
                     curr_x += w_data
                 
@@ -178,10 +179,8 @@ def gerar_pdf_relatorio(df, titulo_relatorio, data_hoje):
         
         return bytes(pdf.output())
     except Exception as e:
-        # Se der erro agora, ele imprime no terminal do servidor para sabermos a causa exata
-        import traceback
-        print(traceback.format_exc())
-        return None
+        # Pega o rastro do erro para mostrar no painel
+        return f"ERRO INTERNO DO PDF:\n{traceback.format_exc()}"
 
 # ==========================================
 # 2. TELA PRINCIPAL
@@ -249,10 +248,13 @@ def exibir_busca_ativa(supabase):
                     st.dataframe(rk.sort_values(by=['Turma', 'Faltas'], ascending=[True, False]), use_container_width=True, hide_index=True)
                     
                     pdf_r = gerar_pdf_relatorio(rk, f"Ranking de Faltas", data_hora_atual)
-                    if pdf_r:
+                    
+                    # Checagem Inteligente
+                    if isinstance(pdf_r, bytes):
                         st.download_button("📄 Baixar PDF", pdf_r, "ranking.pdf", "application/pdf", use_container_width=True)
                     else:
-                        st.error("Erro ao gerar o PDF. Verifique o terminal.")
+                        st.error("⚠️ Ocorreu um erro interno ao gerar o PDF.")
+                        st.code(pdf_r)
             else: st.info("Sem registros.")
         except Exception as e: st.error(f"Erro: {e}")
 
@@ -270,10 +272,12 @@ def exibir_busca_ativa(supabase):
                     st.warning(f"Alunos em risco: {len(df_z)}")
                     st.dataframe(df_z.sort_values(by=['Turma', 'Aluno']), use_container_width=True, hide_index=True)
                     pdf_z = gerar_pdf_relatorio(df_z, "Abandono Escolar", data_hora_atual)
-                    if pdf_z:
+                    
+                    if isinstance(pdf_z, bytes):
                         st.download_button("📄 Baixar Relatório", pdf_z, "abandono.pdf", "application/pdf", use_container_width=True)
                     else:
-                        st.error("Erro ao gerar o PDF. Verifique o terminal.")
+                        st.error("⚠️ Ocorreu um erro interno ao gerar o PDF.")
+                        st.code(pdf_z)
                 else: st.success("Nenhum abandono detectado.")
         except Exception as e: st.error(f"Erro: {e}")
 
@@ -313,7 +317,6 @@ def exibir_busca_ativa(supabase):
 
                 st.markdown("**Legenda de Gravidade:** 🟢 `0 Fugas` | 🟡 `1 Fuga` | 🟠 `2 Fugas` | 🔴 `3+ Fugas`")
                 
-                # Aplica o mapa de calor e OCULTA os zeros na tela do sistema
                 df_exibicao = m_ev.style.format(lambda v: "" if v == 0 else v, subset=cols_datas)\
                                         .background_gradient(subset=cols_datas, cmap='YlOrRd')
                 
@@ -321,11 +324,12 @@ def exibir_busca_ativa(supabase):
                 
                 pdf_e = gerar_pdf_relatorio(m_ev, "Mapa de Evasoes", data_hora_atual)
                 
-                # Só exibe o botão se o PDF foi gerado corretamente
-                if pdf_e:
+                # Exibe o botão se OK, ou exibe o código do erro na tela se falhar!
+                if isinstance(pdf_e, bytes):
                     st.download_button("📄 Baixar Mapa (PDF)", pdf_e, "mapa_evasoes.pdf", use_container_width=True, type="primary")
                 else:
-                    st.error("⚠️ Ocorreu um erro interno ao gerar o PDF. Consulte o terminal local para ver o motivo.")
+                    st.error("⚠️ Não foi possível gerar o PDF. Tire um print do erro abaixo:")
+                    st.code(pdf_e)
                     
             else: st.success("Sem evasões no período.")
         except Exception as e: st.error(f"Erro: {e}")
