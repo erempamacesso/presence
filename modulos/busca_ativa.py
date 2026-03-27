@@ -52,9 +52,9 @@ def gerar_pdf_relatorio(df, titulo_relatorio, data_hoje):
             
             # Cabeçalho Geral
             pdf.set_font("Helvetica", "B", 16)
-            pdf.cell(0, 10, "RELATORIO DE BUSCA ATIVA", ln=True, align="C")
+            pdf.cell(0, 10, "RELATORIO DE BUSCA ATIVA", ln=1, align="C")
             pdf.set_font("Helvetica", "", 10)
-            pdf.cell(0, 5, f"Gerado em: {data_hoje}", ln=True, align="C")
+            pdf.cell(0, 5, f"Gerado em: {data_hoje}", ln=1, align="C")
             pdf.ln(5)
             
             pdf.set_font("Helvetica", "B", 12)
@@ -64,7 +64,7 @@ def gerar_pdf_relatorio(df, titulo_relatorio, data_hoje):
             else:
                 titulo_tela = titulo_safe
                 
-            pdf.cell(0, 10, titulo_tela.upper(), ln=True, align="L")
+            pdf.cell(0, 10, titulo_tela.upper(), ln=1, align="L")
             pdf.ln(5)
             
             df_turma = df[df['Turma'] == turma] if has_turma else df
@@ -95,9 +95,9 @@ def gerar_pdf_relatorio(df, titulo_relatorio, data_hoje):
                     pdf.set_xy(curr_x, curr_y)
                     pdf.cell(w_data, 20, "", border=1, fill=True)
                     
-                    # Rotação do FPDF2
+                    # Rotação do FPDF2 (CORREÇÃO AQUI: txt= em vez de text=)
                     with pdf.rotation(90, x=curr_x + (w_data/2) + 1.5, y=curr_y + 18):
-                        pdf.text(x=curr_x + (w_data/2) + 1.5, y=curr_y + 18, text=str(data_col))
+                        pdf.text(x=curr_x + (w_data/2) + 1.5, y=curr_y + 18, txt=str(data_col))
                     
                     curr_x += w_data
                 
@@ -176,10 +176,12 @@ def gerar_pdf_relatorio(df, titulo_relatorio, data_hoje):
                             pdf.cell(w_col, 8, f" {val[:20]}", border=1, align="L")
                         pdf.ln()
         
-        # Retorno correto para fpdf2 (converte diretamente para bytes)
         return bytes(pdf.output())
     except Exception as e:
-        return f"Erro PDF: {e}".encode('utf-8')
+        # Se der erro agora, ele imprime no terminal do servidor para sabermos a causa exata
+        import traceback
+        print(traceback.format_exc())
+        return None
 
 # ==========================================
 # 2. TELA PRINCIPAL
@@ -247,7 +249,10 @@ def exibir_busca_ativa(supabase):
                     st.dataframe(rk.sort_values(by=['Turma', 'Faltas'], ascending=[True, False]), use_container_width=True, hide_index=True)
                     
                     pdf_r = gerar_pdf_relatorio(rk, f"Ranking de Faltas", data_hora_atual)
-                    st.download_button("📄 Baixar PDF", pdf_r, "ranking.pdf", "application/pdf", use_container_width=True)
+                    if pdf_r:
+                        st.download_button("📄 Baixar PDF", pdf_r, "ranking.pdf", "application/pdf", use_container_width=True)
+                    else:
+                        st.error("Erro ao gerar o PDF. Verifique o terminal.")
             else: st.info("Sem registros.")
         except Exception as e: st.error(f"Erro: {e}")
 
@@ -265,7 +270,10 @@ def exibir_busca_ativa(supabase):
                     st.warning(f"Alunos em risco: {len(df_z)}")
                     st.dataframe(df_z.sort_values(by=['Turma', 'Aluno']), use_container_width=True, hide_index=True)
                     pdf_z = gerar_pdf_relatorio(df_z, "Abandono Escolar", data_hora_atual)
-                    st.download_button("📄 Baixar Relatório", pdf_z, "abandono.pdf", "application/pdf", use_container_width=True)
+                    if pdf_z:
+                        st.download_button("📄 Baixar Relatório", pdf_z, "abandono.pdf", "application/pdf", use_container_width=True)
+                    else:
+                        st.error("Erro ao gerar o PDF. Verifique o terminal.")
                 else: st.success("Nenhum abandono detectado.")
         except Exception as e: st.error(f"Erro: {e}")
 
@@ -305,14 +313,20 @@ def exibir_busca_ativa(supabase):
 
                 st.markdown("**Legenda de Gravidade:** 🟢 `0 Fugas` | 🟡 `1 Fuga` | 🟠 `2 Fugas` | 🔴 `3+ Fugas`")
                 
-                # AQUI ESTÁ A CORREÇÃO: Aplica o mapa de calor e OCULTA os zeros na tela do sistema
+                # Aplica o mapa de calor e OCULTA os zeros na tela do sistema
                 df_exibicao = m_ev.style.format(lambda v: "" if v == 0 else v, subset=cols_datas)\
                                         .background_gradient(subset=cols_datas, cmap='YlOrRd')
                 
                 st.dataframe(df_exibicao, use_container_width=True, hide_index=True)
                 
                 pdf_e = gerar_pdf_relatorio(m_ev, "Mapa de Evasoes", data_hora_atual)
-                st.download_button("📄 Baixar Mapa (PDF)", pdf_e, "mapa_evasoes.pdf", use_container_width=True, type="primary")
+                
+                # Só exibe o botão se o PDF foi gerado corretamente
+                if pdf_e:
+                    st.download_button("📄 Baixar Mapa (PDF)", pdf_e, "mapa_evasoes.pdf", use_container_width=True, type="primary")
+                else:
+                    st.error("⚠️ Ocorreu um erro interno ao gerar o PDF. Consulte o terminal local para ver o motivo.")
+                    
             else: st.success("Sem evasões no período.")
         except Exception as e: st.error(f"Erro: {e}")
 
