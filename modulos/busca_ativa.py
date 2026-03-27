@@ -38,8 +38,9 @@ def gerar_pdf_relatorio(df, titulo_relatorio, data_hoje):
         colunas = list(df.columns)
         is_heatmap = 'Total de Fugas' in colunas
         
-        orientacao = 'L' if is_heatmap else 'P'
-        largura_pagina = 277 if is_heatmap else 190
+        # MUDANÇA: Forçando Retrato ('P') e largura de 190 para ambos os layouts
+        orientacao = 'P' 
+        largura_pagina = 190
         
         # Inicia o FPDF
         pdf = FPDF(orientation=orientacao, unit='mm', format='A4')
@@ -51,9 +52,9 @@ def gerar_pdf_relatorio(df, titulo_relatorio, data_hoje):
         for turma in turmas:
             pdf.add_page()
             
-            # Cabeçalho Geral
+            # Cabeçalho Geral - Título Alterado!
             pdf.set_font("Helvetica", "B", 16)
-            pdf.cell(0, 10, "RELATORIO DE BUSCA ATIVA", ln=1, align="C")
+            pdf.cell(0, 10, "RELATORIO DE FUGA DE AULA", ln=1, align="C")
             pdf.set_font("Helvetica", "", 10)
             pdf.cell(0, 5, f"Gerado em: {data_hoje}", ln=1, align="C")
             pdf.ln(5)
@@ -71,12 +72,13 @@ def gerar_pdf_relatorio(df, titulo_relatorio, data_hoje):
             df_turma = df[df['Turma'] == turma] if has_turma else df
             
             # ==========================================
-            # LAYOUT 1: MAPA DE CALOR (COM TEXTO VERTICAL 90º)
+            # LAYOUT 1: MAPA DE CALOR (RETRATO - ESPREMIDO)
             # ==========================================
             if is_heatmap:
-                w_aluno = 65
-                w_total = 12
-                w_data = 8 # Largura fina
+                # MUDANÇA: Medidas encolhidas para caber ~22 dias na folha vertical
+                w_aluno = 60
+                w_total = 10
+                w_data = 5.2 # Largura fininha para caber mais colunas
                 
                 pdf.set_fill_color(200, 200, 200)
                 pdf.set_font("Helvetica", "B", 8)
@@ -91,7 +93,8 @@ def gerar_pdf_relatorio(df, titulo_relatorio, data_hoje):
                 
                 # Desenhando as datas na vertical
                 for data_col in cols_dados:
-                    if curr_x + w_data > 280: break 
+                    # Trava de segurança para não imprimir no vento (margem da folha retrato)
+                    if curr_x + w_data > 195: break 
                     
                     pdf.set_xy(curr_x, curr_y)
                     pdf.cell(w_data, 20, "", border=1, fill=True)
@@ -101,37 +104,34 @@ def gerar_pdf_relatorio(df, titulo_relatorio, data_hoje):
                     
                     curr_x += w_data
                 
-                # CORREÇÃO DEFINITIVA AQUI: Usando o valor direto da margem (10) em vez do comando get_margin()
                 pdf.set_xy(10, curr_y + 20)
                 
                 # Linhas dos alunos
                 for _, row in df_turma.iterrows():
-                    pdf.set_font("Helvetica", "", 8)
+                    pdf.set_font("Helvetica", "", 7) # Fonte um pouquinho menor no nome para caber em 60mm
                     pdf.set_fill_color(255, 255, 255)
-                    nome = str(row.get('Aluno', ''))[:35].encode('latin-1', 'replace').decode('latin-1')
-                    pdf.cell(w_aluno, 7, f" {nome}", border=1, align="L")
+                    nome = str(row.get('Aluno', ''))[:32].encode('latin-1', 'replace').decode('latin-1')
+                    pdf.cell(w_aluno, 6, f" {nome}", border=1, align="L")
                     
                     pdf.set_font("Helvetica", "B", 8)
-                    pdf.cell(w_total, 7, str(row.get('Total de Fugas', 0)), border=1, align="C")
+                    pdf.cell(w_total, 6, str(row.get('Total de Fugas', 0)), border=1, align="C")
                     
                     pdf.set_font("Helvetica", "B", 8)
                     for data_col in cols_dados:
-                        if pdf.get_x() + w_data > 280: break
+                        if pdf.get_x() + w_data > 195: break
                         
                         val = row.get(data_col, 0)
                         try: val = int(val)
                         except: val = 0
                         
-                        # Cores baseadas na gravidade
                         if val == 0: pdf.set_fill_color(255, 255, 255)
                         elif val == 1: pdf.set_fill_color(255, 245, 150)
                         elif val == 2: pdf.set_fill_color(255, 200, 100)
                         elif val >= 3: pdf.set_fill_color(255, 120, 120)
                         
                         fill = True if val > 0 else False
-                        
                         txt_val = str(val) if val > 0 else ""
-                        pdf.cell(w_data, 7, txt_val, border=1, align="C", fill=fill)
+                        pdf.cell(w_data, 6, txt_val, border=1, align="C", fill=fill)
                     pdf.ln()
 
             # ==========================================
