@@ -5,7 +5,7 @@ import pytz
 import unicodedata
 from urllib.parse import quote
 from fpdf import FPDF 
-import traceback # Para capturar e mostrar o erro exato na tela
+import traceback
 
 # ==========================================
 # 1. FUNÇÕES DE APOIO
@@ -38,11 +38,9 @@ def gerar_pdf_relatorio(df, titulo_relatorio, data_hoje):
         colunas = list(df.columns)
         is_heatmap = 'Total de Fugas' in colunas
         
-        # MUDANÇA: Forçando Retrato ('P') e largura de 190 para ambos os layouts
         orientacao = 'P' 
         largura_pagina = 190
         
-        # Inicia o FPDF
         pdf = FPDF(orientation=orientacao, unit='mm', format='A4')
         pdf.set_auto_page_break(auto=True, margin=15)
         
@@ -52,7 +50,6 @@ def gerar_pdf_relatorio(df, titulo_relatorio, data_hoje):
         for turma in turmas:
             pdf.add_page()
             
-            # Cabeçalho Geral - Título Alterado!
             pdf.set_font("Helvetica", "B", 16)
             pdf.cell(0, 10, "RELATORIO DE FUGA DE AULA", ln=1, align="C")
             pdf.set_font("Helvetica", "", 10)
@@ -71,19 +68,14 @@ def gerar_pdf_relatorio(df, titulo_relatorio, data_hoje):
             
             df_turma = df[df['Turma'] == turma] if has_turma else df
             
-            # ==========================================
-            # LAYOUT 1: MAPA DE CALOR (RETRATO - ESPREMIDO)
-            # ==========================================
             if is_heatmap:
-                # MUDANÇA: Medidas encolhidas para caber ~22 dias na folha vertical
                 w_aluno = 60
                 w_total = 10
-                w_data = 5.2 # Largura fininha para caber mais colunas
+                w_data = 5.2 
                 
                 pdf.set_fill_color(200, 200, 200)
                 pdf.set_font("Helvetica", "B", 8)
                 
-                # Células iniciais do cabeçalho
                 pdf.cell(w_aluno, 20, " Estudante", border=1, align="L", fill=True)
                 pdf.cell(w_total, 20, " Total", border=1, align="C", fill=True)
                 
@@ -91,9 +83,7 @@ def gerar_pdf_relatorio(df, titulo_relatorio, data_hoje):
                 curr_y = pdf.get_y()
                 cols_dados = [c for c in colunas if c not in ['Turma', 'Aluno', 'Total de Fugas']]
                 
-                # Desenhando as datas na vertical
                 for data_col in cols_dados:
-                    # Trava de segurança para não imprimir no vento (margem da folha retrato)
                     if curr_x + w_data > 195: break 
                     
                     pdf.set_xy(curr_x, curr_y)
@@ -106,9 +96,8 @@ def gerar_pdf_relatorio(df, titulo_relatorio, data_hoje):
                 
                 pdf.set_xy(10, curr_y + 20)
                 
-                # Linhas dos alunos
                 for _, row in df_turma.iterrows():
-                    pdf.set_font("Helvetica", "", 7) # Fonte um pouquinho menor no nome para caber em 60mm
+                    pdf.set_font("Helvetica", "", 7)
                     pdf.set_fill_color(255, 255, 255)
                     nome = str(row.get('Aluno', ''))[:32].encode('latin-1', 'replace').decode('latin-1')
                     pdf.cell(w_aluno, 6, f" {nome}", border=1, align="L")
@@ -133,10 +122,6 @@ def gerar_pdf_relatorio(df, titulo_relatorio, data_hoje):
                         txt_val = str(val) if val > 0 else ""
                         pdf.cell(w_data, 6, txt_val, border=1, align="C", fill=fill)
                     pdf.ln()
-
-            # ==========================================
-            # LAYOUT 2: TABELAS NORMAIS
-            # ==========================================
             else:
                 pdf.set_fill_color(230, 230, 230)
                 pdf.set_font("Helvetica", "B", 9)
@@ -156,7 +141,7 @@ def gerar_pdf_relatorio(df, titulo_relatorio, data_hoje):
                     
                     pdf.set_font("Helvetica", "", 8)
                     for _, row in df_turma.iterrows():
-                        nome = str(row.get('Aluno', '')).encode('latin-1', 'replace').decode('latin-1')
+                        nome = str(row.get('Aluno', ''))[:35].encode('latin-1', 'replace').decode('latin-1')
                         pdf.cell(w_aluno, 8, f" {nome[:35]}", border=1, align="L")
                         for col in cols_to_print:
                             if col == "Aluno": continue
@@ -179,7 +164,7 @@ def gerar_pdf_relatorio(df, titulo_relatorio, data_hoje):
         return bytes(pdf.output())
     except Exception as e:
         return f"ERRO INTERNO DO PDF:\n{traceback.format_exc()}"
-    
+
 # ==========================================
 # 2. TELA PRINCIPAL
 # ==========================================
@@ -247,7 +232,6 @@ def exibir_busca_ativa(supabase):
                     
                     pdf_r = gerar_pdf_relatorio(rk, f"Ranking de Faltas", data_hora_atual)
                     
-                    # Checagem Inteligente
                     if isinstance(pdf_r, bytes):
                         st.download_button("📄 Baixar PDF", pdf_r, "ranking.pdf", "application/pdf", use_container_width=True)
                     else:
@@ -282,22 +266,18 @@ def exibir_busca_ativa(supabase):
     with aba_lista:
         st.subheader("🗺️ Mapa de Intensidade de Evasões")
         
-        # MUDANÇA AQUI: Criamos 3 colunas com proporção [1, 1, 2] para a Turma ficar maior
         col_i, col_f, col_t = st.columns([1, 1, 2])
         d_i = col_i.date_input("Início", datetime.now(fuso).date() - pd.Timedelta(days=7))
         d_f = col_f.date_input("Fim", datetime.now(fuso).date())
         
         try:
-            # 1. Puxa as turmas cadastradas para o SelectBox ficar sempre bonitão
             r_turmas = supabase.table("alunos").select("turma").execute()
             lista_turmas = ["Geral (Todas as Turmas)"]
             if r_turmas.data:
-                # Remove duplicatas e organiza em ordem alfabética
                 lista_turmas += sorted(list(set([x['turma'] for x in r_turmas.data if x['turma']])))
                 
             t_escolhida = col_t.selectbox("Selecione a Turma:", lista_turmas)
 
-            # 2. Puxa as evasões do banco de dados no período
             res_e_mapa = supabase.table("evasoes").select("aluno_nome, turma, aula_periodo, data_registro")\
                 .gte("data_registro", d_i.strftime('%Y-%m-%d'))\
                 .lte("data_registro", d_f.strftime('%Y-%m-%d')).execute()
@@ -305,7 +285,6 @@ def exibir_busca_ativa(supabase):
             if res_e_mapa.data:
                 df_m = pd.DataFrame(res_e_mapa.data)
                 
-                # 3. FILTRA A TURMA (Se o usuário não escolheu "Geral")
                 if t_escolhida != "Geral (Todas as Turmas)":
                     df_m = df_m[df_m['turma'] == t_escolhida]
                 
@@ -338,7 +317,6 @@ def exibir_busca_ativa(supabase):
                     
                     st.dataframe(df_exibicao, use_container_width=True, hide_index=True)
                     
-                    # Nome do PDF dinâmico dependendo da turma
                     titulo_pdf = "Relatorio de Fuga de Aula"
                     if t_escolhida != "Geral (Todas as Turmas)":
                         titulo_pdf += f" - Turma {t_escolhida}"
@@ -346,7 +324,7 @@ def exibir_busca_ativa(supabase):
                     pdf_e = gerar_pdf_relatorio(m_ev, titulo_pdf, data_hora_atual)
                     
                     if isinstance(pdf_e, bytes):
-                        st.download_button("📄 Baixar Mapa (PDF)", pdf_e, "mapa_evasoes.pdf", use_container_width=True, type="primary")
+                        st.download_button("📄 Baixar Mapa (PDF)", pdf_e, f"mapa_evasoes_{hoje}.pdf", use_container_width=True, type="primary")
                     else:
                         st.error("⚠️ Não foi possível gerar o PDF. Tire um print do erro abaixo:")
                         st.code(pdf_e)
@@ -354,6 +332,35 @@ def exibir_busca_ativa(supabase):
                     st.info(f"Nenhuma evasão encontrada para a turma {t_escolhida} neste período.")
             else: 
                 st.success("Sem evasões no período geral.")
+        except Exception as e: st.error(f"Erro: {e}")
+
+    with aba_registro:
+        st.subheader("➕ Registrar Ação / Ocorrência")
+        try:
+            r_al = supabase.table("alunos").select("id, nome, turma").order("nome").execute()
+            if r_al.data:
+                df_al = pd.DataFrame(r_al.data)
+                
+                # Chaves únicas para os selectboxes desta aba não entrarem em conflito com os da outra
+                t_escolhida_reg = st.selectbox("Selecione a Turma:", sorted(df_al['turma'].dropna().unique()), key="reg_turma")
+                al_da_t = df_al[df_al['turma'] == t_escolhida_reg]
+                al_dict = dict(zip(al_da_t['nome'], al_da_t['id']))
+                n_escolhido = st.selectbox("Selecione o Estudante:", list(al_dict.keys()), key="reg_aluno")
+
+                with st.form("form_oc"):
+                    t_ac = st.selectbox("Ação:", ["Ligação para Família", "Advertência", "Suspensão", "Visita Domiciliar", "Conselho Tutelar"])
+                    mot = st.text_area("Motivo:")
+                    mat = st.text_input("Sua Matrícula:")
+                    if st.form_submit_button("🚨 Gravar", type="primary"):
+                        if mot and mat:
+                            supabase.table("ocorrencias_disciplinares").insert({
+                                "aluno_id": al_dict[n_escolhido], "aluno_nome": n_escolhido,
+                                "turma": t_escolhida_reg, "tipo_ocorrencia": t_ac,
+                                "motivo": mot, "quem_registrou": mat, "status": "Ativa"
+                            }).execute()
+                            st.success("Gravado com Sucesso!")
+                            st.balloons()
+                        else: st.warning("Preencha todos os campos obrigatórios.")
         except Exception as e: st.error(f"Erro: {e}")
 
 if __name__ == "__main__":
