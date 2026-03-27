@@ -10,6 +10,7 @@ import base64
 import re
 from datetime import datetime
 import time
+import unicodedata
 
 # --- PROTEÇÃO PARA O WHATSAPP (Nuvem vs Local) ---
 try:
