@@ -845,30 +845,34 @@ elif menu == "🖨️ Lista de Matrículas":
                     pdf = FPDF()
                     pdf.add_page()
                     
-                    pdf.set_font("Arial", 'B', 14)
+                    # Usando Helvetica que é o padrão nativo e seguro do FPDF2
+                    pdf.set_font("Helvetica", 'B', 14)
                     pdf.cell(0, 10, f"ESCOLA EREMPAM - LISTA DE FREQUENCIA", ln=True, align='C')
-                    pdf.set_font("Arial", 'B', 12)
+                    pdf.set_font("Helvetica", 'B', 12)
                     pdf.cell(0, 10, f"Turma: {turma_selecionada.upper()}", ln=True, align='C')
                     pdf.ln(5)
                     
-                    pdf.set_font("Arial", 'B', 10)
+                    pdf.set_font("Helvetica", 'B', 10)
                     pdf.cell(15, 8, "N", border=1, align='C')
                     pdf.cell(35, 8, "MATRICULA", border=1, align='C')
                     pdf.cell(140, 8, "NOME DO ESTUDANTE", border=1, align='C')
                     pdf.ln()
                     
-                    pdf.set_font("Arial", '', 10)
+                    pdf.set_font("Helvetica", '', 10)
                     for _, row in df_lista.iterrows():
                         pdf.cell(15, 8, str(row["Nº ORDEM"]), border=1, align='C')
                         pdf.cell(35, 8, str(row["Nº MATRÍCULA"]), border=1, align='C')
                         
+                        # Tratamento de acentos seguro (ex: JOÃO -> JOAO) para não bugar o PDF
                         nome_aluno = str(row["NOME DO ESTUDANTE"])
-                        nome_seguro = nome_aluno.encode('latin-1', 'replace').decode('latin-1')
+                        nfkd = unicodedata.normalize('NFKD', nome_aluno)
+                        nome_seguro = "".join([c for c in nfkd if not unicodedata.combining(c)])
                         
                         pdf.cell(140, 8, f" {nome_seguro}", border=1, align='L')
                         pdf.ln()
                     
-                    pdf_bytes = pdf.output(dest='S').encode('latin-1')
+                    # CORREÇÃO CRÍTICA DO FPDF2 AQUI
+                    pdf_bytes = bytes(pdf.output())
                     
                     st.success(f"✅ Lista da turma {turma_selecionada} gerada com {len(df_lista)} alunos!")
                     
@@ -886,7 +890,9 @@ elif menu == "🖨️ Lista de Matrículas":
                 else:
                     st.warning(f"Nenhum aluno encontrado na turma {turma_selecionada}.")
             except Exception as e:
-                st.error(f"Erro na geração: {e}")
+                import traceback
+                st.error(f"Erro na geração do PDF. Print isso:")
+                st.code(traceback.format_exc())
 
 # --- 11. CENTRAL DE AVISOS WHATSAPP ---
 elif menu == "📲 Central de Avisos":
