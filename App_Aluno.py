@@ -220,7 +220,7 @@ elif st.session_state.etapa == "ante_sala":
     """, unsafe_allow_html=True)
 
     # CRIAÇÃO DAS ABAS
-    tab_atividades, tab_perfil = st.tabs(["📝 Atividades Disponíveis", "📊 Meu Desempenho & IA"])
+    tab_atividades, tab_perfil = st.tabs(["📝 Atividades Disponíveis", "📊 Meu Desempenho"])
 
     with tab_atividades:
         with st.spinner("Buscando atividades..."):
