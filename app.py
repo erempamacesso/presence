@@ -77,26 +77,28 @@ with st.sidebar:
     st.markdown("""
         <style>
         /* Estilo para o texto do botão */
-        div[data-testid="stSidebar"] button p:contains("Cria um evento") {
+        div[data-testid="stSidebar"] button p:contains("Criar um evento") {
             color: white !important;
             font-weight: bold !important;
         }
         
         /* Estilo para o corpo do botão */
-        div[data-testid="stSidebar"] button:has(p:contains("Cria um evento")) {
+        div[data-testid="stSidebar"] button:has(p:contains("Criar um evento")) {
             background-color: #FF8000 !important;
             border: none !important;
+            transition: 0.3s;
         }
 
         /* Efeito Hover */
-        div[data-testid="stSidebar"] button:has(p:contains("Cria um evento")):hover {
+        div[data-testid="stSidebar"] button:has(p:contains("Criar um evento")):hover {
             background-color: #e67300 !important;
+            transform: scale(1.02);
         }
         </style>
     """, unsafe_allow_html=True)
 
-    # Botão Laranja
-    st.button("Cria um evento", on_click=mudar_pagina, args=('gestao_feira',), use_container_width=True)
+    # Botão Laranja (agora sincronizado com o CSS)
+    st.button("Criar um evento", on_click=mudar_pagina, args=('gestao_feira',), use_container_width=True)
     
     # Botão de Importação Verde (Primary)
     st.button("📤 Importar e Atualizar Alunos", on_click=mudar_pagina, args=('importacao',), type="primary", use_container_width=True)
@@ -131,7 +133,70 @@ if st.session_state.fechar_menu:
     st.session_state.fechar_menu = False
 
 # ==========================================
-# 7. ROTEAMENTO DE PÁGINAS (O MAESTRO EM AÇÃO)
+# 7. TELA DA FEIRA DE CIÊNCIAS E EVENTOS
+# ==========================================
+import datetime
+
+def exibir_gestao_feira(supabase_conn):
+    st.title("🎪 Gestão de Eventos e Feiras")
+    st.markdown("Configure novos eventos e gerencie as linhas de pesquisa dos professores orientadores.")
+    
+    aba_evento, aba_orientadores = st.tabs([
+        "📅 1. Lançar Evento (Edital)", 
+        "👨‍🏫 2. Cadastrar Trabalhos (Orientadores)"
+    ])
+    
+    with aba_evento:
+        st.subheader("Configurações Gerais do Evento")
+        with st.form("form_novo_evento"):
+            nome_evento = st.text_input("Nome do Evento", value="1ª Feira de Matemática e Natureza EREMPAM")
+            
+            col1, col2 = st.columns(2)
+            data_inicio = col1.date_input("Data de Início", datetime.date(2026, 7, 2))
+            data_fim = col2.date_input("Data de Fim", datetime.date(2026, 7, 3))
+            
+            col3, col4 = st.columns(2)
+            min_alunos = col3.number_input("Mínimo de Alunos por Grupo", min_value=1, value=4)
+            max_alunos = col4.number_input("Máximo de Alunos por Grupo", min_value=1, value=8)
+            
+            observacoes = st.text_area("Observações (Aparecerá para os alunos no app)", 
+                                       value="Atenção: Dia 02/07 exclusivo para turmas de 1º Ano. Dia 03/07 para 2º e 3º Anos.")
+            
+            salvar_evento = st.form_submit_button("💾 Salvar Evento", type="primary", use_container_width=True)
+            
+            if salvar_evento:
+                st.success(f"Evento '{nome_evento}' criado com sucesso! (Aguardando criação das tabelas no Supabase)")
+
+    with aba_orientadores:
+        st.subheader("Cadastro de Trabalhos / Linhas de Pesquisa")
+        st.info("Selecione o professor e cadastre o tema que ele irá orientar. Os alunos escolherão dentre estas opções.")
+        
+        # --- MÁGICA: BUSCANDO PROFESSORES DIRETO DO SUPABASE ---
+        try:
+            # OBS: Se a coluna na sua tabela 'assinaturas' não se chamar 'nome', altere a palavra 'nome' abaixo!
+            resposta = supabase_conn.table("assinaturas").select("nome").execute()
+            lista_professores = ["Selecione..."] + [linha["nome"] for linha in resposta.data]
+        except Exception as e:
+            st.warning("Não foi possível carregar os professores da tabela 'assinaturas'. Mostrando lista de teste.")
+            lista_professores = ["Selecione...", "Prof. Teste 1", "Prof. Teste 2"]
+        
+        with st.form("form_novo_tema"):
+            professor_selecionado = st.selectbox("Selecione o Orientador", lista_professores)
+            titulo_trabalho = st.text_input("Título da Linha de Pesquisa / Trabalho")
+            descricao_trabalho = st.text_area("Descrição Breve do que os alunos farão neste tema")
+            
+            vagas = st.number_input("Quantos grupos este professor pode orientar neste tema?", min_value=1, value=5)
+            
+            salvar_tema = st.form_submit_button("➕ Adicionar Linha de Pesquisa", type="primary", use_container_width=True)
+            
+            if salvar_tema:
+                if professor_selecionado == "Selecione...":
+                    st.error("Por favor, selecione um orientador.")
+                else:
+                    st.success(f"Trabalho '{titulo_trabalho}' vinculado ao orientador {professor_selecionado} com sucesso!")
+
+# ==========================================
+# 8. ROTEAMENTO DE PÁGINAS (O MAESTRO EM AÇÃO)
 # ==========================================
 if st.session_state.pagina == 'cenario':
     exibir_cenario(supabase)
@@ -145,17 +210,34 @@ elif st.session_state.pagina == 'fotograma':
 elif st.session_state.pagina == 'aee':
     exibir_painel_aee(supabase)
 
-elif st.session_state.pagina == 'ocorrencias': # 👈 NOVA ROTA AQUI!
+elif st.session_state.pagina == 'ocorrencias':
     exibir_ocorrencias(supabase)
     
 elif st.session_state.pagina == 'cadastro':
     exibir_cadastro(supabase)
     
 elif st.session_state.pagina == 'reservas':
-    LISTA_PROF = ["Prof. Silva", "Profa. Maria", "Prof. Ricardo"]
-    AULAS = ["1ª Aula", "2ª Aula", "3ª Aula", "4ª Aula", "5ª Aula", "6ª Aula"]
-    ESPACOS = ["Auditório", "Laboratório", "Biblioteca", "Quadra", "Multimídia"]
-    exibir_reservas(supabase, LISTA_PROF, AULAS, ESPACOS, 3, 2, 5)
+    # 1. BUSCA PROFESSORES REAIS DA TABELA ASSINATURAS
+    try:
+        res_prof = supabase.table("assinaturas").select("nome").execute()
+        LISTA_PROF = [linha["nome"] for linha in res_prof.data]
+        if not LISTA_PROF:
+            LISTA_PROF = ["Nenhum professor encontrado"]
+    except:
+        LISTA_PROF = ["Erro ao carregar professores"]
+
+    # 2. CONFIGURAÇÃO DAS 9 AULAS DA EREM
+    AULAS = [f"{i}ª Aula" for i in range(1, 10)] 
+    
+    # 3. ESPAÇOS DA ESCOLA
+    ESPACOS = ["Auditório", "Laboratório", "Biblioteca", "Quadra", "Multimídia", "Sala de Vídeo"]
+    
+    # 4. CHAMA A FUNÇÃO (Ajustado para 9 aulas)
+    # Parâmetros: (conexão, lista_prof, aulas, espaços, colunas_ui, max_reservas_dia, total_aulas)
+    exibir_reservas(supabase, LISTA_PROF, AULAS, ESPACOS, 3, 2, 9)
     
 elif st.session_state.pagina == 'importacao':
     exibir_importacao(supabase)
+
+elif st.session_state.pagina == 'gestao_feira': # 👈 NOSSO NOVO MÓDULO AQUI!
+    exibir_gestao_feira(supabase)
