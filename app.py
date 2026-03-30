@@ -105,46 +105,27 @@ with st.sidebar:
     # Botão de Importação Verde (Primary)
     st.button("📤 Importar e Atualizar Alunos", on_click=mudar_pagina, args=('importacao',), type="primary", use_container_width=True)
 
-
 # ==========================================
-# 6. INJEÇÃO DE CÓDIGO PARA CELULAR (Fecha o Menu)
+# 6. INJEÇÃO DE CÓDIGO PARA CELULAR (Mantido)
 # ==========================================
 if st.session_state.fechar_menu:
     js_fechar_menu = '''
     <script>
         setTimeout(function() {
             var doc = window.parent.document;
-            
-            // Estratégia 1: Procura exatamente a tag oficial do botão de fechar do Streamlit
             var btn_fechar = doc.querySelector('[data-testid="stSidebarCollapseButton"]');
-            
-            if (btn_fechar) {
-                btn_fechar.click();
-            } else {
-                // Estratégia 2: Se a versão for um pouco mais antiga, clica no primeiro botão do cabeçalho
-                var botoes_header = doc.querySelectorAll('header button');
-                if (botoes_header.length > 0) {
-                    botoes_header[0].click();
-                }
-            }
-        }, 300); // Aumentei o delay para 300ms para ter certeza absoluta que a tela carregou
+            if (btn_fechar) btn_fechar.click();
+        }, 300);
     </script>
     '''
     components.html(js_fechar_menu, width=0, height=0)
-    
     st.session_state.fechar_menu = False
 
 # ==========================================
-# 7. TELA DA FEIRA DE CIÊNCIAS E EVENTOS
+# 7. ROTEAMENTO DE PÁGINAS (O MAESTRO ÚNICO)
 # ==========================================
-# Se o usuário clicou no menu "Gestão da Feira"
-if st.session_state.pagina == 'gestao_feira':
-    exibir_gestao_feira(supabase) # 👈 Aqui você chama a função "mestra"
+# Centralizamos todas as chamadas aqui para evitar duplicidade de IDs
 
-
-# ==========================================
-# 8. ROTEAMENTO DE PÁGINAS (O MAESTRO EM AÇÃO)
-# ==========================================
 if st.session_state.pagina == 'cenario':
     exibir_cenario(supabase)
 
@@ -164,27 +145,19 @@ elif st.session_state.pagina == 'cadastro':
     exibir_cadastro(supabase)
     
 elif st.session_state.pagina == 'reservas':
-    # 1. BUSCA PROFESSORES REAIS DA TABELA ASSINATURAS
+    # Lógica de professores e espaços (Mantida)
     try:
         res_prof = supabase.table("assinaturas").select("nome").execute()
         LISTA_PROF = [linha["nome"] for linha in res_prof.data]
-        if not LISTA_PROF:
-            LISTA_PROF = ["Nenhum professor encontrado"]
     except:
         LISTA_PROF = ["Erro ao carregar professores"]
 
-    # 2. CONFIGURAÇÃO DAS 9 AULAS DA EREM
     AULAS = [f"{i}ª Aula" for i in range(1, 10)] 
-    
-    # 3. ESPAÇOS DA ESCOLA
     ESPACOS = ["Auditório", "Laboratório", "Biblioteca", "Quadra", "Multimídia", "Sala de Vídeo"]
-    
-    # 4. CHAMA A FUNÇÃO (Ajustado para 9 aulas)
-    # Parâmetros: (conexão, lista_prof, aulas, espaços, colunas_ui, max_reservas_dia, total_aulas)
     exibir_reservas(supabase, LISTA_PROF, AULAS, ESPACOS, 3, 2, 9)
     
 elif st.session_state.pagina == 'importacao':
     exibir_importacao(supabase)
 
-elif st.session_state.pagina == 'gestao_feira': # 👈 NOSSO NOVO MÓDULO AQUI!
-    exibir_gestao_feira(supabase)
+elif st.session_state.pagina == 'gestao_feira':
+    exibir_gestao_feira(supabase) # 👈 Agora só existe essa chamada!
