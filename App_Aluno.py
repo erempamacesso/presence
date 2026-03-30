@@ -272,19 +272,7 @@ elif st.session_state.etapa == "ante_sala":
             m2.metric("Total de Acertos", f"{total_acertos}")
             m3.metric("Precisão Geral", f"{precisao:.1f}%")
 
-            st.divider()
-
-            # 2. ÁREA DO DIAGNÓSTICO IA (O que você pediu!)
-            st.markdown("#### 🧙‍♂️ Diagnóstico do Mestre (IA)")
-            res_ia = db_provas.table("feedback_ia_alunos").select("*").eq("aluno_id", str(aluno.get('id'))).order("created_at", desc=True).limit(1).execute()
-            
-            if res_ia.data:
-                feedback = res_ia.data[0]
-                st.info(f"**Último Feedback:**\n\n{feedback['diagnostico_pedagogico']}")
-                st.caption(f"Gerado em: {feedback['created_at'][:10]}")
-            else:
-                st.warning("A IA ainda está analisando seu perfil. Faça mais atividades para liberar seu diagnóstico!")
-
+           
             # 3. Lista de Provas Concluídas
             st.markdown("#### 📜 Histórico de Notas")
             # Buscar nomes das provas feitas
