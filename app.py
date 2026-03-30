@@ -1,8 +1,8 @@
 import streamlit as st
 import streamlit.components.v1 as components
 from supabase import create_client, Client
-from modulos.gestao_feira import exibir_gestao_feira # 👈 Importando o arquivo novo
-import datetime # Pode manter aqui se outras partes do app.py usarem datas
+import datetime
+import time
 
 # ==========================================
 # 1. CONFIGURAÇÃO GERAL DA PÁGINA
@@ -20,7 +20,9 @@ try:
     from modulos.atualiza_alunos import exibir_importacao
     from modulos.busca_ativa import exibir_busca_ativa
     from modulos.aee import exibir_painel_aee
-    from modulos.ocorrencias_aba import exibir_ocorrencias # 👈 NOSSO NOVO MÓDULO AQUI!
+    from modulos.ocorrencias_aba import exibir_ocorrencias
+    # IMPORTANTE: Chamamos o módulo da feira aqui
+    from modulos.gestao_feira import exibir_gestao_feira 
 except Exception as e:
     st.error(f"🚨 Erro ao carregar os módulos das telas: {e}")
     st.stop()
@@ -122,9 +124,8 @@ if st.session_state.fechar_menu:
     st.session_state.fechar_menu = False
 
 # ==========================================
-# 7. ROTEAMENTO DE PÁGINAS (O MAESTRO ÚNICO)
+# ROTEAMENTO DE PÁGINAS (O MAESTRO)
 # ==========================================
-# Centralizamos todas as chamadas aqui para evitar duplicidade de IDs
 
 if st.session_state.pagina == 'cenario':
     exibir_cenario(supabase)
@@ -145,7 +146,7 @@ elif st.session_state.pagina == 'cadastro':
     exibir_cadastro(supabase)
     
 elif st.session_state.pagina == 'reservas':
-    # Lógica de professores e espaços (Mantida)
+    # Lógica de busca de professores para reservas
     try:
         res_prof = supabase.table("assinaturas").select("nome").execute()
         LISTA_PROF = [linha["nome"] for linha in res_prof.data]
@@ -160,4 +161,5 @@ elif st.session_state.pagina == 'importacao':
     exibir_importacao(supabase)
 
 elif st.session_state.pagina == 'gestao_feira':
-    exibir_gestao_feira(supabase) # 👈 Agora só existe essa chamada!
+    # CHAMA A FUNÇÃO APENAS UMA VEZ AQUI
+    exibir_gestao_feira(supabase)
