@@ -52,7 +52,7 @@ def mudar_pagina(nome_pagina):
     st.session_state.fechar_menu = True # Liga o gatilho para recolher o menu no celular
 
 # ==========================================
-# 5. MENU LATERAL (SIDEBAR) - ATUALIZADO
+# 5. MENU LATERAL (SIDEBAR) - CORRIGIDO
 # ==========================================
 with st.sidebar:
     try:
@@ -73,28 +73,34 @@ with st.sidebar:
     
     st.divider()
 
-   # --- BOTÃO LARANJA DA FEIRA (Atualizado para o novo nome) ---
+    # --- ESTILO LARANJA SEM EMOJI (DENTRO DA SIDEBAR) ---
     st.markdown("""
         <style>
-        /* Mudamos de 'Feira' para 'Cria um evento' para o CSS achar o botão */
-        div[data-testid="stSidebar"] button:has(div:contains("Cria um evento")) {
-            background-color: #FF8000 !important;
+        /* Estilo para o texto do botão */
+        div[data-testid="stSidebar"] button p:contains("Cria um evento") {
             color: white !important;
-            border: none !important;
             font-weight: bold !important;
         }
-        div[data-testid="stSidebar"] button:has(div:contains("Cria um evento")):hover {
+        
+        /* Estilo para o corpo do botão */
+        div[data-testid="stSidebar"] button:has(p:contains("Cria um evento")) {
+            background-color: #FF8000 !important;
+            border: none !important;
+        }
+
+        /* Efeito Hover */
+        div[data-testid="stSidebar"] button:has(p:contains("Cria um evento")):hover {
             background-color: #e67300 !important;
-            border: 1px solid white !important;
         }
         </style>
     """, unsafe_allow_html=True)
 
-    # O botão com o nome exato que o CSS vai procurar
-    st.button("🎪 Cria um evento", on_click=mudar_pagina, args=('gestao_feira',), use_container_width=True)
+    # Botão Laranja
+    st.button("Cria um evento", on_click=mudar_pagina, args=('gestao_feira',), use_container_width=True)
     
-    # Botão de Importação (Abaixo do Laranja)
+    # Botão de Importação Verde (Primary)
     st.button("📤 Importar e Atualizar Alunos", on_click=mudar_pagina, args=('importacao',), type="primary", use_container_width=True)
+
 
 # ==========================================
 # 6. INJEÇÃO DE CÓDIGO PARA CELULAR (Fecha o Menu)
