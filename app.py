@@ -52,7 +52,7 @@ def mudar_pagina(nome_pagina):
     st.session_state.fechar_menu = True # Liga o gatilho para recolher o menu no celular
 
 # ==========================================
-# 5. MENU LATERAL (SIDEBAR)
+# 5. MENU LATERAL (SIDEBAR) - ATUALIZADO
 # ==========================================
 with st.sidebar:
     try:
@@ -62,17 +62,37 @@ with st.sidebar:
         
     st.divider()
     
-    # Botões de Navegação
+    # Botões de Navegação Padrão
     st.button("📊 Cenário do Dia", on_click=mudar_pagina, args=('cenario',), use_container_width=True)
     st.button("🔎 Busca Ativa", on_click=mudar_pagina, args=('busca_ativa',), use_container_width=True)
     st.button("📸 Fotograma", on_click=mudar_pagina, args=('fotograma',), use_container_width=True)
     st.button("🧩 AEE & Inclusão", on_click=mudar_pagina, args=('aee',), use_container_width=True)
-    st.button("🚨 Ocorrências", on_click=mudar_pagina, args=('ocorrencias',), use_container_width=True) # 👈 BOTÃO NOVO NO MENU!
+    st.button("🚨 Ocorrências", on_click=mudar_pagina, args=('ocorrencias',), use_container_width=True)
     st.button("📝 Gestão de Alunos", on_click=mudar_pagina, args=('cadastro',), use_container_width=True)
     st.button("📅 Reservas", on_click=mudar_pagina, args=('reservas',), use_container_width=True)
     
     st.divider()
+
+    # --- BOTÃO LARANJA DA FEIRA ---
+    # CSS para forçar a cor laranja apenas no botão de 'feira'
+    st.markdown("""
+        <style>
+        div[data-testid="stSidebar"] button:has(div:contains("🎪 Feira")) {
+            background-color: #FF8000 !important;
+            color: white !important;
+            border: none !important;
+            font-weight: bold !important;
+        }
+        div[data-testid="stSidebar"] button:has(div:contains("🎪 Feira")):hover {
+            background-color: #e67300 !important;
+            border: 1px solid white !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    st.button("🎪 Feira de Ciências & Natureza", on_click=mudar_pagina, args=('gestao_feira',), use_container_width=True)
     
+    # Botão de Importação (Abaixo do Laranja)
     st.button("📤 Importar e Atualizar Alunos", on_click=mudar_pagina, args=('importacao',), type="primary", use_container_width=True)
 
 # ==========================================
