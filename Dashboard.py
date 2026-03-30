@@ -846,7 +846,6 @@ elif menu == "🖨️ Lista de Matrículas":
                     pdf = FPDF()
                     pdf.add_page()
                     
-                    # Usando Helvetica que é o padrão nativo e seguro do FPDF2
                     pdf.set_font("Helvetica", 'B', 14)
                     pdf.cell(0, 10, f"ESCOLA EREMPAM - LISTA DE FREQUENCIA", ln=True, align='C')
                     pdf.set_font("Helvetica", 'B', 12)
@@ -864,7 +863,6 @@ elif menu == "🖨️ Lista de Matrículas":
                         pdf.cell(15, 8, str(row["Nº ORDEM"]), border=1, align='C')
                         pdf.cell(35, 8, str(row["Nº MATRÍCULA"]), border=1, align='C')
                         
-                        # Tratamento de acentos seguro (ex: JOÃO -> JOAO)
                         nome_aluno = str(row["NOME DO ESTUDANTE"])
                         nfkd = unicodedata.normalize('NFKD', nome_aluno)
                         nome_seguro = "".join([c for c in nfkd if not unicodedata.combining(c)])
@@ -872,15 +870,9 @@ elif menu == "🖨️ Lista de Matrículas":
                         pdf.cell(140, 8, f" {nome_seguro}", border=1, align='L')
                         pdf.ln()
                     
-                    # --- CORREÇÃO DO ERRO 'TYPEERROR' AQUI ---
-                    pdf_output = pdf.output()
-                    if isinstance(pdf_output, str):
-                        # Se retornar string, encodamos para latin-1 (padrão PDF)
-                        pdf_bytes = pdf_output.encode('latin-1')
-                    else:
-                        # Se já retornar bytes/bytearray, apenas garantimos o tipo
-                        pdf_bytes = bytes(pdf_output)
-                    # -----------------------------------------
+                    # --- GERAÇÃO DO PDF CORRIGIDA ---
+                    pdf_bytes = pdf.output(dest='S').encode('latin-1')
+                    # --------------------------------
                     
                     st.success(f"✅ Lista da turma {turma_selecionada} gerada com {len(df_lista)} alunos!")
                     
