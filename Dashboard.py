@@ -864,7 +864,7 @@ elif menu == "🖨️ Lista de Matrículas":
                         pdf.cell(15, 8, str(row["Nº ORDEM"]), border=1, align='C')
                         pdf.cell(35, 8, str(row["Nº MATRÍCULA"]), border=1, align='C')
                         
-                        # Tratamento de acentos seguro (ex: JOÃO -> JOAO) para não bugar o PDF
+                        # Tratamento de acentos seguro (ex: JOÃO -> JOAO)
                         nome_aluno = str(row["NOME DO ESTUDANTE"])
                         nfkd = unicodedata.normalize('NFKD', nome_aluno)
                         nome_seguro = "".join([c for c in nfkd if not unicodedata.combining(c)])
@@ -872,8 +872,15 @@ elif menu == "🖨️ Lista de Matrículas":
                         pdf.cell(140, 8, f" {nome_seguro}", border=1, align='L')
                         pdf.ln()
                     
-                    # CORREÇÃO CRÍTICA DO FPDF2 AQUI
-                    pdf_bytes = bytes(pdf.output())
+                    # --- CORREÇÃO DO ERRO 'TYPEERROR' AQUI ---
+                    pdf_output = pdf.output()
+                    if isinstance(pdf_output, str):
+                        # Se retornar string, encodamos para latin-1 (padrão PDF)
+                        pdf_bytes = pdf_output.encode('latin-1')
+                    else:
+                        # Se já retornar bytes/bytearray, apenas garantimos o tipo
+                        pdf_bytes = bytes(pdf_output)
+                    # -----------------------------------------
                     
                     st.success(f"✅ Lista da turma {turma_selecionada} gerada com {len(df_lista)} alunos!")
                     
@@ -892,7 +899,7 @@ elif menu == "🖨️ Lista de Matrículas":
                     st.warning(f"Nenhum aluno encontrado na turma {turma_selecionada}.")
             except Exception as e:
                 import traceback
-                st.error(f"Erro na geração do PDF. Print isso:")
+                st.error(f"Erro na geração do PDF. Detalhes:")
                 st.code(traceback.format_exc())
 
 # --- 11. CENTRAL DE AVISOS WHATSAPP ---
