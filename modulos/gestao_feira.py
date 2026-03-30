@@ -5,7 +5,6 @@ from github import Github
 
 def exibir_gestao_feira(supabase_conn):
     st.title("🎪 Central de Eventos e Feiras")
-    st.markdown("Gerencie eventos, editais, banners e linhas de pesquisa dos orientadores.")
     
     # AS 3 ABAS
     aba_ver, aba_evento, aba_orientadores = st.tabs([
@@ -15,7 +14,7 @@ def exibir_gestao_feira(supabase_conn):
     ])
     
     # ==========================================
-    # ABA 0: VITRINE (COM O BANNER TIPO EVENTIM)
+    # ABA 0: VITRINE (COM O BANNER)
     # ==========================================
     with aba_ver:
         try:
@@ -23,174 +22,138 @@ def exibir_gestao_feira(supabase_conn):
             eventos = res.data
             
             if not eventos:
-                st.info("Nenhum evento ativo no momento. Crie um na aba ao lado! 👉")
+                st.info("Nenhum evento ativo no momento.")
             else:
                 for ev in eventos:
                     with st.container(border=True):
                         # --- BANNER ---
                         link_banner = ev.get('imagem_capa_link')
                         if link_banner:
-                            st.markdown(f"""
-                                <div style="width:100%; max-height:300px; overflow:hidden; border-radius:15px; margin-bottom:15px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">
-                                    <img src="{link_banner}" style="width:100%; height:auto; display:block;">
-                                </div>
-                            """, unsafe_allow_html=True)
+                            st.image(link_banner, use_container_width=True)
                         
                         # --- INFORMAÇÕES ---
                         col_info, col_btn = st.columns([3, 1])
                         with col_info:
                             st.subheader(f"🏆 {ev['nome']}")
-                            st.caption(f"🗓️ **Período:** {ev['data_inicio']} até {ev['data_fim']}")
+                            st.caption(f"🗓️ {ev['data_inicio']} até {ev['data_fim']}")
                             st.write(f"📍 **Onde:** {ev.get('onde', 'EREM PAM')}")
                             st.write(f"👥 **Turmas:** {ev.get('turmas', 'Geral')}")
-                            st.write(f"📝 **Sobre:** {ev.get('observacoes', '')}")
                         
                         with col_btn:
-                            # CORREÇÃO DO ERRO DE DUPLICATA: Adicionando keys únicas com o ID do evento
+                            # CORREÇÃO: Usando 'key' única para evitar o erro de ID duplicado
                             if ev.get("edital_link"):
-                                st.link_button("📄 Ver Edital", ev["edital_link"], use_container_width=True, key=f"btn_edital_{ev['id']}")
+                                st.link_button("📄 Ver Edital", ev["edital_link"], use_container_width=True, key=f"btn_edit_{ev['id']}")
                             else:
-                                st.button("🚫 Sem Edital", disabled=True, use_container_width=True, key=f"btn_no_edital_{ev['id']}")
+                                st.button("🚫 Sem Edital", disabled=True, use_container_width=True, key=f"btn_off_{ev['id']}")
                             
-                            st.metric("Grupos (Mín-Máx)", f"{ev['min_membros']} a {ev['max_membros']} alunos")
+                            st.metric("Grupos (Máx)", ev['max_membros'])
         except Exception as e:
             st.error(f"Erro ao carregar vitrine: {e}")
 
     # ==========================================
-    # ABA 1: LANÇAR EVENTO
+    # ABA 1: LANÇAR EVENTO (CORRIGIDA)
     # ==========================================
     with aba_evento:
         st.subheader("Configurar Novo Evento")
         
-        with st.form("form_novo_evento", clear_on_submit=True):
-            # CORREÇÃO DE LIMPEZA: Trocando "value" por "placeholder"
+        # CORREÇÃO: Nome do formulário único para evitar conflito global
+        with st.form("form_criacao_evento_unico", clear_on_submit=True):
+            # CORREÇÃO: Usando placeholder para que o campo comece vazio
             nome_evento = st.text_input("Nome do Evento", placeholder="Ex: NATUMAT 2026")
             
             col1, col2 = st.columns(2)
-            # Ao remover o value daqui, ele automaticamente usa a data de hoje como padrão e reseta ao salvar
-            data_inicio = col1.date_input("Data de Início")
-            data_fim = col2.date_input("Data de Fim")
+            data_inicio = col1.date_input("Data de Início", datetime.date.today())
+            data_fim = col2.date_input("Data de Fim", datetime.date.today() + datetime.timedelta(days=1))
             
             col3, col4 = st.columns(2)
-            local_ev = col3.text_input("Local (Ex: Pátio, Auditório)", placeholder="Ex: Pátio e Laboratórios")
-            turmas_ev = col4.text_input("Público/Turmas", placeholder="Ex: 1º, 2º e 3º Anos")
+            local_ev = col3.text_input("Local", placeholder="Ex: Pátio da Escola")
+            turmas_ev = col4.text_input("Turmas", placeholder="Ex: 1º e 2º Anos")
             
             col5, col6 = st.columns(2)
             min_alunos = col5.number_input("Mínimo de Alunos/Grupo", min_value=1, value=4)
             max_alunos = col6.number_input("Máximo de Alunos/Grupo", min_value=1, value=8)
             
-            observacoes = st.text_area("Observações (Aparecerá no app dos alunos)", placeholder="Digite informações adicionais...")
+            observacoes = st.text_area("Observações")
             
             st.markdown("---")
-            # --- UPLOAD DE BANNER AUTOMÁTICO ---
             st.write("🖼️ **Capa do Evento (Banner)**")
-            arquivo_foto = st.file_uploader("Arraste a foto do banner aqui", type=["png", "jpg", "jpeg"])
+            arquivo_banner = st.file_uploader("Arraste a imagem (JPG/PNG)", type=["png", "jpg", "jpeg"], key="up_banner")
             
-            st.markdown("---")
             st.write("📄 **Edital do Evento (PDF)**")
-            arquivo_pdf = st.file_uploader("Arraste o edital em PDF aqui para upload automático", type=["pdf"])
+            arquivo_pdf = st.file_uploader("Arraste o edital em PDF", type=["pdf"], key="up_pdf")
             
             salvar_evento = st.form_submit_button("💾 Salvar Evento", type="primary", use_container_width=True)
             
             if salvar_evento:
-                link_foto = ""
-                link_final_edital = ""
-                
-                # SÓ EXECUTA SE O PROFESSOR COLOCOU O NOME DO EVENTO
                 if not nome_evento:
                     st.warning("⚠️ O nome do evento é obrigatório!")
                 else:
+                    link_foto = ""
+                    link_pdf = ""
+                    
                     try:
                         token = st.secrets["GITHUB_TOKEN"]
                         g = Github(token)
                         repo = g.get_repo("erempamacesso/presence")
-                        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                         
-                        # 1. FAZ O UPLOAD DA FOTO (Se houver)
-                        if arquivo_foto is not None:
-                            caminho_foto = f"banners/banner_{timestamp}.png"
-                            conteudo_foto = arquivo_foto.read()
-                            repo.create_file(caminho_foto, f"Upload Banner: {nome_evento}", conteudo_foto, branch="main")
-                            link_foto = f"https://raw.githubusercontent.com/erempamacesso/presence/main/{caminho_foto}"
-                            st.toast("✅ Banner enviado ao GitHub!")
-
-                        # 2. FAZ O UPLOAD DO PDF (Se houver)
-                        if arquivo_pdf is not None:
-                            caminho_git = f"editais/edital_{timestamp}.pdf"
-                            conteudo_pdf = arquivo_pdf.read()
-                            repo.create_file(caminho_git, f"Upload Edital: {nome_evento}", conteudo_pdf, branch="main")
-                            link_final_edital = f"https://raw.githubusercontent.com/erempamacesso/presence/main/{caminho_git}"
-                            st.toast("✅ Edital enviado ao GitHub com sucesso!")
+                        # Upload Banner
+                        if arquivo_banner:
+                            path_b = f"banners/banner_{ts}.png"
+                            repo.create_file(path_b, f"Banner: {nome_evento}", arquivo_banner.read(), branch="main")
+                            link_foto = f"https://raw.githubusercontent.com/erempamacesso/presence/main/{path_b}"
+                        
+                        # Upload PDF
+                        if arquivo_pdf:
+                            path_p = f"editais/edital_{ts}.pdf"
+                            repo.create_file(path_p, f"Edital: {nome_evento}", arquivo_pdf.read(), branch="main")
+                            link_pdf = f"https://raw.githubusercontent.com/erempamacesso/presence/main/{path_p}"
                             
-                    except Exception as e:
-                        st.error(f"❌ Erro ao enviar arquivos para o GitHub: {e}")
-
-                    # 3. GRAVA TUDO NO SUPABASE
-                    dados_evento = {
-                        "nome": nome_evento,
-                        "data_inicio": str(data_inicio),
-                        "data_fim": str(data_fim),
-                        "onde": local_ev,
-                        "turmas": turmas_ev,
-                        "min_membros": min_alunos,
-                        "max_membros": max_alunos,
-                        "observacoes": observacoes,
-                        "imagem_capa_link": link_foto,
-                        "edital_link": link_final_edital,
-                        "ativo": True
-                    }
-                    try:
-                        supabase_conn.table("feira_eventos").insert(dados_evento).execute()
-                        st.success(f"✅ Evento '{nome_evento}' publicado com sucesso!")
+                        # Salvar Supabase
+                        dados = {
+                            "nome": nome_evento, "data_inicio": str(data_inicio), "data_fim": str(data_fim),
+                            "onde": local_ev, "turmas": turmas_ev, "min_membros": min_alunos,
+                            "max_membros": max_alunos, "observacoes": observacoes,
+                            "imagem_capa_link": link_foto, "edital_link": link_pdf, "ativo": True
+                        }
+                        supabase_conn.table("feira_eventos").insert(dados).execute()
+                        st.success("✅ Evento publicado! Limpando campos...")
                         time.sleep(1.5)
-                        st.rerun() # Isso força a página a recarregar e limpar o form!
+                        st.rerun() # CORREÇÃO: Força o reset completo da tela
+                        
                     except Exception as e:
-                        st.error(f"🚨 Erro ao salvar o evento: {e} (Verifique as colunas no Supabase!)")
+                        st.error(f"🚨 Erro: {e}")
 
     # ==========================================
-    # ABA 2: CADASTRAR TRABALHOS (ORIENTADORES)
+    # ABA 2: CADASTRAR TRABALHOS
     # ==========================================
     with aba_orientadores:
         st.subheader("Cadastro de Trabalhos / Linhas de Pesquisa")
         
         try:
-            res_eventos = supabase_conn.table("feira_eventos").select("id, nome").eq("ativo", True).execute()
-            dict_eventos = {item["nome"]: item["id"] for item in res_eventos.data}
-            lista_eventos = list(dict_eventos.keys())
-        except Exception as e:
-            lista_eventos = []
-            st.warning("Crie um evento na aba ao lado primeiro.")
-
-        try:
-            resposta = supabase_conn.table("professores_matriculas").select("professor").execute()
-            lista_professores = ["Selecione..."] + sorted([linha["professor"] for linha in resposta.data if linha["professor"]])
-        except Exception as e:
-            lista_professores = ["Selecione..."]
-        
-        with st.form("form_novo_tema", clear_on_submit=True):
-            evento_selecionado = st.selectbox("Vincular a qual Evento?", lista_eventos) if lista_eventos else None
-            professor_selecionado = st.selectbox("Selecione o Orientador", lista_professores)
-            titulo_trabalho = st.text_input("Título do Trabalho / Tema")
-            descricao_trabalho = st.text_area("Descrição Breve")
-            vagas = st.number_input("Limite de grupos para este orientador", min_value=1, value=5)
+            res_ev = supabase_conn.table("feira_eventos").select("id, nome").eq("ativo", True).execute()
+            dict_eventos = {i["nome"]: i["id"] for i in res_ev.data}
             
-            salvar_tema = st.form_submit_button("➕ Adicionar Linha de Pesquisa", type="primary", use_container_width=True)
-            
-            if salvar_tema:
-                if not evento_selecionado or professor_selecionado == "Selecione..." or not titulo_trabalho:
-                    st.warning("Preencha todos os campos obrigatórios!")
-                else:
-                    dados_tema = {
-                        "evento_id": dict_eventos[evento_selecionado],
-                        "professor_nome": professor_selecionado,
-                        "titulo_trabalho": titulo_trabalho,
-                        "descricao": descricao_trabalho,
-                        "vagas_grupos": vagas
-                    }
-                    try:
-                        supabase_conn.table("feira_temas").insert(dados_tema).execute()
-                        st.success("✅ Trabalho cadastrado com sucesso!")
-                        time.sleep(1.5)
+            with st.form("form_trabalho_unico", clear_on_submit=True):
+                ev_sel = st.selectbox("Evento", list(dict_eventos.keys())) if dict_eventos else None
+                
+                res_prof = supabase_conn.table("professores_matriculas").select("professor").execute()
+                profs = ["Selecione..."] + sorted([p["professor"] for p in res_prof.data if p["professor"]])
+                prof_sel = st.selectbox("Orientador", profs)
+                
+                titulo = st.text_input("Título do Trabalho")
+                desc = st.text_area("Descrição")
+                vagas = st.number_input("Limite de Grupos", min_value=1, value=5)
+                
+                if st.form_submit_button("➕ Adicionar Trabalho", use_container_width=True):
+                    if ev_sel and prof_sel != "Selecione..." and titulo:
+                        dados_t = {
+                            "evento_id": dict_eventos[ev_sel], "professor_nome": prof_sel,
+                            "titulo_trabalho": titulo, "descricao": desc, "vagas_grupos": vagas
+                        }
+                        supabase_conn.table("feira_temas").insert(dados_t).execute()
+                        st.success("✅ Trabalho cadastrado!")
+                        time.sleep(1)
                         st.rerun()
-                    except Exception as e:
-                        st.error(f"🚨 Erro ao salvar tema: {e}")
+        except Exception as e:
+            st.error(f"Erro: {e}")
