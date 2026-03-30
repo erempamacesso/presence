@@ -164,4 +164,5 @@ elif st.session_state.pagina == 'reservas':
 elif st.session_state.pagina == 'importacao':
     exibir_importacao(supabase)
 
-    
+elif st.session_state.pagina == 'gestao_feira':
+    exibir_gestao_feira(supabase)    
