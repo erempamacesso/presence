@@ -198,27 +198,39 @@ if menu == "📊 Análise de Dados":
         else:
             st.info("📌 Nenhum dado de resposta de turmas encontrado. Assim que os alunos responderem, os gráficos aparecerão aqui.")
 
-        # --- SEÇÃO 4: DESEMPENHO INDIVIDUAL ---
+        # --- SEÇÃO 4: DESEMPENHO INDIVIDUAL (CORRIGIDO) ---
         st.divider()
         st.subheader("🏆 Notas Individuais por Aluno")
         
-        res_provas = supabase.table("modelos_prova").select("id, titulo").order("id", desc=True).execute()
+        res_provas = supabase.table("modelos_prova").select("id, titulo, valor_questao").order("id", desc=True).execute()
         
         if res_provas.data:
-            dic_provas = {p['titulo']: p['id'] for p in res_provas.data}
+            # Criamos um dicionário para pegar o valor da questão depois
+            dic_provas = {p['titulo']: {"id": p['id'], "valor": p['valor_questao']} for p in res_provas.data}
             prova_escolhida = st.selectbox("Selecione a Avaliação para ver as notas:", list(dic_provas.keys()))
-            id_prova_sel = dic_provas[prova_escolhida]
+            
+            id_prova_sel = dic_provas[prova_escolhida]["id"]
+            valor_cada_questao = dic_provas[prova_escolhida]["valor"]
             
             try:
+                # 1. Busca todas as respostas dessa prova específica
                 res_notas = supabase.table("resultados_provas").select("aluno_id, acertou").eq("prova_id", id_prova_sel).execute()
                 
                 if res_notas.data:
-                    df_notas = pd.DataFrame(res_notas.data)
-                    df_notas["pontos"] = df_notas["acertou"].fillna(False).astype(int)
-                    df_notas_agrupadas = df_notas.groupby("aluno_id")["pontos"].sum().reset_index()
+                    df_respostas = pd.DataFrame(res_notas.data)
                     
-                    lista_ids = [str(i) for i in df_notas_agrupadas["aluno_id"].tolist() if str(i).strip() != ""]
+                    # 2. Converte a coluna 'acertou' para 1 (se True) e 0 (se False)
+                    df_respostas["acertos_num"] = df_respostas["acertou"].apply(lambda x: 1 if x is True else 0)
                     
+                    # 3. Agrupa por aluno somando os acertos
+                    df_notas_agrupadas = df_respostas.groupby("aluno_id")["acertos_num"].sum().reset_index()
+                    df_notas_agrupadas.columns = ["aluno_id", "total_acertos"]
+                    
+                    # 4. Calcula a Nota Final (Acertos * Valor de cada questão)
+                    df_notas_agrupadas["nota_final"] = df_notas_agrupadas["total_acertos"] * valor_cada_questao
+                    
+                    # 5. Busca os nomes e turmas dos alunos no OUTRO banco
+                    lista_ids = [str(i) for i in df_notas_agrupadas["aluno_id"].tolist()]
                     res_alunos_bd = supabase_alunos.table("alunos").select("id, nome, turma").in_("id", lista_ids).execute()
                     
                     if res_alunos_bd.data:
@@ -226,13 +238,26 @@ if menu == "📊 Análise de Dados":
                         df_alunos["id"] = df_alunos["id"].astype(str)
                         df_notas_agrupadas["aluno_id"] = df_notas_agrupadas["aluno_id"].astype(str)
                         
+                        # 6. Cruza os dados: Nome + Turma + Acertos + Nota
                         df_final = pd.merge(df_alunos, df_notas_agrupadas, left_on="id", right_on="aluno_id")
-                        df_final = df_final[["nome", "turma", "pontos"]].sort_values(by="pontos", ascending=False)
-                        df_final.columns = ["Nome do Estudante", "Turma", "Total de Acertos"]
                         
-                        st.dataframe(df_final, use_container_width=True, hide_index=True)
+                        # Organiza as colunas para o professor
+                        df_final = df_final[["nome", "turma", "total_acertos", "nota_final"]].sort_values(by="nome")
+                        df_final.columns = ["Nome do Estudante", "Turma", "Qtd Acertos", "Nota Final"]
+                        
+                        # Exibe com cores
+                        st.dataframe(
+                            df_final.style.format({"Nota Final": "{:.1f}"}),
+                            use_container_width=True, 
+                            hide_index=True
+                        )
+                        
+                        # Botão para baixar essa planilha de notas
+                        csv = df_final.to_csv(index=False).encode('utf-8')
+                        st.download_button("📥 Baixar Planilha de Notas (CSV)", csv, f"Notas_{prova_escolhida}.csv", "text/csv")
+                        
                     else:
-                        st.warning("Alunos não encontrados no banco de dados escolar (Verifique se as matrículas batem).")
+                        st.warning("Alunos não encontrados no banco de dados escolar.")
                 else:
                     st.info("Ninguém respondeu esta prova ainda.")
             except Exception as e:
