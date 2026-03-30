@@ -395,31 +395,34 @@ elif st.session_state.etapa == "em_prova":
     st.markdown(f"## ✍️ {st.session_state.prova_config['titulo']}")
     st.caption(f"Aluno: {st.session_state.aluno['nome']} | Boa sorte, Bença!")
 
-    # 4. FORMULÁRIO DE QUESTÕES (Sem o st.rerun aqui dentro)
+ # 4. FORMULÁRIO DE QUESTÕES
     with st.form("form_prova", clear_on_submit=False):
         for i, q in enumerate(st.session_state.questoes):
             with st.container(border=True):
-                st.markdown(f"**QUESTÃO {i+1}**")
-                st.markdown(q['enunciado'], unsafe_allow_html=True)
+                # Usamos st.markdown com unsafe_allow_html=True para o enunciado
+                # Assim, negritos e fórmulas que você fez no editor aparecem certo!
+                st.markdown(f"### 📝 QUESTÃO {i+1}")
+                st.markdown(f"<div style='font-size:1.1rem;'>{q['enunciado']}</div>", unsafe_allow_html=True)
                 
                 opcoes_dict = q.get('alternativas', {})
                 letras_originais = [l for l in ["A", "B", "C", "D", "E"] if opcoes_dict.get(l)]
                 
-                # Semente para manter a ordem fixa mesmo com o fragment rodando
+                # Semente para manter a ordem fixa
                 random.seed(f"{st.session_state.aluno['id']}-{q['id']}")
                 ordem = letras_originais.copy()
                 random.shuffle(ordem)
 
+                # Função para limpar as tags <p> das alternativas (st.radio não aceita HTML)
                 def limpar_txt(t):
                     return re.sub(r'<[^>]+>', '', str(t)).strip()
 
-                # O segredo para não perder o clique é salvar direto no session_state via key
+                # Exibição das alternativas
                 escolha = st.radio(
-                    f"Selecione para Q{i+1}:",
+                    f"Assinale a alternativa correta para a questão {i+1}:",
                     options=ordem,
                     format_func=lambda x: f"({x}) {limpar_txt(opcoes_dict.get(x, ''))}",
                     index=None,
-                    key=f"radio_q_{q['id']}" # Chave única
+                    key=f"radio_q_{q['id']}" 
                 )
         
         st.markdown("<br>", unsafe_allow_html=True)
