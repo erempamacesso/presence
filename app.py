@@ -73,24 +73,25 @@ with st.sidebar:
     
     st.divider()
 
-    # --- BOTÃO LARANJA DA FEIRA ---
-    # CSS para forçar a cor laranja apenas no botão de 'feira'
+   # --- BOTÃO LARANJA DA FEIRA (Atualizado para o novo nome) ---
     st.markdown("""
         <style>
-        div[data-testid="stSidebar"] button:has(div:contains("🎪 Feira")) {
+        /* Mudamos de 'Feira' para 'Cria um evento' para o CSS achar o botão */
+        div[data-testid="stSidebar"] button:has(div:contains("Cria um evento")) {
             background-color: #FF8000 !important;
             color: white !important;
             border: none !important;
             font-weight: bold !important;
         }
-        div[data-testid="stSidebar"] button:has(div:contains("🎪 Feira")):hover {
+        div[data-testid="stSidebar"] button:has(div:contains("Cria um evento")):hover {
             background-color: #e67300 !important;
             border: 1px solid white !important;
         }
         </style>
     """, unsafe_allow_html=True)
 
-    st.button("🎪 Feira de Ciências & Natureza", on_click=mudar_pagina, args=('gestao_feira',), use_container_width=True)
+    # O botão com o nome exato que o CSS vai procurar
+    st.button("🎪 Cria um evento", on_click=mudar_pagina, args=('gestao_feira',), use_container_width=True)
     
     # Botão de Importação (Abaixo do Laranja)
     st.button("📤 Importar e Atualizar Alunos", on_click=mudar_pagina, args=('importacao',), type="primary", use_container_width=True)
