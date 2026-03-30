@@ -137,7 +137,6 @@ if st.session_state.fechar_menu:
 # ==========================================
 # 7. TELA DA FEIRA DE CIÊNCIAS E EVENTOS
 # ==========================================
-import datetime
 # Se o usuário clicou no menu "Gestão da Feira"
 if st.session_state.pagina == 'gestao_feira':
     exibir_gestao_feira(supabase) # 👈 Aqui você chama a função "mestra"
