@@ -870,22 +870,19 @@ elif menu == "🖨️ Lista de Matrículas":
                         pdf.cell(140, 8, f" {nome_seguro}", border=1, align='L')
                         pdf.ln()
                     
-                    # --- GERAÇÃO DO PDF CORRIGIDA ---
-                    pdf_bytes = pdf.output(dest='S').encode('latin-1')
-                    # --------------------------------
+# --- CORREÇÃO DEFINITIVA PARA O ERRO DE ENCODING ---
+                    pdf_output = pdf.output()
                     
-                    st.success(f"✅ Lista da turma {turma_selecionada} gerada com {len(df_lista)} alunos!")
-                    
-                    st.download_button(
-                        label="📥 Baixar Documento em PDF",
-                        data=pdf_bytes,
-                        file_name=f"Frequencia_{turma_selecionada}.pdf",
-                        mime="application/pdf",
-                        use_container_width=True
-                    )
-                    
-                    with st.expander("👀 Ver prévia na tela"):
-                        st.table(df_lista.set_index("Nº ORDEM"))
+                    if isinstance(pdf_output, str):
+                        # Se for string, usamos o encoding latin-1 que o PDF exige
+                        pdf_bytes = pdf_output.encode('latin-1')
+                    elif isinstance(pdf_output, (bytes, bytearray)):
+                        # Se já for bytes, não precisa de encoding, só converter
+                        pdf_bytes = bytes(pdf_output)
+                    else:
+                        # Caso seja algum outro formato
+                        pdf_bytes = pdf_output 
+                    # --------------------------------------------------
                         
                 else:
                     st.warning(f"Nenhum aluno encontrado na turma {turma_selecionada}.")
