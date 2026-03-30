@@ -21,7 +21,11 @@ try:
     from modulos.busca_ativa import exibir_busca_ativa
     from modulos.aee import exibir_painel_aee
     from modulos.ocorrencias_aba import exibir_ocorrencias
-    # IMPORTANTE: Chamamos o módulo da feira aqui
+    # ADICIONE ESTA LINHA ABAIXO:
+    from modulos.gestao_feira import exibir_gestao_feira 
+except Exception as e:
+    st.error(f"🚨 Erro ao carregar os módulos das telas: {e}")
+    st.stop()
    
 except Exception as e:
     st.error(f"🚨 Erro ao carregar os módulos das telas: {e}")
