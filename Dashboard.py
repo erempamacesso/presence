@@ -35,7 +35,7 @@ supabase_alunos = create_client(URL_A, KEY_A)
 
 # --- 3. SISTEMA DE LOGIN ---
 if 'autenticado' not in st.session_state:
-    st.session_state.autenticado = true     # Força o acesso direto
+    st.session_state.autenticado = True     # Força o acesso direto
 
 if not st.session_state.autenticado:
     st.title("🔐 Acesso Administrativo - EREMPAM")
