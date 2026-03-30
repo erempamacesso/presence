@@ -137,7 +137,6 @@ if st.session_state.fechar_menu:
 # ==========================================
 import datetime
 
-
 def exibir_gestao_feira(supabase_conn):
     st.title("🎪 Gestão de Eventos e Feiras")
     st.markdown("Configure novos eventos e gerencie as linhas de pesquisa dos professores orientadores.")
@@ -147,12 +146,12 @@ def exibir_gestao_feira(supabase_conn):
         "👨‍🏫 2. Cadastrar Trabalhos (Orientadores)"
     ])
     
-    # ==========================================
-    # ABA 1: LANÇAR O EVENTO
+   # ==========================================
+    # ABA 1: LANÇAR O EVENTO E UPLOAD DO EDITAL
     # ==========================================
     with aba_evento:
         st.subheader("Configurações Gerais do Evento")
-        with st.form("form_novo_evento"):
+        with st.form("form_novo_evento", clear_on_submit=True):
             nome_evento = st.text_input("Nome do Evento", value="1ª Feira de Matemática e Natureza EREMPAM")
             
             col1, col2 = st.columns(2)
@@ -166,10 +165,41 @@ def exibir_gestao_feira(supabase_conn):
             observacoes = st.text_area("Observações (Aparecerá para os alunos no app)", 
                                        value="Atenção: Dia 02/07 exclusivo para turmas de 1º Ano. Dia 03/07 para 2º e 3º Anos.")
             
+            st.markdown("---")
+            st.write("📄 **Edital do Evento (Opcional)**")
+            arquivo_pdf = st.file_uploader("Arraste o edital em PDF aqui", type=["pdf"])
+            
             salvar_evento = st.form_submit_button("💾 Salvar Evento", type="primary", use_container_width=True)
             
             if salvar_evento:
-                # Monta o pacote de dados para o Supabase
+                link_final_edital = "" # Fica vazio se o professor não subir nada
+                
+                # --- MÁGICA DO GITHUB AQUI ---
+                if arquivo_pdf is not None:
+                    try:
+                        from github import Github
+                        import datetime as dt
+                        
+                        # Puxa a chave do cofre do Streamlit
+                        token = st.secrets["GITHUB_TOKEN"]
+                        g = Github(token)
+                        repo = g.get_repo("erempamacesso/presence")
+                        
+                        # Cria um nome único para o PDF
+                        timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+                        caminho_git = f"editais/edital_{timestamp}.pdf"
+                        conteudo = arquivo_pdf.read()
+                        
+                        # Envia o arquivo para o GitHub
+                        repo.create_file(caminho_git, f"Upload Edital: {nome_evento}", conteudo, branch="main")
+                        
+                        # Gera o link RAW para salvar no Supabase
+                        link_final_edital = f"https://raw.githubusercontent.com/erempamacesso/presence/main/{caminho_git}"
+                        st.toast("✅ Edital enviado ao GitHub com sucesso!")
+                    except Exception as e:
+                        st.error(f"❌ Erro ao enviar edital para o GitHub: {e}")
+                
+                # --- SALVANDO TUDO NO SUPABASE ---
                 dados_evento = {
                     "nome": nome_evento,
                     "data_inicio": str(data_inicio),
@@ -177,77 +207,73 @@ def exibir_gestao_feira(supabase_conn):
                     "min_membros": min_alunos,
                     "max_membros": max_alunos,
                     "observacoes": observacoes,
+                    "edital_link": link_final_edital, # 👈 Salva o link gerado!
                     "ativo": True
                 }
                 try:
                     supabase_conn.table("feira_eventos").insert(dados_evento).execute()
-                    st.success(f"✅ Evento '{nome_evento}' criado e salvo no banco de dados com sucesso!")
+                    st.success(f"✅ Evento '{nome_evento}' publicado com sucesso!")
+                    
+                    import time
+                    time.sleep(1.5)
+                    st.rerun()
                 except Exception as e:
-                    st.error(f"🚨 Erro ao salvar o evento: {e}")
+                    st.error(f"🚨 Erro ao salvar o evento no banco: {e}")
 
     # ==========================================
     # ABA 2: CADASTRAR TRABALHOS
     # ==========================================
     with aba_orientadores:
         st.subheader("Cadastro de Trabalhos / Linhas de Pesquisa")
-        st.info("Vincule o trabalho a um evento existente, selecione o professor e descreva o tema.")
         
-        # --- 1. BUSCANDO OS EVENTOS JÁ CRIADOS ---
         try:
             res_eventos = supabase_conn.table("feira_eventos").select("id, nome").eq("ativo", True).execute()
             dict_eventos = {item["nome"]: item["id"] for item in res_eventos.data}
             lista_eventos = list(dict_eventos.keys())
         except Exception as e:
             lista_eventos = []
-            dict_eventos = {}
-            st.warning("Não consegui buscar os eventos. Crie um evento primeiro na aba ao lado.")
+            st.warning("Crie um evento primeiro.")
 
-        # --- 2. BUSCANDO PROFESSORES DIRETO DO SUPABASE (CORRIGIDO) ---
         try:
-            # Busca na tabela certa (professores_matriculas) e coluna certa (professor)
+            # Conforme suas imagens: tabela professores_matriculas e coluna professor
             resposta = supabase_conn.table("professores_matriculas").select("professor").execute()
-            # Pega só nomes válidos e organiza em ordem alfabética
             lista_professores = ["Selecione..."] + sorted([linha["professor"] for linha in resposta.data if linha["professor"]])
         except Exception as e:
-            st.warning(f"Erro ao carregar a tabela professores_matriculas: {e}")
             lista_professores = ["Selecione..."]
         
-        # --- 3. FORMULÁRIO DE TEMAS ---
-        with st.form("form_novo_tema"):
-            
+        with st.form("form_novo_tema", clear_on_submit=True): # Adicionado clear_on_submit
             if not lista_eventos:
-                st.error("Crie um evento na Aba 1 antes de cadastrar temas!")
+                st.error("⚠️ Sem eventos ativos encontrados.")
                 evento_selecionado = None
             else:
                 evento_selecionado = st.selectbox("Vincular a qual Evento?", lista_eventos)
 
             professor_selecionado = st.selectbox("Selecione o Orientador", lista_professores)
             titulo_trabalho = st.text_input("Título da Linha de Pesquisa / Trabalho")
-            descricao_trabalho = st.text_area("Descrição Breve do que os alunos farão neste tema")
-            vagas = st.number_input("Quantos grupos este professor pode orientar neste tema?", min_value=1, value=5)
+            descricao_trabalho = st.text_area("Descrição Breve")
+            vagas = st.number_input("Limite de grupos", min_value=1, value=5)
             
             salvar_tema = st.form_submit_button("➕ Adicionar Linha de Pesquisa", type="primary", use_container_width=True)
             
             if salvar_tema:
-                if not evento_selecionado:
-                    st.error("Nenhum evento disponível para vincular.")
-                elif professor_selecionado == "Selecione...":
-                    st.error("Por favor, selecione um orientador.")
-                elif not titulo_trabalho:
-                    st.error("Digite o título do trabalho.")
+                if not evento_selecionado or professor_selecionado == "Selecione..." or not titulo_trabalho:
+                    st.warning("Preencha todos os campos obrigatórios!")
                 else:
                     dados_tema = {
                         "evento_id": dict_eventos[evento_selecionado],
                         "professor_nome": professor_selecionado,
                         "titulo_trabalho": titulo_trabalho,
                         "descricao": descricao_trabalho,
-                        "vagas_grupos": vagas
+                        "vagas_groups": vagas # Ajuste o nome da coluna se necessário
                     }
                     try:
                         supabase_conn.table("feira_temas").insert(dados_tema).execute()
-                        st.success(f"✅ Trabalho '{titulo_trabalho}' vinculado ao professor {professor_selecionado} com sucesso!")
+                        st.success("✅ Trabalho cadastrado com sucesso!")
+                        import time
+                        time.sleep(1.5)
+                        st.rerun() # 👈 FAZ O APP RECOMEÇAR LIMPO
                     except Exception as e:
-                        st.error(f"🚨 Erro ao salvar tema: {e} (Você já criou a tabela 'feira_temas' no Supabase?)")
+                        st.error(f"🚨 Erro ao salvar tema: {e}")
 
 # ==========================================
 # 8. ROTEAMENTO DE PÁGINAS (O MAESTRO EM AÇÃO)
