@@ -61,36 +61,62 @@ menu = st.sidebar.radio("Navegação", [
     "🧠 Diagnósticos IA"
 ])
 
-# --- 5. LÓGICA DO DASHBOARD (NOVA ANÁLISE DE DADOS) ---
+# --- 5. LÓGICA DO DASHBOARD (CRUZAMENTO DOS DOIS BANCOS) ---
 if menu == "📊 Análise de Dados":
     st.title("📊 Análise de Dados e Diagnóstico")
     st.markdown("Acompanhe o engajamento e o desempenho das turmas em tempo real.")
     
     try:
-        # 1. Buscar dados da View para Gráficos e KPIs (Projeto Provas)
-        res_view = supabase.table("dashboard_diagnostico").select("*").execute()
-        df = pd.DataFrame(res_view.data)
+        # 1. Buscar Respostas Brutas (CASA NOVA - PROVAS)
+        res_raw = supabase.table("resultados_provas").select("aluno_id, questao_id, acertou").execute()
+        df_raw = pd.DataFrame(res_raw.data)
         
-        # 2. Buscar dados Brutos para Engajamento (Projeto Provas)
-        res_raw = supabase.table("resultados_provas").select("aluno_id").execute()
+        # 2. Buscar Questões para saber os Assuntos (CASA NOVA - PROVAS)
+        res_q = supabase.table("questoes").select("id, assunto").execute()
+        df_q = pd.DataFrame(res_q.data)
+
+        # 3. Buscar Alunos para saber as Turmas (CASA ANTIGA - ALUNOS)
+        res_alunos_base = supabase_alunos.table("alunos").select("id, turma, nome").execute()
+        df_alunos_base = pd.DataFrame(res_alunos_base.data)
         
-        # 3. NOVO: Buscar alunos para fazer a ponte de Turmas (Projeto Alunos)
-        res_alunos_base = supabase_alunos.table("alunos").select("id, turma").execute()
-        
-        if not df.empty and res_raw.data:
-            # --- TRATAMENTO DE DADOS (EXTRAÇÃO DE SÉRIE E TURMA) ---
-            df['serie_curta'] = df['serie'].str.extract(r'(1º|2º|3º)')
-            df['letra_turma'] = df['serie'].str.extract(r'([A-E])')
-            df['serie_curta'] = df['serie_curta'].fillna("N/A")
-            df['letra_turma'] = df['letra_turma'].fillna("Geral")
+        if not df_raw.empty and not df_alunos_base.empty and not df_q.empty:
+            
+            # --- O PULO DO GATO: CRUZAMENTO DE DADOS ENTRE OS DOIS BANCOS (PANDAS) ---
+            df_raw = df_raw.dropna(subset=['questao_id', 'aluno_id'])
+            df_raw['aluno_id'] = df_raw['aluno_id'].astype(str)
+            df_alunos_base['id'] = df_alunos_base['id'].astype(str)
+            df_raw['questao_id'] = df_raw['questao_id'].astype(str)
+            df_q['id'] = df_q['id'].astype(str)
+            
+            # Unindo Respostas com Alunos (Pegar Turma)
+            df_join1 = pd.merge(df_raw, df_alunos_base, left_on="aluno_id", right_on="id", how="inner")
+            
+            # Unindo com Questões (Pegar Assunto)
+            df_master = pd.merge(df_join1, df_q, left_on="questao_id", right_on="id", how="inner")
+            
+            # Tratamento de Acertos e Séries
+            df_master['acertou'] = df_master['acertou'].fillna(False).astype(bool)
+            df_master['serie'] = df_master['turma'].str.extract(r'(1º|2º|3º)') + " Ano"
+            df_master['serie'] = df_master['serie'].fillna("Geral")
+            
+            # Criando o DataFrame Agregado (Substitui a antiga View do SQL)
+            df_agg_turma = df_master.groupby(['assunto', 'serie', 'turma']).agg(
+                total_respostas=('acertou', 'count'),
+                total_acertos=('acertou', 'sum')
+            ).reset_index()
+            
+            df_agg_turma['perc_acerto'] = (df_agg_turma['total_acertos'] / df_agg_turma['total_respostas']) * 100
+            df_agg_turma['serie_curta'] = df_agg_turma['serie'].str.extract(r'(1º|2º|3º)')
+            df_agg_turma['letra_turma'] = df_agg_turma['turma'].str.extract(r'([A-E])')
+            df_agg_turma['letra_turma'] = df_agg_turma['letra_turma'].fillna("Geral")
+            
+            df = df_agg_turma
 
             # --- SEÇÃO 1: KPIs (Visão Geral) ---
             st.markdown("### 🎯 Visão Geral")
             kpi1, kpi2, kpi3 = st.columns(3)
             
-            df_raw = pd.DataFrame(res_raw.data)
-            total_estudantes_unicos = df_raw['aluno_id'].nunique()
-            
+            total_estudantes_unicos = df_master['aluno_id'].nunique()
             media_geral = df['perc_acerto'].mean()
             melhor_assunto = df.loc[df['perc_acerto'].idxmax()]['assunto'] if not df.empty else "N/A"
             
@@ -104,7 +130,7 @@ if menu == "📊 Análise de Dados":
             st.divider()
             
             # --- SEÇÃO 2: GRÁFICOS INTERATIVOS ---
-            lista_series_filtro = sorted([s for s in df['serie_curta'].unique() if s != "N/A"])
+            lista_series_filtro = sorted([s for s in df['serie_curta'].dropna().unique() if s != "N/A"])
             serie_foco = st.selectbox("🎯 Selecione a Série para detalhar:", ["Todas"] + lista_series_filtro)
             
             df_filtrado = df.copy()
@@ -115,42 +141,31 @@ if menu == "📊 Análise de Dados":
             
             with col1:
                 st.subheader(f"Desempenho por Turma ({serie_foco})")
-                fig = px.bar(
-                    df_filtrado, 
-                    x="assunto", 
-                    y="perc_acerto", 
-                    color="letra_turma",
-                    barmode="group", 
-                    text_auto='.1f',
-                    labels={'perc_acerto': '% de Acerto', 'assunto': 'Assunto', 'letra_turma': 'Turma'},
-                    color_discrete_sequence=px.colors.qualitative.Bold
-                )
-                fig.update_layout(xaxis_tickangle=-45, yaxis_title="% de Acertos")
-                st.plotly_chart(fig, use_container_width=True)
+                if not df_filtrado.empty:
+                    fig = px.bar(
+                        df_filtrado, 
+                        x="assunto", 
+                        y="perc_acerto", 
+                        color="letra_turma",
+                        barmode="group", 
+                        text_auto='.1f',
+                        labels={'perc_acerto': '% de Acerto', 'assunto': 'Assunto', 'letra_turma': 'Turma'},
+                        color_discrete_sequence=px.colors.qualitative.Bold
+                    )
+                    fig.update_layout(xaxis_tickangle=-45, yaxis_title="% de Acertos")
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("Sem dados suficientes para o gráfico.")
                 
             with col2:
-                # --- NOVA LÓGICA DO GRÁFICO DE ROSCA (POR TURMA) ---
                 st.subheader(f"Engajamento por Turma ({serie_foco})")
-                
-                df_alunos_join = pd.DataFrame(res_alunos_base.data)
-                
-                if not df_alunos_join.empty:
-                    # Tratamento para cruzar texto com número
-                    df_raw['aluno_id'] = df_raw['aluno_id'].astype(str)
-                    df_alunos_join['id'] = df_alunos_join['id'].astype(str)
+                df_pizza_base = df_master.copy()
+                if serie_foco != "Todas":
+                    prefixo_serie = serie_foco[0] 
+                    df_pizza_base = df_pizza_base[df_pizza_base['turma'].astype(str).str.startswith(prefixo_serie)]
                     
-                    # A Ponte (Join)
-                    df_join = pd.merge(df_raw, df_alunos_join, left_on="aluno_id", right_on="id")
-                    
-                    # Aplica o filtro da tela
-                    if serie_foco != "Todas":
-                        prefixo_serie = serie_foco[0] 
-                        df_join = df_join[df_join['turma'].astype(str).str.startswith(prefixo_serie)]
-                        
-                    # Agrupa e Conta
-                    df_pizza = df_join.groupby("turma").size().reset_index(name='total_respostas')
-                    
-                    # Renderiza
+                if not df_pizza_base.empty:
+                    df_pizza = df_pizza_base.groupby("turma").size().reset_index(name='total_respostas')
                     fig2 = px.pie(
                         df_pizza, 
                         values='total_respostas',
@@ -161,24 +176,27 @@ if menu == "📊 Análise de Dados":
                     fig2.update_traces(textposition='inside', textinfo='percent+label', pull=[0.02] * len(df_pizza))
                     st.plotly_chart(fig2, use_container_width=True)
                 else:
-                    st.info("Aguardando turmas para gerar o gráfico.")
+                    st.info("Sem dados suficientes para a rosca.")
                 
             st.divider()
             
             # --- SEÇÃO 3: TABELA DE DADOS ---
             st.subheader("📋 Tabela de Dados Analíticos (Por Assunto)")
             df_view = df_filtrado.copy()
-            if 'perc_acerto' in df_view.columns:
-                df_view['perc_acerto'] = df_view['perc_acerto'].apply(lambda x: f"{x:.1f}%")
+            if not df_view.empty:
+                if 'perc_acerto' in df_view.columns:
+                    df_view['perc_acerto'] = df_view['perc_acerto'].apply(lambda x: f"{x:.1f}%")
 
-            st.dataframe(
-                df_view[['assunto', 'serie', 'total_respostas', 'total_acertos', 'perc_acerto']], 
-                use_container_width=True, 
-                hide_index=True
-            )
+                st.dataframe(
+                    df_view[['assunto', 'serie', 'turma', 'total_respostas', 'total_acertos', 'perc_acerto']], 
+                    use_container_width=True, 
+                    hide_index=True
+                )
+            else:
+                st.info("Sem dados para exibir na tabela.")
             
         else:
-            st.info("📌 Nenhum dado de resposta de turmas encontrado no banco de dados.")
+            st.info("📌 Nenhum dado de resposta de turmas encontrado. Assim que os alunos responderem, os gráficos aparecerão aqui.")
 
         # --- SEÇÃO 4: DESEMPENHO INDIVIDUAL ---
         st.divider()
@@ -196,10 +214,11 @@ if menu == "📊 Análise de Dados":
                 
                 if res_notas.data:
                     df_notas = pd.DataFrame(res_notas.data)
-                    df_notas["pontos"] = df_notas["acertou"].astype(int)
+                    df_notas["pontos"] = df_notas["acertou"].fillna(False).astype(int)
                     df_notas_agrupadas = df_notas.groupby("aluno_id")["pontos"].sum().reset_index()
                     
-                    lista_ids = [int(i) for i in df_notas_agrupadas["aluno_id"].tolist() if str(i).isdigit()]
+                    lista_ids = [str(i) for i in df_notas_agrupadas["aluno_id"].tolist() if str(i).strip() != ""]
+                    
                     res_alunos_bd = supabase_alunos.table("alunos").select("id, nome, turma").in_("id", lista_ids).execute()
                     
                     if res_alunos_bd.data:
@@ -213,7 +232,7 @@ if menu == "📊 Análise de Dados":
                         
                         st.dataframe(df_final, use_container_width=True, hide_index=True)
                     else:
-                        st.warning("Alunos não encontrados no banco de dados escolar.")
+                        st.warning("Alunos não encontrados no banco de dados escolar (Verifique se as matrículas batem).")
                 else:
                     st.info("Ninguém respondeu esta prova ainda.")
             except Exception as e:
@@ -812,7 +831,7 @@ elif menu == "📂 Provas Elaboradas":
                             except Exception as e:
                                 st.error(f"Erro: {e}")      
 
-# --- 10. LISTA DE MATRÍCULAS PARA IMPRESSÃO (COM PDF) ---
+# --- 10. LISTA DE MATRÍCULAS PARA IMPRESSÃO (COM PDF CORRIGIDO) ---
 elif menu == "🖨️ Lista de Matrículas":
     st.title("🖨️ Impressão de Matrículas por Turma")
     
@@ -870,16 +889,16 @@ elif menu == "🖨️ Lista de Matrículas":
                         pdf.cell(140, 8, f" {nome_seguro}", border=1, align='L')
                         pdf.ln()
                     
-                    # --- CORREÇÃO DEFINITIVA PARA O ERRO DE ENCODING ---
-                    pdf_output = pdf.output()
-                    
-                    if isinstance(pdf_output, str):
-                        pdf_bytes = pdf_output.encode('latin-1')
-                    elif isinstance(pdf_output, (bytes, bytearray)):
-                        pdf_bytes = bytes(pdf_output)
-                    else:
-                        pdf_bytes = pdf_output 
-                    # --------------------------------------------------
+                    # --- CORREÇÃO DEFINITIVA PARA O PDF ---
+                    try:
+                        # Tenta o padrão da versão nova (FPDF2)
+                        pdf_bytes = bytes(pdf.output())
+                    except TypeError:
+                        # Se der erro, usa a versão antiga (FPDF 1.x)
+                        pdf_bytes = pdf.output(dest='S').encode('latin-1')
+                    except Exception:
+                        pdf_bytes = str(pdf.output()).encode('latin-1')
+                    # --------------------------------------
                     
                     # O botão de download voltou pra cá!
                     st.success(f"✅ Lista da turma {turma_selecionada} gerada com {len(df_lista)} alunos!")
@@ -906,7 +925,6 @@ elif menu == "🖨️ Lista de Matrículas":
 elif menu == "📲 Central de Avisos":
     st.title("📲 Disparador de Avisos - AVALARDIAO")
     
-    # --- A TRAVA DE SEGURANÇA QUE FALTAVA ---
     # Verifica se a variável existe e se é verdadeira
     if 'WHATSAPP_LOCAL' not in globals() or not WHATSAPP_LOCAL:
         st.error("🚨 Ambiente em Nuvem Detectado!")
@@ -983,7 +1001,7 @@ elif menu == "📲 Central de Avisos":
             st.warning("Nenhuma atividade cadastrada ainda.")
 
 # =================================================================
-# 12. MESTRE LARDIÃO - DIAGNÓSTICOS EM LOTE (SISTEMA SEM API KEY)
+# 12. MESTRE LARDIÃO - DIAGNÓSTICOS EM LOTE 
 # =================================================================
 elif menu == "🧠 Diagnósticos IA":
     st.title("👨‍🏫 Central do Mestre Lardião (IA em Lote)")
@@ -1003,7 +1021,7 @@ elif menu == "🧠 Diagnósticos IA":
         c1, c2 = st.columns(2)
 
         # ==========================================
-        # LADO ESQUERDO: GERAR PROMPT (AGORA COM O "S" CORRETO)
+        # LADO ESQUERDO: GERAR PROMPT
         # ==========================================
         with c1:
             st.subheader("1️⃣ Extrair Erros")
@@ -1011,44 +1029,38 @@ elif menu == "🧠 Diagnósticos IA":
                 
                 with st.spinner("Puxando dados da tabela resultados_provas..."):
                     try:
-                        # 1. Busca na tabela certa COM O 'S' NO FINAL (resultados_provas)
                         res = supabase.table("resultados_provas")\
                             .select("aluno_id, questao_id, resposta_aluno, acertou")\
                             .eq("prova_id", prova_id)\
                             .execute()
 
-                        # 2. Filtra quem não acertou (acertou == False)
                         erros_data = [r for r in res.data if str(r.get('acertou')).lower() == 'false']
 
                         st.write(f"📊 Total de registros baixados: {len(res.data)} | Erros encontrados: {len(erros_data)}")
 
                         if not erros_data:
-                            st.warning("Nenhum erro encontrado para esta prova nos registros de 'resultados_provas'.")
+                            st.warning("Nenhum erro encontrado para esta prova.")
                         else:
-                            # 3. Busca as justificativas na tabela 'questoes'
                             ids_q = list(set([e['questao_id'] for e in erros_data]))
                             q_db = supabase.table("questoes").select("id, assunto, justificativas").in_("id", ids_q).execute()
                             dict_q = {q['id']: q for q in q_db.data}
 
-                            # 4. Organiza o mapa de erros por aluno
                             mapa = {}
                             for e in erros_data:
-                                aid = e['aluno_id']
-                                # Pega a resposta_aluno (se vier vazio tenta pegar 'resposta' por garantia)
-                                letra = str(e.get('resposta_aluno') or e.get('resposta', '')).strip().upper()
+                                # GARANTIA CONTRA ERRO DE UUID (Transforma em String)
+                                aid = str(e['aluno_id']) 
                                 
+                                letra = str(e.get('resposta_aluno') or e.get('resposta', '')).strip().upper()
                                 dados_q = dict_q.get(e['questao_id'], {})
                                 assunto = dados_q.get('assunto', 'Geral')
                                 justs = dados_q.get('justificativas') or {}
                                 
-                                # Pega a justificativa técnica da letra que o aluno marcou
                                 txt_erro = justs.get(letra, f"Errou a questão (marcou {letra})")
                                 info_final = f"[Assunto: {assunto}] {txt_erro}"
                                 
                                 if aid not in mapa: mapa[aid] = []
                                 mapa[aid].append(info_final)
 
-                            # 5. Gera o Prompt para você copiar
                             prompt_txt = "Aja como o Mestre Lardião, professor de Química de PE (use sotaque: visse, oxente, arretado).\n"
                             prompt_txt += "Crie um feedback curto (máx 3 linhas) e motivador para cada aluno com base nos erros técnicos abaixo.\n"
                             prompt_txt += "ME DEVOLVA APENAS UM ARQUIVO JSON no formato exato: {\"ID_DO_ALUNO\": \"TEXTO_DO_FEEDBACK\"}.\n\n"
@@ -1079,8 +1091,8 @@ elif menu == "🧠 Diagnósticos IA":
                         count = 0
                         for al_id, txt in dados_ia.items():
                             supabase.table("feedback_ia_alunos").insert({
-                                "aluno_id": int(al_id),
-                                "prova_id": prova_id,
+                                "aluno_id": str(al_id), # CORREÇÃO CRÍTICA: Aceitar letras e números
+                                "prova_id": str(prova_id),
                                 "diagnostico_pedagogico": txt,
                                 "revisado_professor": True
                             }).execute()
