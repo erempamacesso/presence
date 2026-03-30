@@ -202,64 +202,34 @@ if st.session_state.etapa == "login":
             """, unsafe_allow_html=True)
 
 # ==========================================
-# ETAPA 2: ANTE-SALA
+# ETAPA 2: PORTAL DO ALUNO (ANTE-SALA + PERFIL)
 # ==========================================
 elif st.session_state.etapa == "ante_sala":
     if 'aluno' not in st.session_state or not st.session_state.aluno:
-        st.warning("⚠️ Sessão de aluno não encontrada. Voltando ao login em 2 segundos...")
-        time.sleep(2)
         st.session_state.etapa = "login"
         st.rerun()
 
     aluno = st.session_state.aluno
-
-    # ==========================================
-    # 🔒 CHECK-IN DO WHATSAPP (Aprimorado)
-    # ==========================================
-    whats_atual = aluno.get('whatsapp')
-    # Verifica se é nulo, vazio ou até a string "null" (caso o banco salve errado)
-    precisa_zap = not whats_atual or str(whats_atual).strip() == "" or str(whats_atual).lower() == "null"
-
-    if precisa_zap:
-        st.warning("🚀 **Quase lá!** Para continuar, precisamos do seu WhatsApp para te enviar sua nota.")
-        
-        with st.form("form_whats"):
-            # Limite de 11 caracteres na interface
-            novo_whats = st.text_input("Seu WhatsApp (apenas números com DDD):", placeholder="Ex: 99 99999999", max_chars=11)
-            st.caption("Fique tranquilo, usaremos apenas para fins pedagógicos.")
-            btn_vincular = st.form_submit_button("✅ Cadastrar e Acessar", type="primary")
-            
-            if btn_vincular:
-                # Validação: Exatamente 11 dígitos e apenas números
-                if len(novo_whats) == 11 and novo_whats.isdigit():
-                    try:
-                        db_alunos.table("alunos").update({"whatsapp": novo_whats}).eq("id", aluno['id']).execute()
-                        st.session_state.aluno['whatsapp'] = novo_whats
-                        st.success("WhatsApp salvo! Redirecionando...")
-                        time.sleep(1)
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao salvar o WhatsApp: {e}")
-                else:
-                    st.error("⚠️ Digite exatos 11 números (2 do DDD + 9 do telefone). Ex: 81982500528")
-        
-        st.stop() # Trava a tela aqui
-    # ==========================================
-
-    turma_bruta = str(aluno.get('turma', ''))
-    serie_aluno = "1º Ano"
-    if "2" in turma_bruta: serie_aluno = "2º Ano"
-    elif "3" in turma_bruta: serie_aluno = "3º Ano"
-
+    
+    # Cabeçalho de Boas-vindas
     st.markdown(f"""
-        <div style="margin-bottom: 25px; padding: 15px; background-color: #F8FAFC; border-left: 5px solid #00C896; border-radius: 5px;">
-            <h2 style="margin: 0; color: #1E293B;">👋 Olá, <span style="color: #00C896;">{aluno.get('nome', 'Aluno')}</span>!</h2>
-            <p style="color: #64748b; font-size: 16px; margin: 5px 0 0 0;">Sua série: <strong>{serie_aluno}</strong> ({turma_bruta}) | 📱 {aluno.get('whatsapp')}</p>
+        <div style="margin-bottom: 20px; padding: 15px; background-color: #FFFFFF; border-radius: 15px; border: 1px solid #E2E8F0;">
+            <h2 style="margin: 0; color: #1E293B;">👋 Olá, <span style="color: #00C896;">{aluno.get('nome').split()[0]}</span>!</h2>
+            <p style="color: #64748b; margin: 0;">{aluno.get('turma')} | Matrícula: {aluno.get('numero_matricula')}</p>
         </div>
     """, unsafe_allow_html=True)
 
-    with st.spinner("Buscando suas atividades..."):
-        try:
+    # CRIAÇÃO DAS ABAS
+    tab_atividades, tab_perfil = st.tabs(["📝 Atividades Disponíveis", "📊 Meu Desempenho & IA"])
+
+    with tab_atividades:
+        with st.spinner("Buscando atividades..."):
+            # Lógica de busca de provas (mesma que você já tem)
+            turma_bruta = str(aluno.get('turma', ''))
+            serie_aluno = "1º Ano"
+            if "2" in turma_bruta: serie_aluno = "2º Ano"
+            elif "3" in turma_bruta: serie_aluno = "3º Ano"
+
             res_p = db_provas.table("modelos_prova").select("*").eq("ativa", True).eq("serie", serie_aluno).execute()
             provas_ativas = res_p.data
             
@@ -270,77 +240,71 @@ elif st.session_state.etapa == "ante_sala":
                 ja_fez_dict = {x['prova_id']: True for x in res_JF.data}
 
             if provas_ativas:
-                st.subheader("📋 Suas Atividades Disponíveis")
-                ha_pendentes = False
-                
                 for p in provas_ativas:
-                    q_sorteio = p.get('qtd_sorteio', p.get('qtd_questoes', 1))
-                    valor_total = q_sorteio * p.get('valor_questao', 1.0)
-                    
-                    dt_limite = p.get('data_limite', '')
-                    if dt_limite:
-                        dt_limite = dt_limite[:16].replace("T", " às ")
-                    else:
-                        dt_limite = "Sem limite"
-                    
                     foi_feita = ja_fez_dict.get(p['id'], False)
-                    status_texto = "✅ Concluída" if foi_feita else "🔵 Pendente"
-                    status_cor = "green" if foi_feita else "orange"
-                    if not foi_feita: ha_pendentes = True
-
-                    with st.container(border=True):
-                        c1, c2, c3 = st.columns([3, 1, 1.5])
-                        with c1:
-                            st.markdown(f"**{p.get('titulo', 'Atividade')}**")
-                            st.caption(f"Assunto: {p.get('assunto','Geral')}")
-                        with c2:
-                            st.markdown(f"**Nota Máx.**\n\n{valor_total:.1f}")
-                        
-                with c3:
-                            st.markdown(f"**Status**\n\n:{status_cor}[{status_texto}]")
-                            st.caption(f"Até: {dt_limite}")
-                            
-                            # --- LÓGICA AUTOMÁTICA DE LIBERAÇÃO ---
-                            if foi_feita:
-                                passou_do_prazo = False
-                                # Verifica se a prova tem data limite e se já passou
-                                if p.get('data_limite'):
-                                    try:
-                                        # Pega a data do banco e compara com o relógio de agora
-                                        data_banco = datetime.strptime(p['data_limite'][:16], "%Y-%m-%dT%H:%M")
-                                        if datetime.now() >= data_banco:
-                                            passou_do_prazo = True
-                                    except Exception:
-                                        passou_do_prazo = False
-                                
-                                # Se já passou do prazo, aparece o botão!
-                                if passou_do_prazo:
-                                    if st.button("📊 Ver Resultado", key=f"res_{p['id']}", use_container_width=True):
-                                        st.session_state.prova_resultado = p
-                                        st.session_state.etapa = "ver_meu_resultado"
-                                        st.rerun()
-                                else:
-                                    st.caption("⏳ *Aguardando fim do prazo*")
-
-                if ha_pendentes:
-                    st.divider()
-                    st.markdown("### ✍️ Iniciar Agora")
-                    
-                    pendentes = [p for p in provas_ativas if not ja_fez_dict.get(p['id'], False)]
-                    cols_btn = st.columns(len(pendentes) if pendentes else 1)
-                    
-                    for idx, p in enumerate(pendentes):
-                        with cols_btn[idx]:
-                            if st.button(f"🚀 Iniciar {p['titulo']}", key=f"btn_{p['id']}", type="primary", use_container_width=True):
+                    if not foi_feita:
+                        with st.container(border=True):
+                            col_t, col_b = st.columns([3, 1])
+                            col_t.markdown(f"### {p['titulo']}")
+                            col_t.caption(f"📚 Assunto: {p.get('assunto', 'Geral')}")
+                            if col_b.button(f"🚀 Iniciar", key=f"start_{p['id']}", type="primary", use_container_width=True):
                                 st.session_state.prova_config = p
                                 st.session_state.etapa = "instrucoes"
                                 st.rerun()
             else:
-                st.info(f"🎉 Nenhuma atividade ativa encontrada para o {serie_aluno} no momento.")
+                st.info("Nenhuma atividade nova para sua série no momento.")
+
+    with tab_perfil:
+        st.markdown("### 🏆 Sua Jornada de Aprendizado")
+        
+        # 1. Busca Histórico Completo
+        res_historico = db_provas.table("resultados_provas").select("prova_id, acertou").eq("aluno_id", str(aluno.get('id'))).execute()
+        
+        if res_historico.data:
+            df_hist = pd.DataFrame(res_historico.data)
+            total_questoes = len(df_hist)
+            total_acertos = df_hist['acertou'].sum()
+            precisao = (total_acertos / total_questoes * 100) if total_questoes > 0 else 0
+
+            # Cards de Métricas
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Provas Feitas", df_hist['prova_id'].nunique())
+            m2.metric("Total de Acertos", f"{total_acertos}")
+            m3.metric("Precisão Geral", f"{precisao:.1f}%")
+
+            st.divider()
+
+            # 2. ÁREA DO DIAGNÓSTICO IA (O que você pediu!)
+            st.markdown("#### 🧙‍♂️ Diagnóstico do Mestre (IA)")
+            res_ia = db_provas.table("feedback_ia_alunos").select("*").eq("aluno_id", str(aluno.get('id'))).order("created_at", desc=True).limit(1).execute()
+            
+            if res_ia.data:
+                feedback = res_ia.data[0]
+                st.info(f"**Último Feedback:**\n\n{feedback['diagnostico_pedagogico']}")
+                st.caption(f"Gerado em: {feedback['created_at'][:10]}")
+            else:
+                st.warning("A IA ainda está analisando seu perfil. Faça mais atividades para liberar seu diagnóstico!")
+
+            # 3. Lista de Provas Concluídas
+            st.markdown("#### 📜 Histórico de Notas")
+            # Buscar nomes das provas feitas
+            ids_feitas = df_hist['prova_id'].unique().tolist()
+            res_nomes_p = db_provas.table("modelos_prova").select("id, titulo, valor_questao, notas_liberadas").in_("id", ids_feitas).execute()
+            
+            for p_info in res_nomes_p.data:
+                acertos_p = sum(1 for r in res_historico.data if r['prova_id'] == p_info['id'] and r['acertou'])
+                nota_p = acertos_p * p_info['valor_questao']
                 
-        except Exception as e:
-            st.error("Erro interno ao carregar a lista de atividades.")
-            st.code(f"Detalhes do Erro: {str(e)}")
+                with st.expander(f"✅ {p_info['titulo']} - Nota: {nota_p:.1f}"):
+                    if p_info['notas_liberadas']:
+                        if st.button("🔍 Rever Erros e Gabarito", key=f"rev_{p_info['id']}"):
+                            st.session_state.prova_resultado = p_info
+                            st.session_state.etapa = "ver_meu_resultado"
+                            st.rerun()
+                    else:
+                        st.caption("🔒 O professor ainda não liberou o gabarito detalhado desta prova.")
+        else:
+            st.write("Você ainda não realizou nenhuma atividade. Comece sua primeira prova para ver suas estatísticas!")
 
 # ETAPA 3: INSTRUÇÕES E SORTEIO
 # ==========================================

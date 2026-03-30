@@ -16,3 +16,4 @@ google-generativeai
 openai
 reportlab
 fpdf2
+xlsxwriter
