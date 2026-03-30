@@ -22,7 +22,7 @@ try:
     from modulos.aee import exibir_painel_aee
     from modulos.ocorrencias_aba import exibir_ocorrencias
     # IMPORTANTE: Chamamos o módulo da feira aqui
-    from modulos.gestao_feira import exibir_gestao_feira 
+   
 except Exception as e:
     st.error(f"🚨 Erro ao carregar os módulos das telas: {e}")
     st.stop()
@@ -159,7 +159,3 @@ elif st.session_state.pagina == 'reservas':
     
 elif st.session_state.pagina == 'importacao':
     exibir_importacao(supabase)
-
-elif st.session_state.pagina == 'gestao_feira':
-    # CHAMA A FUNÇÃO APENAS UMA VEZ AQUI
-    exibir_gestao_feira(supabase)
