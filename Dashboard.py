@@ -11,8 +11,9 @@ import re
 from datetime import datetime
 import time
 import unicodedata
+import io
 
-# --- PROTEÇÃO PARA O WHATSAPP (Nuvem vs Local) ---
+# --- PROTEÇÃO PARA O WHATSAPP ---
 try:
     import pywhatkit as kit
     WHATSAPP_LOCAL = True
@@ -23,30 +24,17 @@ except ImportError:
 st.set_page_config(page_title="Gestão EREMPAM - Provas", layout="wide")
 
 # --- 2. CONEXÃO COM SUPABASE ---
-# Conexão 1: PROVAS (Avaliador-Provas)
 URL_P = st.secrets["SUPABASE_URL_PROVAS"]
 KEY_P = st.secrets["SUPABASE_KEY_PROVAS"]
 supabase = create_client(URL_P, KEY_P)
 
-# Conexão 2: ALUNOS (Chamada Escolar)
 URL_A = st.secrets["SUPABASE_URL_ALUNOS"]
 KEY_A = st.secrets["SUPABASE_KEY_ALUNOS"]
 supabase_alunos = create_client(URL_A, KEY_A)
 
 # --- 3. SISTEMA DE LOGIN ---
 if 'autenticado' not in st.session_state:
-    st.session_state.autenticado = True     # Força o acesso direto
-
-if not st.session_state.autenticado:
-    st.title("🔐 Acesso Administrativo - EREMPAM")
-    senha = st.text_input("Digite a senha de gestão:", type="password")
-    if st.button("Entrar"):
-        if senha == "erempam2024": 
-            st.session_state.autenticado = True
-            st.rerun()
-        else:
-            st.error("Senha incorreta.")
-    st.stop()
+    st.session_state.autenticado = True
 
 # --- 4. MENU LATERAL ---
 st.sidebar.title("🎮 Painel do Professor")
@@ -61,210 +49,143 @@ menu = st.sidebar.radio("Navegação", [
     "🧠 Diagnósticos IA"
 ])
 
-# --- 5. LÓGICA DO DASHBOARD (CRUZAMENTO DOS DOIS BANCOS) ---
+# --- 5. LÓGICA DO DASHBOARD (NOTAS E RELATÓRIO EXCEL) ---
 if menu == "📊 Análise de Dados":
-    st.title("📊 Análise de Dados e Diagnóstico")
-    st.markdown("Acompanhe o engajamento e o desempenho das turmas em tempo real.")
+    st.title("📊 Análise de Dados e Notas")
     
+    # --- PARTE 1: GRÁFICOS GERAIS ---
     try:
-        # 1. Buscar Respostas Brutas (CASA NOVA - PROVAS)
         res_raw = supabase.table("resultados_provas").select("aluno_id, questao_id, acertou").execute()
-        df_raw = pd.DataFrame(res_raw.data)
-        
-        # 2. Buscar Questões para saber os Assuntos (CASA NOVA - PROVAS)
-        res_q = supabase.table("questoes").select("id, assunto").execute()
-        df_q = pd.DataFrame(res_q.data)
-
-        # 3. Buscar Alunos para saber as Turmas (CASA ANTIGA - ALUNOS)
+        res_q_base = supabase.table("questoes").select("id, assunto").execute()
         res_alunos_base = supabase_alunos.table("alunos").select("id, turma, nome").execute()
-        df_alunos_base = pd.DataFrame(res_alunos_base.data)
         
-        if not df_raw.empty and not df_alunos_base.empty and not df_q.empty:
+        if res_raw.data and res_alunos_base.data:
+            df_raw = pd.DataFrame(res_raw.data)
+            df_q = pd.DataFrame(res_q_base.data)
+            df_alunos_base = pd.DataFrame(res_alunos_base.data)
             
-            # --- O PULO DO GATO: CRUZAMENTO DE DADOS ENTRE OS DOIS BANCOS (PANDAS) ---
-            df_raw = df_raw.dropna(subset=['questao_id', 'aluno_id'])
             df_raw['aluno_id'] = df_raw['aluno_id'].astype(str)
             df_alunos_base['id'] = df_alunos_base['id'].astype(str)
-            df_raw['questao_id'] = df_raw['questao_id'].astype(str)
-            df_q['id'] = df_q['id'].astype(str)
             
-            # Unindo Respostas com Alunos (Pegar Turma)
-            df_join1 = pd.merge(df_raw, df_alunos_base, left_on="aluno_id", right_on="id", how="inner")
+            df_master = pd.merge(df_raw, df_alunos_base, left_on="aluno_id", right_on="id")
             
-            # Unindo com Questões (Pegar Assunto)
-            df_master = pd.merge(df_join1, df_q, left_on="questao_id", right_on="id", how="inner")
+            st.subheader("🎯 Visão Geral de Engajamento")
+            col_k1, col_k2 = st.columns(2)
+            col_k1.metric("Total de Respostas", len(df_raw))
+            col_k2.metric("Alunos Participantes", df_raw['aluno_id'].nunique())
+    except:
+        st.info("Aguardando dados de respostas...")
+
+    st.divider()
+
+    # --- PARTE 2: NOTAS INDIVIDUAIS E EXCEL (O QUE VOCÊ PEDIU) ---
+    st.subheader("🏆 Desempenho por Aluno e Relatórios")
+    
+    res_p_modelos = supabase.table("modelos_prova").select("id, titulo, valor_questao, questoes_ids").order("id", desc=True).execute()
+    
+    if res_p_modelos.data:
+        provas_dict = {p['titulo']: p for p in res_p_modelos.data}
+        prova_nome = st.selectbox("Selecione a Prova para detalhar:", list(provas_dict.keys()))
+        
+        prova_obj = provas_dict[prova_nome]
+        id_prova = prova_obj['id']
+        valor_q = float(prova_obj.get('valor_questao', 1.0))
+        ids_questoes_prova = prova_obj.get('questoes_ids', []) # Lista de IDs das questões desta prova
+
+        # Buscar resultados desta prova
+        res_res = supabase.table("resultados_provas").select("*").eq("prova_id", id_prova).execute()
+        
+        if res_res.data:
+            df_res = pd.DataFrame(res_res.data)
+            df_res['aluno_id'] = df_res['aluno_id'].astype(str)
             
-            # Tratamento de Acertos e Séries
-            df_master['acertou'] = df_master['acertou'].fillna(False).astype(bool)
-            df_master['serie'] = df_master['turma'].str.extract(r'(1º|2º|3º)') + " Ano"
-            df_master['serie'] = df_master['serie'].fillna("Geral")
+            # Cálculo de acertos
+            df_res['pontos'] = df_res['acertou'].apply(lambda x: 1 if x is True else 0)
             
-            # Criando o DataFrame Agregado (Substitui a antiga View do SQL)
-            df_agg_turma = df_master.groupby(['assunto', 'serie', 'turma']).agg(
-                total_respostas=('acertou', 'count'),
-                total_acertos=('acertou', 'sum')
+            # Agrupar por aluno
+            df_notas = df_res.groupby('aluno_id').agg(
+                total_acertos=('pontos', 'sum')
             ).reset_index()
             
-            df_agg_turma['perc_acerto'] = (df_agg_turma['total_acertos'] / df_agg_turma['total_respostas']) * 100
-            df_agg_turma['serie_curta'] = df_agg_turma['serie'].str.extract(r'(1º|2º|3º)')
-            df_agg_turma['letra_turma'] = df_agg_turma['turma'].str.extract(r'([A-E])')
-            df_agg_turma['letra_turma'] = df_agg_turma['letra_turma'].fillna("Geral")
+            # CÁLCULO DA NOTA (Acertos * Valor da Questão)
+            df_notas['nota_final'] = df_notas['total_acertos'] * valor_q
             
-            df = df_agg_turma
+            # Buscar Nomes dos Alunos
+            ids_alunos = df_notas['aluno_id'].tolist()
+            res_al = supabase_alunos.table("alunos").select("id, nome, turma").in_("id", ids_alunos).execute()
+            df_alunos_nomes = pd.DataFrame(res_al.data)
+            df_alunos_nomes['id'] = df_alunos_nomes['id'].astype(str)
+            
+            # Merge Final para a Tabela da Tela
+            df_tela = pd.merge(df_alunos_nomes, df_notas, left_on="id", right_on="aluno_id")
+            df_tela = df_tela[["nome", "turma", "total_acertos", "nota_final"]].sort_values(by="nome")
+            
+            # Exibição na Tela (Conforme seu Print 2)
+            st.dataframe(
+                df_tela.rename(columns={
+                    "nome": "Nome do Estudante",
+                    "turma": "Turma",
+                    "total_acertos": "Total de Acertos",
+                    "nota_final": "Nota Alcançada"
+                }), 
+                use_container_width=True, 
+                hide_index=True
+            )
 
-            # --- SEÇÃO 1: KPIs (Visão Geral) ---
-            st.markdown("### 🎯 Visão Geral")
-            kpi1, kpi2, kpi3 = st.columns(3)
-            
-            total_estudantes_unicos = df_master['aluno_id'].nunique()
-            media_geral = df['perc_acerto'].mean()
-            melhor_assunto = df.loc[df['perc_acerto'].idxmax()]['assunto'] if not df.empty else "N/A"
-            
-            with kpi1:
-                st.metric(label="Total de Estudantes Únicos", value=int(total_estudantes_unicos))
-            with kpi2:
-                st.metric(label="Média de Acertos Geral", value=f"{media_geral:.1f}%")
-            with kpi3:
-                st.metric(label="Assunto com Maior Domínio", value=str(melhor_assunto).upper())
-            
-            st.divider()
-            
-            # --- SEÇÃO 2: GRÁFICOS INTERATIVOS ---
-            lista_series_filtro = sorted([s for s in df['serie_curta'].dropna().unique() if s != "N/A"])
-            serie_foco = st.selectbox("🎯 Selecione a Série para detalhar:", ["Todas"] + lista_series_filtro)
-            
-            df_filtrado = df.copy()
-            if serie_foco != "Todas":
-                df_filtrado = df_filtrado[df_filtrado['serie_curta'] == serie_foco]
+            # --- BOTÃO GERAR RELATÓRIO XLSX (ALTO NÍVEL) ---
+            st.write("### 📂 Exportação Avançada")
+            if st.button("📊 Gerar Relatório .XLSX (Por Turma + Pares C/M)"):
+                with st.spinner("Construindo matriz de respostas..."):
+                    # 1. Buscar gabaritos das questões
+                    res_gab = supabase.table("questoes").select("id, resposta_correta").in_("id", ids_questoes_prova).execute()
+                    dict_gabarito = {str(q['id']): q['resposta_correta'] for q in res_gab.data}
 
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader(f"Desempenho por Turma ({serie_foco})")
-                if not df_filtrado.empty:
-                    fig = px.bar(
-                        df_filtrado, 
-                        x="assunto", 
-                        y="perc_acerto", 
-                        color="letra_turma",
-                        barmode="group", 
-                        text_auto='.1f',
-                        labels={'perc_acerto': '% de Acerto', 'assunto': 'Assunto', 'letra_turma': 'Turma'},
-                        color_discrete_sequence=px.colors.qualitative.Bold
-                    )
-                    fig.update_layout(xaxis_tickangle=-45, yaxis_title="% de Acertos")
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.info("Sem dados suficientes para o gráfico.")
-                
-            with col2:
-                st.subheader(f"Engajamento por Turma ({serie_foco})")
-                df_pizza_base = df_master.copy()
-                if serie_foco != "Todas":
-                    prefixo_serie = serie_foco[0] 
-                    df_pizza_base = df_pizza_base[df_pizza_base['turma'].astype(str).str.startswith(prefixo_serie)]
+                    output = io.BytesIO()
+                    # Usando XlsxWriter como engine para múltiplas abas
+                    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                        turmas = sorted(df_tela['turma'].unique())
+                        
+                        for turma in turmas:
+                            df_turma = df_tela[df_tela['turma'] == turma].copy()
+                            alunos_turma_ids = df_alunos_nomes[df_alunos_nomes['turma'] == turma]['id'].tolist()
+                            
+                            rows_relatorio = []
+                            for _, row_aluno in df_turma.iterrows():
+                                nome_al = row_aluno['nome']
+                                al_id = df_alunos_nomes[df_alunos_nomes['nome'] == nome_al]['id'].values[0]
+                                
+                                # Início da linha: Nome, Turma, Acertos, Nota
+                                dados_linha = {
+                                    "Nome": nome_al,
+                                    "Total Acertos": row_aluno['total_acertos'],
+                                    "Nota Final": round(row_aluno['nota_final'], 2)
+                                }
+                                
+                                # Adicionar pares (C) e (M) para cada questão da prova
+                                for i, q_id in enumerate(ids_questoes_prova, 1):
+                                    gab = dict_gabarito.get(str(q_id), "?")
+                                    # O que o aluno marcou nessa questão específica
+                                    resp_al_row = df_res[(df_res['aluno_id'] == str(al_id)) & (df_res['questao_id'] == q_id)]
+                                    marcou = resp_al_row['resposta_aluno'].values[0] if not resp_al_row.empty else "-"
+                                    
+                                    dados_linha[f"Q{i} (C)"] = gab
+                                    dados_linha[f"Q{i} (M)"] = marcou
+                                
+                                rows_relatorio.append(dados_linha)
+                            
+                            df_excel_final = pd.DataFrame(rows_relatorio).sort_values(by="Nome")
+                            df_excel_final.to_excel(writer, sheet_name=f"Turma {turma}", index=False)
                     
-                if not df_pizza_base.empty:
-                    df_pizza = df_pizza_base.groupby("turma").size().reset_index(name='total_respostas')
-                    fig2 = px.pie(
-                        df_pizza, 
-                        values='total_respostas',
-                        names='turma', 
-                        hole=.4,
-                        color_discrete_sequence=px.colors.qualitative.Pastel
+                    st.download_button(
+                        label="📥 Baixar Relatório Excel Completo",
+                        data=output.getvalue(),
+                        file_name=f"Relatorio_{prova_nome}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
-                    fig2.update_traces(textposition='inside', textinfo='percent+label', pull=[0.02] * len(df_pizza))
-                    st.plotly_chart(fig2, use_container_width=True)
-                else:
-                    st.info("Sem dados suficientes para a rosca.")
-                
-            st.divider()
-            
-            # --- SEÇÃO 3: TABELA DE DADOS ---
-            st.subheader("📋 Tabela de Dados Analíticos (Por Assunto)")
-            df_view = df_filtrado.copy()
-            if not df_view.empty:
-                if 'perc_acerto' in df_view.columns:
-                    df_view['perc_acerto'] = df_view['perc_acerto'].apply(lambda x: f"{x:.1f}%")
+                    st.success("Relatório gerado com sucesso!")
 
-                st.dataframe(
-                    df_view[['assunto', 'serie', 'turma', 'total_respostas', 'total_acertos', 'perc_acerto']], 
-                    use_container_width=True, 
-                    hide_index=True
-                )
-            else:
-                st.info("Sem dados para exibir na tabela.")
-            
         else:
-            st.info("📌 Nenhum dado de resposta de turmas encontrado. Assim que os alunos responderem, os gráficos aparecerão aqui.")
-
-        # --- SEÇÃO 4: DESEMPENHO INDIVIDUAL (CORRIGIDO) ---
-        st.divider()
-        st.subheader("🏆 Notas Individuais por Aluno")
-        
-        res_provas = supabase.table("modelos_prova").select("id, titulo, valor_questao").order("id", desc=True).execute()
-        
-        if res_provas.data:
-            # Criamos um dicionário para pegar o valor da questão depois
-            dic_provas = {p['titulo']: {"id": p['id'], "valor": p['valor_questao']} for p in res_provas.data}
-            prova_escolhida = st.selectbox("Selecione a Avaliação para ver as notas:", list(dic_provas.keys()))
-            
-            id_prova_sel = dic_provas[prova_escolhida]["id"]
-            valor_cada_questao = dic_provas[prova_escolhida]["valor"]
-            
-            try:
-                # 1. Busca todas as respostas dessa prova específica
-                res_notas = supabase.table("resultados_provas").select("aluno_id, acertou").eq("prova_id", id_prova_sel).execute()
-                
-                if res_notas.data:
-                    df_respostas = pd.DataFrame(res_notas.data)
-                    
-                    # 2. Converte a coluna 'acertou' para 1 (se True) e 0 (se False)
-                    df_respostas["acertos_num"] = df_respostas["acertou"].apply(lambda x: 1 if x is True else 0)
-                    
-                    # 3. Agrupa por aluno somando os acertos
-                    df_notas_agrupadas = df_respostas.groupby("aluno_id")["acertos_num"].sum().reset_index()
-                    df_notas_agrupadas.columns = ["aluno_id", "total_acertos"]
-                    
-                    # 4. Calcula a Nota Final (Acertos * Valor de cada questão)
-                    df_notas_agrupadas["nota_final"] = df_notas_agrupadas["total_acertos"] * valor_cada_questao
-                    
-                    # 5. Busca os nomes e turmas dos alunos no OUTRO banco
-                    lista_ids = [str(i) for i in df_notas_agrupadas["aluno_id"].tolist()]
-                    res_alunos_bd = supabase_alunos.table("alunos").select("id, nome, turma").in_("id", lista_ids).execute()
-                    
-                    if res_alunos_bd.data:
-                        df_alunos = pd.DataFrame(res_alunos_bd.data)
-                        df_alunos["id"] = df_alunos["id"].astype(str)
-                        df_notas_agrupadas["aluno_id"] = df_notas_agrupadas["aluno_id"].astype(str)
-                        
-                        # 6. Cruza os dados: Nome + Turma + Acertos + Nota
-                        df_final = pd.merge(df_alunos, df_notas_agrupadas, left_on="id", right_on="aluno_id")
-                        
-                        # Organiza as colunas para o professor
-                        df_final = df_final[["nome", "turma", "total_acertos", "nota_final"]].sort_values(by="nome")
-                        df_final.columns = ["Nome do Estudante", "Turma", "Qtd Acertos", "Nota Final"]
-                        
-                        # Exibe com cores
-                        st.dataframe(
-                            df_final.style.format({"Nota Final": "{:.1f}"}),
-                            use_container_width=True, 
-                            hide_index=True
-                        )
-                        
-                        # Botão para baixar essa planilha de notas
-                        csv = df_final.to_csv(index=False).encode('utf-8')
-                        st.download_button("📥 Baixar Planilha de Notas (CSV)", csv, f"Notas_{prova_escolhida}.csv", "text/csv")
-                        
-                    else:
-                        st.warning("Alunos não encontrados no banco de dados escolar.")
-                else:
-                    st.info("Ninguém respondeu esta prova ainda.")
-            except Exception as e:
-                st.error(f"Erro ao processar notas: {e}")
-
-    except Exception as e:
-        st.error(f"Erro geral no Dashboard: {e}")
+            st.info("Ainda não há respostas para esta avaliação.")
 
 # --- 6. CADASTRO DE QUESTÕES (MANUAL + IA) ---
 elif menu == "📝 Cadastrar Questões":
