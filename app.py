@@ -27,10 +27,6 @@ except Exception as e:
     st.error(f"🚨 Erro ao carregar os módulos das telas: {e}")
     st.stop()
 
-
-    st.error(f"🚨 Erro ao carregar os módulos das telas: {e}")
-    st.stop()
-
 # ==========================================
 # 3. CONEXÃO COM O BANCO DE DADOS (SUPABASE)
 # ==========================================
@@ -164,5 +160,6 @@ elif st.session_state.pagina == 'reservas':
 elif st.session_state.pagina == 'importacao':
     exibir_importacao(supabase)
 
+# 👉 ADICIONE ISSO AQUI NO FINALZINHO:
 elif st.session_state.pagina == 'gestao_feira':
-    exibir_gestao_feira(supabase)    
+    exibir_gestao_feira(supabase)  
