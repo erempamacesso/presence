@@ -21,7 +21,6 @@ try:
     from modulos.busca_ativa import exibir_busca_ativa
     from modulos.aee import exibir_painel_aee
     from modulos.ocorrencias_aba import exibir_ocorrencias
-    # Importação do novo módulo da feira
     from modulos.gestao_feira import exibir_gestao_feira 
 except Exception as e:
     st.error(f"🚨 Erro ao carregar os módulos das telas: {e}")
@@ -31,13 +30,9 @@ except Exception as e:
 # 3. CONEXÃO COM O BANCO DE DADOS (SUPABASE)
 # ==========================================
 try:
-    # Aqui está o segredo ajustado: buscando com o _ALUNOS no final!
     URL_SUPABASE = st.secrets["SUPABASE_URL_ALUNOS"]
     CHAVE_SUPABASE = st.secrets["SUPABASE_KEY_ALUNOS"]
     supabase: Client = create_client(URL_SUPABASE, CHAVE_SUPABASE)
-except KeyError as e:
-    st.error(f"🚨 ALERTA: A chave {e} não foi encontrada no cofre do Streamlit!")
-    st.stop()
 except Exception as e:
     st.error(f"🚨 Erro ao conectar no Supabase: {e}")
     st.stop()
@@ -146,20 +141,25 @@ elif st.session_state.pagina == 'cadastro':
     exibir_cadastro(supabase)
     
 elif st.session_state.pagina == 'reservas':
-    # Lógica de busca de professores para reservas
-    try:
-        res_prof = supabase.table("assinaturas").select("nome").execute()
-        LISTA_PROF = [linha["nome"] for linha in res_prof.data]
-    except:
-        LISTA_PROF = ["Erro ao carregar professores"]
+    # --- FUNÇÃO COM CACHE PARA ECONOMIZAR EGRESS ---
+    @st.cache_data(ttl=600)
+    def obter_professores_cacheado(_supabase):
+        try:
+            res = _supabase.table("assinaturas").select("nome").execute()
+            return [linha["nome"] for linha in res.data]
+        except:
+            return ["Erro ao carregar professores"]
 
+    # Execução da busca (agora protegida por cache)
+    LISTA_PROF = obter_professores_cacheado(supabase)
+    
     AULAS = [f"{i}ª Aula" for i in range(1, 10)] 
     ESPACOS = ["Auditório", "Laboratório", "Biblioteca", "Quadra", "Multimídia", "Sala de Vídeo"]
+    
     exibir_reservas(supabase, LISTA_PROF, AULAS, ESPACOS, 3, 2, 9)
     
 elif st.session_state.pagina == 'importacao':
     exibir_importacao(supabase)
 
-# 👉 ADICIONE ISSO AQUI NO FINALZINHO:
 elif st.session_state.pagina == 'gestao_feira':
     exibir_gestao_feira(supabase)  

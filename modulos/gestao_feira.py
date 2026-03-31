@@ -15,46 +15,46 @@ def exibir_gestao_feira(supabase_conn):
     ])
     
     # ==========================================
-    # ABA 0: VITRINE DE EVENTOS
+    # ABA 0: VITRINE (OTIMIZADA COM CACHE)
     # ==========================================
     with aba_ver:
+        # Função interna para cachear a vitrine e evitar select *
+        @st.cache_data(ttl=600)
+        def buscar_eventos_vitrine(_supabase):
+            # Selecionando apenas as colunas necessárias para a vitrine
+            return _supabase.table("feira_eventos").select(
+                "id, nome, data_inicio, data_fim, onde, turmas, edital_link, imagem_capa_link, max_membros"
+            ).eq("ativo", True).execute()
+
         try:
-            res = supabase_conn.table("feira_eventos").select("*").eq("ativo", True).execute()
+            res = buscar_eventos_vitrine(supabase_conn)
             eventos = res.data
             
             if not eventos:
-                st.info("Nenhum evento ativo no momento. Crie o primeiro na aba ao lado! 👉")
+                st.info("Nenhum evento ativo no momento.")
             else:
                 for ev in eventos:
                     with st.container(border=True):
-                        # --- EXIBIR O BANNER SE EXISTIR ---
                         link_banner = ev.get('imagem_capa_link')
                         if link_banner:
-                            # Renderiza a imagem com cantos arredondados usando HTML/CSS simples
-                            st.markdown(f"""
-                                <div style="width:100%; overflow:hidden; border-radius:15px; margin-bottom:15px;">
-                                    <img src="{link_banner}" style="width:100%; height:auto; display:block;">
-                                </div>
-                            """, unsafe_allow_html=True)
+                            st.image(link_banner, use_container_width=True)
                         
-                        # --- INFORMAÇÕES DO EVENTO ---
                         col_info, col_btn = st.columns([3, 1])
                         with col_info:
                             st.subheader(f"🏆 {ev['nome']}")
-                            st.caption(f"🗓️ **Período:** {ev['data_inicio']} até {ev['data_fim']}")
-                            st.write(f"📍 **Onde:** {ev.get('onde', 'Não informado')}")
-                            st.write(f"👥 **Turmas Envolvidas:** {ev.get('turmas', 'Geral')}")
+                            st.caption(f"🗓️ {ev['data_inicio']} até {ev['data_fim']}")
+                            st.write(f"📍 **Onde:** {ev.get('onde', 'EREM PAM')}")
+                            st.write(f"👥 **Turmas:** {ev.get('turmas', 'Geral')}")
                         
                         with col_btn:
-                            # AQUI ESTÁ O SEGREDO: A chave (key) única baseada no ID do banco
                             if ev.get("edital_link"):
-                                st.link_button("📄 Ver Edital", ev["edital_link"], use_container_width=True, key=f"btn_edital_{ev['id']}")
+                                st.link_button("📄 Ver Edital", ev["edital_link"], use_container_width=True, key=f"btn_edit_{ev['id']}")
                             else:
                                 st.button("🚫 Sem Edital", disabled=True, use_container_width=True, key=f"btn_off_{ev['id']}")
                             
-                            st.metric("Tamanho dos Grupos", f"{ev['min_membros']} a {ev['max_membros']} alunos")
+                            st.metric("Grupos (Máx)", ev.get('max_membros', 0))
         except Exception as e:
-            st.error(f"Erro ao carregar a vitrine de eventos: {e}")
+            st.error(f"Erro ao carregar vitrine: {e}")
 
     # ==========================================
     # ABA 1: CRIAR NOVO EVENTO (COM UPLOAD)
