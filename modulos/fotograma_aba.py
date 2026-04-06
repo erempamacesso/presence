@@ -150,18 +150,27 @@ def calcular_idade_completa(data_nascimento):
         return f"{int(idade)} anos"
     except: return ""
 
-# 👇 NOVA FUNÇÃO: Busca direto do GitHub
+# 👇 NOVA FUNÇÃO: Busca direto do GitHub (COM AVISO DE ERROS)
 @st.cache_data(ttl=3600)
 def listar_fotos_github():
     try:
+        # 1. Verifica se a senha foi configurada
+        if "GITHUB_TOKEN" not in st.secrets:
+            st.error("🚨 ERRO: 'GITHUB_TOKEN' não configurado nos secrets do Streamlit local!")
+            return {}
+            
         from github import Github, Auth
         auth = Auth.Token(st.secrets["GITHUB_TOKEN"])
         g = Github(auth=auth)
         repo = g.get_repo("erempamacesso/presence")
         contents = repo.get_contents("alunos_fotos")
-        # Retorna { 'nomelimpo': 'url_direta_do_github' }
         return {limpar_texto(arq.name): arq.download_url for arq in contents}
+        
+    except ImportError:
+        st.error("🚨 ERRO: A biblioteca 'PyGithub' não está instalada! Rode 'pip install PyGithub' no terminal.")
+        return {}
     except Exception as e:
+        st.error(f"🚨 ERRO na conexão com GitHub: {e}")
         return {}
 
 # ==========================================
