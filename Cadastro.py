@@ -24,22 +24,23 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 # ==================================================
 # 2. FUNÇÕES DE APOIO E FOTOS (GITHUB)
 # ==================================================
+# 👇 Limpeza 100% igual ao Fotograma para garantir que a foto bata com o nome
 def limpar_texto(texto):
     if not texto: return ""
-    # Remove extensão se houver
-    if "." in str(texto):
-        texto = str(texto).rsplit(".", 1)[0]
-    
+    if "." in str(texto): texto = str(texto).rsplit('.', 1)[0]
     nfkd = unicodedata.normalize('NFKD', str(texto))
-    sem_acento = "".join([c for c in nfkd if not unicodedata.combining(c)])
-    return sem_acento.lower().replace(" ", "").replace("_", "").strip()
+    texto_limpo = "".join([c for c in nfkd if not unicodedata.combining(c)]).lower()
+    return "".join(filter(str.isalnum, texto_limpo))
 
+# 👇 Nome da função trocado para "quebrar" o cache antigo do Streamlit
 @st.cache_data(ttl=3600)
-def carregar_fotos_github():
-    """Busca as fotos diretamente no repositório do GitHub"""
+def buscar_fotos_github_cadastro():
     try:
+        import github
         from github import Github, Auth
+        
         if "GITHUB_TOKEN" not in st.secrets:
+            st.error("🚨 ERRO: 'GITHUB_TOKEN' não configurado nos secrets!")
             return {}
             
         auth = Auth.Token(st.secrets["GITHUB_TOKEN"])
@@ -48,7 +49,12 @@ def carregar_fotos_github():
         contents = repo.get_contents("alunos_fotos")
         
         return {limpar_texto(arq.name): arq.download_url for arq in contents}
-    except Exception:
+        
+    except ImportError:
+        st.error("🚨 ERRO: A biblioteca 'PyGithub' não está instalada! Rode 'pip install PyGithub'.")
+        return {}
+    except Exception as e:
+        st.error(f"🚨 ERRO na conexão com GitHub: {e}")
         return {}
 
 # ==================================================
@@ -57,9 +63,6 @@ def carregar_fotos_github():
 # Criamos um estado para a aba para não resetar no rerun
 if 'aba_atual' not in st.session_state:
     st.session_state.aba_atual = "📤 Importação"
-
-def mudar_aba(nova_aba):
-    st.session_state.aba_atual = nova_aba
 
 # CSS para transformar o radio em botões que parecem abas
 st.markdown("""
@@ -132,8 +135,14 @@ elif st.session_state.aba_atual == "📸 Turmas e Fotos":
         # 2. Seleção de Turma
         turma_escolhida = st.selectbox("Selecione a Turma para Visualizar:", lista_turmas)
         
-        # 3. Carrega Fotos do GitHub e Alunos
-        mapa_fotos = carregar_fotos_github()
+        # 3. Carrega Fotos do GitHub
+        mapa_fotos = buscar_fotos_github_cadastro()
+        
+        # Botão salva-vidas para forçar o recarregamento das fotos
+        if st.button("🔄 Atualizar Fotos", help="Clique se as fotos não estiverem carregando"):
+            st.cache_data.clear()
+            st.rerun()
+
         res_alunos = supabase.table("alunos").select("*").eq("turma", turma_escolhida).order("nome").execute()
         alunos = res_alunos.data
 
@@ -185,6 +194,5 @@ elif st.session_state.aba_atual == "📸 Turmas e Fotos":
                         supabase.table("alunos").update({"turma": nova_turma}).eq("id", uid).execute()
                         st.toast(f"{nome_aluno} movido para {nova_turma}!")
                         time.sleep(1)
-                        # Como st.session_state.aba_atual já é "📸 Turmas e Fotos", 
-                        # o rerun agora voltará exatamente para esta tela.
+                        # O rerun não volta mais para a primeira aba
                         st.rerun()
