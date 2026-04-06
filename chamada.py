@@ -37,17 +37,17 @@ MAPA_TURMAS = {
     "k4m2": "3º A", "w3v4": "3º B", "r9s0": "3º C", "y2w1": "3º D"
 }
 
-def limpar_texto_absoluto(texto):
+# 👇 Função IDÊNTICA à do Fotograma para evitar erros de leitura
+def limpar_texto(texto):
     if not texto: return ""
     if "." in str(texto): texto = str(texto).rsplit('.', 1)[0]
-    texto = str(texto).strip().lower()
-    nfkd = unicodedata.normalize('NFKD', texto)
-    sem_acento = "".join([c for c in nfkd if not unicodedata.combining(c)])
-    return "".join(filter(str.isalnum, sem_acento))
+    nfkd = unicodedata.normalize('NFKD', str(texto))
+    texto_limpo = "".join([c for c in nfkd if not unicodedata.combining(c)]).lower()
+    return "".join(filter(str.isalnum, texto_limpo))
 
-# 👇 A MESMA FUNÇÃO PERFEITA DO FOTOGRAMA
+# 👇 Nome novo para forçar o Streamlit a apagar o cache antigo
 @st.cache_data(ttl=3600)
-def listar_fotos_github():
+def carregar_fotos_github_chamada():
     try:
         import github
         from github import Github, Auth
@@ -61,11 +61,11 @@ def listar_fotos_github():
         repo = g.get_repo("erempamacesso/presence")
         contents = repo.get_contents("alunos_fotos")
         
-        # Retorna um dicionário: {'nome_limpo': 'url_direta'}
-        return {limpar_texto_absoluto(arq.name): arq.download_url for arq in contents}
+        # Cria o mapa usando a função limpar_texto
+        return {limpar_texto(arq.name): arq.download_url for arq in contents}
         
     except ImportError:
-        st.error("🚨 ERRO: A biblioteca 'PyGithub' não está instalada! Rode 'pip install PyGithub'.")
+        st.error("🚨 ERRO: A biblioteca 'PyGithub' não está instalada!")
         return {}
     except Exception as e:
         st.error(f"🚨 ERRO na conexão com GitHub: {e}")
@@ -98,7 +98,7 @@ if token_url and token_url in MAPA_TURMAS:
     st.title(f"📱 Painel: {turma_real}")
     
     # --- BUSCA AS FOTOS COM A FUNÇÃO NOVA ---
-    mapa_fotos = listar_fotos_github()  
+    mapa_fotos = carregar_fotos_github_chamada()
     
     fuso = pytz.timezone('America/Recife')
     agora = datetime.now(fuso)
@@ -144,8 +144,8 @@ if token_url and token_url in MAPA_TURMAS:
                     nome_aluno = aluno['nome']
                     col_foto, col_nome, col_check = st.columns([1, 3, 2])
                     
-                    # --- APLICA A MESMA LÓGICA DO FOTOGRAMA PARA A IMAGEM ---
-                    chave = limpar_texto_absoluto(nome_aluno)
+                    # --- APLICA A LÓGICA DO FOTOGRAMA PARA A IMAGEM ---
+                    chave = limpar_texto(nome_aluno)
                     url_img = mapa_fotos.get(chave)
                     
                     if not url_img:
@@ -214,8 +214,8 @@ if token_url and token_url in MAPA_TURMAS:
             for i, aluno in enumerate(alunos):
                 c1, c2, c3 = st.columns([1, 3, 2])
                 
-                # --- APLICA A MESMA LÓGICA DO FOTOGRAMA PARA A IMAGEM NA EVASÃO ---
-                chave = limpar_texto_absoluto(aluno['nome'])
+                # --- APLICA A LÓGICA DO FOTOGRAMA PARA A IMAGEM NA EVASÃO ---
+                chave = limpar_texto(aluno['nome'])
                 url_img = mapa_fotos.get(chave)
                 
                 if not url_img:
