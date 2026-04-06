@@ -1,165 +1,179 @@
 import streamlit as st
-import streamlit.components.v1 as components
-from supabase import create_client, Client
-import datetime
+import pandas as pd
+import unicodedata
 import time
 
-# ==========================================
-# 1. CONFIGURAÇÃO GERAL DA PÁGINA
-# ==========================================
-st.set_page_config(page_title="EREM PAM - Chamada Escolar", layout="wide", page_icon="🏫")
+# ==================================================
+# 1. FUNÇÕES DE APOIO E FOTOS (GITHUB)
+# ==================================================
+def limpar_texto(texto):
+    if not texto: return ""
+    if "." in str(texto): texto = str(texto).rsplit('.', 1)[0]
+    nfkd = unicodedata.normalize('NFKD', str(texto))
+    texto_limpo = "".join([c for c in nfkd if not unicodedata.combining(c)]).lower()
+    return "".join(filter(str.isalnum, texto_limpo))
 
-# ==========================================
-# 2. IMPORTAÇÃO DOS MÓDULOS (Onde as telas moram)
-# ==========================================
-try:
-    from modulos.cenario_dia import exibir_cenario
-    from modulos.fotograma_aba import exibir_fotograma
-    from modulos.cadastro_aba import exibir_cadastro
-    from modulos.reservas_aba import exibir_reservas
-    from modulos.atualiza_alunos import exibir_importacao
-    from modulos.busca_ativa import exibir_busca_ativa
-    from modulos.aee import exibir_painel_aee
-    from modulos.ocorrencias_aba import exibir_ocorrencias
-    from modulos.gestao_feira import exibir_gestao_feira 
-except Exception as e:
-    st.error(f"🚨 Erro ao carregar os módulos das telas: {e}")
-    st.stop()
-
-# ==========================================
-# 3. CONEXÃO COM O BANCO DE DADOS (SUPABASE)
-# ==========================================
-try:
-    URL_SUPABASE = st.secrets["SUPABASE_URL_ALUNOS"]
-    CHAVE_SUPABASE = st.secrets["SUPABASE_KEY_ALUNOS"]
-    supabase: Client = create_client(URL_SUPABASE, CHAVE_SUPABASE)
-except Exception as e:
-    st.error(f"🚨 Erro ao conectar no Supabase: {e}")
-    st.stop()
-
-# ==========================================
-# 4. GERENCIADOR DE ESTADO (Para lembrar em qual página estamos)
-# ==========================================
-if 'pagina' not in st.session_state:
-    st.session_state.pagina = 'cenario' # Define a página inicial ao abrir o app
-
-if 'fechar_menu' not in st.session_state:
-    st.session_state.fechar_menu = False
-
-def mudar_pagina(nome_pagina):
-    st.session_state.pagina = nome_pagina
-    st.session_state.fechar_menu = True # Liga o gatilho para recolher o menu no celular
-
-# ==========================================
-# 5. MENU LATERAL (SIDEBAR) - CORRIGIDO
-# ==========================================
-with st.sidebar:
+@st.cache_data(ttl=3600)
+def buscar_fotos_github_cadastro():
     try:
-        st.image("logo_erempam.png", use_container_width=True)
-    except:
-        st.title("🏫 EREM PAM")
+        import github
+        from github import Github, Auth
         
-    st.divider()
-    
-    # Botões de Navegação Padrão
-    st.button("📊 Cenário do Dia", on_click=mudar_pagina, args=('cenario',), use_container_width=True)
-    st.button("🔎 Busca Ativa", on_click=mudar_pagina, args=('busca_ativa',), use_container_width=True)
-    st.button("📸 Fotograma", on_click=mudar_pagina, args=('fotograma',), use_container_width=True)
-    st.button("🧩 AEE & Inclusão", on_click=mudar_pagina, args=('aee',), use_container_width=True)
-    st.button("🚨 Ocorrências", on_click=mudar_pagina, args=('ocorrencias',), use_container_width=True)
-    st.button("📝 Gestão de Alunos", on_click=mudar_pagina, args=('cadastro',), use_container_width=True)
-    st.button("📅 Reservas", on_click=mudar_pagina, args=('reservas',), use_container_width=True)
-    
-    st.divider()
+        if "GITHUB_TOKEN" not in st.secrets:
+            st.error("🚨 ERRO: 'GITHUB_TOKEN' não configurado nos secrets!")
+            return {}
+            
+        auth = Auth.Token(st.secrets["GITHUB_TOKEN"])
+        g = Github(auth=auth)
+        repo = g.get_repo("erempamacesso/presence")
+        contents = repo.get_contents("alunos_fotos")
+        
+        return {limpar_texto(arq.name): arq.download_url for arq in contents}
+        
+    except ImportError:
+        st.error("🚨 ERRO: A biblioteca 'PyGithub' não está instalada! Rode 'pip install PyGithub'.")
+        return {}
+    except Exception as e:
+        st.error(f"🚨 ERRO na conexão com GitHub: {e}")
+        return {}
 
-    # --- ESTILO LARANJA SEM EMOJI (DENTRO DA SIDEBAR) ---
+# ==================================================
+# 2. FUNÇÃO PRINCIPAL (CHAMADA PELO APP.PY)
+# ==================================================
+def exibir_cadastro(supabase):
+    
+    # Criamos um estado para a aba para não resetar no rerun
+    if 'aba_atual' not in st.session_state:
+        st.session_state.aba_atual = "📤 Importação"
+
+    # CSS para transformar o radio em botões que parecem abas
     st.markdown("""
         <style>
-        /* Estilo para o texto do botão */
-        div[data-testid="stSidebar"] button p:contains("Criar um evento") {
-            color: white !important;
-            font-weight: bold !important;
-        }
-        
-        /* Estilo para o corpo do botão */
-        div[data-testid="stSidebar"] button:has(p:contains("Criar um evento")) {
-            background-color: #FF8000 !important;
-            border: none !important;
-            transition: 0.3s;
-        }
-
-        /* Efeito Hover */
-        div[data-testid="stSidebar"] button:has(p:contains("Criar um evento")):hover {
-            background-color: #e67300 !important;
-            transform: scale(1.02);
-        }
+        div[data-testid="stHorizontalBlock"] { background-color: #f8f9fa; padding: 10px; border-radius: 10px; }
+        .stRadio [data-testid="stWidgetLabel"] { display: none; }
+        div[data-testid="stMarkdownContainer"] hr { margin: 1rem 0; }
         </style>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
-    # Botão Laranja (agora sincronizado com o CSS)
-    st.button("Criar um evento", on_click=mudar_pagina, args=('gestao_feira',), use_container_width=True)
+    st.title("🏫 Gestão de Estudantes e Turmas")
+
+    # Menu de navegação que substitui o st.tabs para manter o estado
+    opcoes_menu = ["📤 Importação", "👤 Cadastro Manual", "📸 Turmas e Fotos"]
     
-    # Botão de Importação Verde (Primary)
-    st.button("📤 Importar e Atualizar Alunos", on_click=mudar_pagina, args=('importacao',), type="primary", use_container_width=True)
+    # Usamos nav_main_cad na key para não dar conflito com outras telas do app.py
+    escolha = st.radio("Navegação", opcoes_menu, index=opcoes_menu.index(st.session_state.aba_atual), 
+                       horizontal=True, key="nav_main_cad", 
+                       on_change=lambda: st.session_state.update({"aba_atual": st.session_state.nav_main_cad}))
 
-# ==========================================
-# 6. INJEÇÃO DE CÓDIGO PARA CELULAR (Mantido)
-# ==========================================
-if st.session_state.fechar_menu:
-    js_fechar_menu = '''
-    <script>
-        setTimeout(function() {
-            var doc = window.parent.document;
-            var btn_fechar = doc.querySelector('[data-testid="stSidebarCollapseButton"]');
-            if (btn_fechar) btn_fechar.click();
-        }, 300);
-    </script>
-    '''
-    components.html(js_fechar_menu, width=0, height=0)
-    st.session_state.fechar_menu = False
+    st.divider()
 
-# ==========================================
-# ROTEAMENTO DE PÁGINAS (O MAESTRO)
-# ==========================================
+    # --- ABA 1: IMPORTAÇÃO ---
+    if st.session_state.aba_atual == "📤 Importação":
+        st.subheader("Importar Dados")
+        st.write("Importar planilha Excel ou CSV.")
+        arquivo = st.file_uploader("Upload Arquivo", type=["csv", "xlsx"])
+        if arquivo:
+            if st.button("Processar Arquivo"):
+                try:
+                    if arquivo.name.endswith('.csv'): df = pd.read_csv(arquivo)
+                    else: df = pd.read_excel(arquivo)
+                    df.columns = [c.lower().strip() for c in df.columns]
+                    count = 0
+                    for index, row in df.iterrows():
+                        try:
+                            nome = str(row['nome']).upper().strip()
+                            turma = f"{row['serie']} {row['turma']}".strip()
+                            existe = supabase.table("alunos").select("id").eq("nome", nome).execute()
+                            if not existe.data:
+                                supabase.table("alunos").insert({"nome": nome, "turma": turma}).execute()
+                                count += 1
+                        except: pass
+                    st.success(f"Processados: {count}")
+                except Exception as e: st.error(f"Erro: {e}")
 
-if st.session_state.pagina == 'cenario':
-    exibir_cenario(supabase)
+    # --- ABA 2: CADASTRO MANUAL ---
+    elif st.session_state.aba_atual == "👤 Cadastro Manual":
+        st.subheader("Novo Estudante")
+        with st.form("form_manual", clear_on_submit=True):
+            nome_man = st.text_input("Nome Completo")
+            turma_man = st.text_input("Turma (Ex: 1º A)")
+            if st.form_submit_button("Cadastrar"):
+                if nome_man and turma_man:
+                    supabase.table("alunos").insert({"nome": nome_man.upper(), "turma": turma_man.upper()}).execute()
+                    st.success("Estudante cadastrado com sucesso!")
 
-elif st.session_state.pagina == 'busca_ativa':
-    exibir_busca_ativa(supabase)
-    
-elif st.session_state.pagina == 'fotograma':
-    exibir_fotograma(supabase)
+    # --- ABA 3: GESTÃO VISUAL (FOTOS E TURMAS) ---
+    elif st.session_state.aba_atual == "📸 Turmas e Fotos":
+        st.subheader("Gestão de Turmas")
 
-elif st.session_state.pagina == 'aee':
-    exibir_painel_aee(supabase)
+        # 1. Carrega dados de apoio usando a conexão enviada pelo app.py
+        res = supabase.table("alunos").select("turma").execute()
+        lista_turmas = sorted(list(set([x['turma'] for x in res.data if x['turma']])))
+        
+        if not lista_turmas:
+            st.warning("Nenhuma turma cadastrada no banco de dados.")
+        else:
+            # 2. Seleção de Turma
+            turma_escolhida = st.selectbox("Selecione a Turma para Visualizar:", lista_turmas)
+            
+            # 3. Carrega Fotos do GitHub
+            mapa_fotos = buscar_fotos_github_cadastro()
+            
+            # Botão salva-vidas para forçar o recarregamento das fotos
+            if st.button("🔄 Atualizar Fotos", help="Clique se as fotos não estiverem carregando"):
+                st.cache_data.clear()
+                st.rerun()
 
-elif st.session_state.pagina == 'ocorrencias':
-    exibir_ocorrencias(supabase)
-    
-elif st.session_state.pagina == 'cadastro':
-    exibir_cadastro(supabase)
-    
-elif st.session_state.pagina == 'reservas':
-    # --- FUNÇÃO COM CACHE PARA ECONOMIZAR EGRESS ---
-    @st.cache_data(ttl=600)
-    def obter_professores_cacheado(_supabase):
-        try:
-            res = _supabase.table("assinaturas").select("nome").execute()
-            return [linha["nome"] for linha in res.data]
-        except:
-            return ["Erro ao carregar professores"]
+            res_alunos = supabase.table("alunos").select("*").eq("turma", turma_escolhida).order("nome").execute()
+            alunos = res_alunos.data
 
-    # Execução da busca (agora protegida por cache)
-    LISTA_PROF = obter_professores_cacheado(supabase)
-    
-    AULAS = [f"{i}ª Aula" for i in range(1, 10)] 
-    ESPACOS = ["Auditório", "Laboratório", "Biblioteca", "Quadra", "Multimídia", "Sala de Vídeo"]
-    
-    exibir_reservas(supabase, LISTA_PROF, AULAS, ESPACOS, 3, 2, 9)
-    
-elif st.session_state.pagina == 'importacao':
-    exibir_importacao(supabase)
+            st.markdown(f"### Alunos da Turma: {turma_escolhida}")
+            
+            c_h1, c_h2, c_h3 = st.columns([1, 4, 2])
+            c_h1.markdown("**FOTO**")
+            c_h2.markdown("**NOME DO ESTUDANTE**")
+            c_h3.markdown("**MUDAR TURMA**")
 
-elif st.session_state.pagina == 'gestao_feira':
-    exibir_gestao_feira(supabase)  
+            for aluno in alunos:
+                st.divider()
+                c1, c2, c3 = st.columns([1, 4, 2])
+                uid = aluno['id']
+                nome_aluno = aluno['nome']
+
+                # --- COLUNA 1: FOTO (GITHUB) ---
+                with c1:
+                    chave_busca = limpar_texto(nome_aluno)
+                    url_foto = mapa_fotos.get(chave_busca)
+                    if url_foto:
+                        st.image(url_foto, width=60)
+                    else:
+                        st.markdown("<div style='font-size:30px; text-align:center;'>👤</div>", unsafe_allow_html=True)
+
+                # --- COLUNA 2: NOME ---
+                with c2:
+                    st.write(f"**{nome_aluno}**")
+                    if not url_foto:
+                        st.caption("⚠️ Foto pendente no GitHub")
+
+                # --- COLUNA 3: MUDANÇA DE TURMA (SEM RESET DE ABA) ---
+                with c3:
+                    try: 
+                        idx_turma = lista_turmas.index(aluno['turma'])
+                    except: 
+                        idx_turma = 0
+                    
+                    nova_turma = st.selectbox(
+                        "Mudar", 
+                        lista_turmas, 
+                        index=idx_turma, 
+                        key=f"change_t_{uid}", 
+                        label_visibility="collapsed"
+                    )
+                    
+                    if nova_turma != aluno['turma']:
+                        with st.spinner("Atualizando..."):
+                            supabase.table("alunos").update({"turma": nova_turma}).eq("id", uid).execute()
+                            st.toast(f"{nome_aluno} movido para {nova_turma}!")
+                            time.sleep(1)
+                            # O rerun não volta mais para a primeira aba
+                            st.rerun()
