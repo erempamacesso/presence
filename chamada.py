@@ -5,6 +5,7 @@ import pytz
 import unicodedata
 import time
 from urllib.parse import quote
+import requests  # <-- NOVO IMPORT NECESSÁRIO
 
 # ==========================================
 # 1. CONFIGURAÇÃO E CONEXÃO
@@ -40,6 +41,9 @@ MAPA_TURMAS = {
     "k4m2": "3º A", "w3v4": "3º B", "r9s0": "3º C", "y2w1": "3º D"
 }
 
+# NOVA BASE URL DO GITHUB
+GITHUB_BASE_URL = "https://raw.githubusercontent.com/BrenoBenevides/FOTOGRAMA/main/alunos_fotos"
+
 def limpar_texto_absoluto(texto):
     if not texto: return ""
     texto = str(texto).strip().lower()
@@ -47,12 +51,25 @@ def limpar_texto_absoluto(texto):
     sem_acento = "".join([c for c in nfkd if not unicodedata.combining(c)])
     return "".join(filter(str.isalnum, sem_acento))
 
-@st.cache_data(ttl=300)
-def listar_arquivos_bucket():
+# --- SUBSTITUÍDO: Agora busca do GitHub com cache de 1 hora ---
+@st.cache_data(ttl=3600)
+def listar_arquivos_github():
+    url_api = "https://api.github.com/repos/BrenoBenevides/FOTOGRAMA/contents/alunos_fotos"
+    mapa = {}
     try:
-        arquivos = supabase.storage.from_('fotos-alunos').list(path=None, options={'limit': 5000})
-        return {limpar_texto_absoluto(a['name'].rsplit('.', 1)[0]): a['name'] for a in arquivos if a.get('name')}
-    except: return {}
+        resposta = requests.get(url_api, timeout=10)
+        if resposta.status_code == 200:
+            arquivos = resposta.json()
+            for arq in arquivos:
+                if arq['type'] == 'file':
+                    nome_arquivo = arq['name']
+                    # Limpa o nome ignorando a extensão para servir de chave
+                    nome_limpo = limpar_texto_absoluto(nome_arquivo.rsplit('.', 1)[0])
+                    mapa[nome_limpo] = nome_arquivo
+        return mapa
+    except Exception as e:
+        st.error(f"Erro ao buscar fotos no GitHub: {e}")
+        return {}
 
 def descobrir_aula_atual(hora_agora):
     # Comparação direta com objetos dt_time
@@ -82,12 +99,11 @@ if token_url and token_url in MAPA_TURMAS:
     st.title(f"📱 Painel: {turma_real}")
     
     # --- CONFIGURAÇÃO DE TEMPO REAL ---
-    mapa_fotos = listar_arquivos_bucket()
+    mapa_fotos = listar_arquivos_github()  # Chama a nova função do GitHub
     fuso = pytz.timezone('America/Recife')
     agora = datetime.now(fuso)
     data_hoje = agora.strftime('%Y-%m-%d')
     hora_atual = dt_time(agora.hour, agora.minute) 
-    cache_buster = int(time.time())
 
     # Barra de status para conferência do professor/aluno
     st.info(f"🕒 **Relógio do Sistema:** {agora.strftime('%H:%M')} | **Data:** {agora.strftime('%d/%m/%Y')}")
@@ -104,7 +120,7 @@ if token_url and token_url in MAPA_TURMAS:
         tab1, tab2 = st.tabs(["📝 Chamada Manhã", "🏃 Registro de Evasão"])
 
         # ==========================================
-        # ABA 1: CHAMADA DA MANHÃ (TOTALMENTE REVISADA)
+        # ABA 1: CHAMADA DA MANHÃ
         # ==========================================
         with tab1:
             st.markdown("### 📋 Registro de Presença")
@@ -133,8 +149,9 @@ if token_url and token_url in MAPA_TURMAS:
                     nome_aluno = aluno['nome']
                     col_foto, col_nome, col_check = st.columns([1, 3, 2])
                     
+                    # --- ATUALIZADO: Buscar a foto do GitHub ---
                     nome_arq = mapa_fotos.get(limpar_texto_absoluto(nome_aluno))
-                    url_img = f"{SUPABASE_URL}/storage/v1/object/public/fotos-alunos/{quote(nome_arq)}?t={cache_buster}" if nome_arq else "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png"
+                    url_img = f"{GITHUB_BASE_URL}/{quote(nome_arq)}" if nome_arq else "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png"
                     
                     col_foto.image(url_img, width=60)
                     col_nome.markdown(f"<div style='padding-top:15px'><b>{nome_aluno}</b></div>", unsafe_allow_html=True)
@@ -202,8 +219,10 @@ if token_url and token_url in MAPA_TURMAS:
 
             for i, aluno in enumerate(alunos):
                 c1, c2, c3 = st.columns([1, 3, 2])
+                
+                # --- ATUALIZADO: Buscar a foto do GitHub ---
                 nome_arq = mapa_fotos.get(limpar_texto_absoluto(aluno['nome']))
-                url_img = f"{SUPABASE_URL}/storage/v1/object/public/fotos-alunos/{quote(nome_arq)}?t={cache_buster}" if nome_arq else "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png"
+                url_img = f"{GITHUB_BASE_URL}/{quote(nome_arq)}" if nome_arq else "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png"
                 
                 c1.image(url_img, width=55)
                 c2.markdown(f"<div style='padding-top:10px;'><b>{aluno['nome']}</b></div>", unsafe_allow_html=True)
