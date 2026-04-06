@@ -131,7 +131,7 @@ def abrir_popup_foto(nome, url_img):
     st.image(url_img, use_container_width=True)
 
 # ==========================================
-# 🛠️ FUNÇÕES DE TRATAMENTO E CACHE
+# 🛠️ FUNÇÕES DE TRATAMENTO E CACHE (OTIMIZADAS PARA GITHUB)
 # ==========================================
 def limpar_texto(texto):
     if not texto: return ""
@@ -150,12 +150,19 @@ def calcular_idade_completa(data_nascimento):
         return f"{int(idade)} anos"
     except: return ""
 
-@st.cache_data(ttl=600)
-def listar_arquivos_bucket(_supabase):
+# 👇 NOVA FUNÇÃO: Busca direto do GitHub
+@st.cache_data(ttl=3600)
+def listar_fotos_github():
     try:
-        arquivos = _supabase.storage.from_('fotos-alunos').list(path=None, options={'limit': 5000})
-        return {limpar_texto(arq['name']): arq['name'] for arq in arquivos}
-    except: return {}
+        from github import Github, Auth
+        auth = Auth.Token(st.secrets["GITHUB_TOKEN"])
+        g = Github(auth=auth)
+        repo = g.get_repo("erempamacesso/presence")
+        contents = repo.get_contents("alunos_fotos")
+        # Retorna { 'nomelimpo': 'url_direta_do_github' }
+        return {limpar_texto(arq.name): arq.download_url for arq in contents}
+    except Exception as e:
+        return {}
 
 # ==========================================
 # 🖨️ GERADORES DE PDF 
@@ -214,20 +221,15 @@ def exibir_fotograma(supabase):
     try:
         res_turmas = supabase.table("alunos").select("turma").execute()
         lista_turmas = sorted(list(set([r['turma'] for r in res_turmas.data if r.get('turma')])))
-        mapa_fotos = listar_arquivos_bucket(supabase)
         
-        if "SUPABASE_URL_ALUNOS" in st.secrets:
-            supabase_url = str(st.secrets["SUPABASE_URL_ALUNOS"])
-        elif hasattr(supabase, 'supabase_url'):
-            supabase_url = str(supabase.supabase_url)
-        else:
-            supabase_url = ""
+        # 👇 Chama a função nova do GitHub
+        mapa_fotos = listar_fotos_github()
 
         # Buscando alunos em Busca Ativa
         res_busca = supabase.table("historico_busca_ativa").select("aluno_id").in_("status_atual", ["Em acompanhamento", "Alerta"]).execute()
         alunos_em_busca = {r['aluno_id'] for r in res_busca.data} if res_busca.data else set()
 
-        # 👇 NOVA BUSCA: Alunos com ocorrência disciplinar ativa
+        # Buscando alunos com ocorrência disciplinar ativa
         res_ocorrencias = supabase.table("ocorrencias_disciplinares").select("aluno_id").eq("status", "Ativa").execute()
         alunos_com_ocorrencia = {r['aluno_id'] for r in res_ocorrencias.data} if res_ocorrencias.data else set()
 
@@ -269,22 +271,19 @@ def exibir_fotograma(supabase):
                     
                     for j, aluno in enumerate(linha_alunos):
                         with cols[j]:
-                            # Lógica das Condições
                             status_aee = aluno.get('status_aee', 'Nenhum')
                             is_aee = status_aee != "Nenhum"
                             is_busca = aluno['id'] in alunos_em_busca
                             is_ocorrencia = aluno['id'] in alunos_com_ocorrencia
                             
-                            # Lógica das Cores
                             cores_borda = []
                             if is_aee: 
-                                cores_borda.append("#007BFF" if status_aee == "Laudo Confirmado" else "#FFC107") # Azul ou Amarelo
+                                cores_borda.append("#007BFF" if status_aee == "Laudo Confirmado" else "#FFC107") 
                             if is_busca: 
-                                cores_borda.append("#FF9800") # Laranja para Busca Ativa (para não confundir com a ocorrência)
+                                cores_borda.append("#FF9800") 
                             if is_ocorrencia: 
-                                cores_borda.append("#E53935") # Vermelho Choque para Ocorrência
+                                cores_borda.append("#E53935") 
                             
-                            # Magia do CSS: Bordas sólidas ou misturadas (Degradê)
                             if len(cores_borda) == 1:
                                 estilo_borda = f"border: 4px solid {cores_borda[0]}; background: white;"
                             elif len(cores_borda) > 1:
@@ -295,13 +294,13 @@ def exibir_fotograma(supabase):
                             
                             nome = aluno.get("nome", "Sem Nome")
                             chave = limpar_texto(nome)
-                            foto_arq = mapa_fotos.get(chave)
                             
-                            if foto_arq:
-                                url_img = f"{supabase_url}/storage/v1/object/public/fotos-alunos/{quote(foto_arq)}"
+                            # 👇 Pega a URL que já veio completinha do GitHub
+                            url_img = mapa_fotos.get(chave)
+                            
+                            if url_img:
                                 img_html = f'<img src="{url_img}" style="width: 100%; height: 200px; object-fit: contain; background: #f8f9fa; border-radius: 6px;">'
                             else:
-                                url_img = None
                                 img_html = "<div style='width:100%; height:200px; background:#f0f0f0; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:50px;'>👤</div>"
                             
                             raw_date = aluno.get('data_nascimento') or aluno.get('Data de nascimento')
@@ -311,7 +310,6 @@ def exibir_fotograma(supabase):
                             except:
                                 dt_fmt = "--/--/----"
                             
-                            # Aplicação do Estilo
                             st.markdown(f"""
                             <div style="{estilo_borda} border-radius: 12px; padding: 10px; text-align: center; min-height: 300px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 2px 2px 5px rgba(0,0,0,0.1); margin-bottom: 5px;">
                                 {img_html}
@@ -322,7 +320,6 @@ def exibir_fotograma(supabase):
                             </div>
                             """, unsafe_allow_html=True)
                             
-                            # Renderização Dinâmica dos Botões
                             tem_foto = bool(url_img)
                             num_botoes = sum([1 if tem_foto else 0, 1 if is_aee else 0, 1 if is_busca else 0, 1 if is_ocorrencia else 0])
                             
@@ -350,7 +347,6 @@ def exibir_fotograma(supabase):
 
                                 if is_ocorrencia:
                                     with cols_btn[idx_btn]:
-                                        # 👇 Novo Botão de Ocorrência
                                         if st.button("🚨", help="Ocorrência Disciplinar", key=f"oc_{aluno['id']}", type="primary", use_container_width=True):
                                             abrir_popup_ocorrencia(aluno['id'], nome, supabase)
                                     idx_btn += 1
