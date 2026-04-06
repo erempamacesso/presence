@@ -37,7 +37,6 @@ MAPA_TURMAS = {
     "k4m2": "3º A", "w3v4": "3º B", "r9s0": "3º C", "y2w1": "3º D"
 }
 
-# 👇 Função IDÊNTICA à do Fotograma para evitar erros de leitura
 def limpar_texto(texto):
     if not texto: return ""
     if "." in str(texto): texto = str(texto).rsplit('.', 1)[0]
@@ -45,7 +44,6 @@ def limpar_texto(texto):
     texto_limpo = "".join([c for c in nfkd if not unicodedata.combining(c)]).lower()
     return "".join(filter(str.isalnum, texto_limpo))
 
-# 👇 Nome novo para forçar o Streamlit a apagar o cache antigo
 @st.cache_data(ttl=3600)
 def carregar_fotos_github_chamada():
     try:
@@ -61,7 +59,6 @@ def carregar_fotos_github_chamada():
         repo = g.get_repo("erempamacesso/presence")
         contents = repo.get_contents("alunos_fotos")
         
-        # Cria o mapa usando a função limpar_texto
         return {limpar_texto(arq.name): arq.download_url for arq in contents}
         
     except ImportError:
@@ -115,6 +112,20 @@ if token_url and token_url in MAPA_TURMAS:
         st.stop()
 
     if alunos:
+        
+        # 🛠️ PAINEL DE RAIO-X (DEBUG)
+        with st.expander("🛠️ RAIO-X DO SISTEMA (CLIQUE AQUI SE AS FOTOS NÃO APARECEREM)"):
+            st.write(f"**Total de fotos na memória agora:** {len(mapa_fotos)}")
+            if st.button("🧹 FORÇAR LIMPEZA DA MEMÓRIA (CACHE)"):
+                st.cache_data.clear()
+                st.rerun()
+            
+            if len(mapa_fotos) > 0:
+                st.write("**Exemplos de como o GitHub mandou os nomes:**")
+                st.code(list(mapa_fotos.keys())[:3])
+                ex_aluno = alunos[0]['nome']
+                st.write(f"**Teste com 1º aluno da turma:** {ex_aluno} -> Chave que o sistema procura: `{limpar_texto(ex_aluno)}`")
+
         tab1, tab2 = st.tabs(["📝 Chamada Manhã", "🏃 Registro de Evasão"])
 
         # ==========================================
