@@ -187,16 +187,42 @@ def exibir_busca_ativa(supabase):
     """, unsafe_allow_html=True)
 
     st.title("🔎 Busca Ativa")
-    
-    # Prepara a função de cache invisível do GitHub (pronto para uso no futuro ou por módulos integrados)
+
+    # --- NOVO: Botão para forçar a atualização das fotos ---
+    if st.button("🔄 Atualizar Fotos do GitHub", key="btn_limpa_cache_ba"):
+        st.cache_data.clear()
+        st.rerun()
+
+    # Prepara a função de cache do GitHub
     mapa_fotos_github = carregar_fotos_github_busca_ativa()
+
+    # --- NOVO: Puxa todos os alunos do banco para cruzar as fotos ---
+    try:
+        res_al = supabase.table("alunos").select("id", "nome").execute()
+        df_al_global = pd.DataFrame(res_al.data)
+    except Exception as e:
+        df_al_global = pd.DataFrame()
+        st.error(f"Erro ao carregar alunos para verificação: {e}")
+
+    # ==========================================
+    # VERIFICAÇÃO DE ALUNOS SEM FOTO
+    # ==========================================
+    if not df_al_global.empty:
+        qtd_sem_foto = sum(1 for nome in df_al_global['nome'] if limpar_texto(nome) not in mapa_fotos_github)
+        
+        if qtd_sem_foto > 0:
+            st.warning(f"📸 **Aviso Visual:** Existem **{qtd_sem_foto}** estudantes registrados na escola que ainda estão sem foto no sistema.")
+        else:
+            st.success("📸 **Excelente!** Todos os estudantes registrados possuem foto no sistema.")
+
+    st.divider()
     
     fuso = pytz.timezone('America/Recife')
     hoje_date = datetime.now(fuso).date()
     hoje_str = hoje_date.strftime('%Y-%m-%d')
     data_hora_atual = datetime.now(fuso).strftime('%d/%m/%Y %H:%M')
 
-    # 👇 NOVO: Filtro Global de Período
+    # 👇 Filtro Global de Período
     st.subheader("📅 Filtro de Período")
     col_di, col_df = st.columns(2)
     # Por padrão, do primeiro dia do mês atual até hoje
