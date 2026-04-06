@@ -3,6 +3,7 @@ import pandas as pd
 import unicodedata
 import time
 import re
+from datetime import datetime
 
 # ==================================================
 # 1. FUNÇÕES DE APOIO E FOTOS (GITHUB)
@@ -111,15 +112,17 @@ def exibir_cadastro(supabase):
         else:
             # Cabeçalho da Tabela
             st.markdown("---")
-            h1, h2, h3, h4, h5 = st.columns([1, 2.5, 1.5, 2, 0.5])
+            # Ajustei a largura das colunas para caber a Matrícula
+            h1, h2, h3, h4, h5, h6 = st.columns([1, 2, 1.5, 1.5, 1.5, 0.5])
             h1.write("**Foto**")
             h2.write("**Nome**")
-            h3.write("**Turma**")
-            h4.write("**Nova Foto**")
-            h5.write("**Excluir**")
+            h3.write("**Matrícula (SIEPE)**")
+            h4.write("**Turma**")
+            h5.write("**Nova Foto**")
+            h6.write("**Del**")
 
             for aluno in alunos:
-                c1, c2, c3, c4, c5 = st.columns([1, 2.5, 1.5, 2, 0.5])
+                c1, c2, c3, c4, c5, c6 = st.columns([1, 2, 1.5, 1.5, 1.5, 0.5])
                 
                 # C1: Visualização da Foto
                 with c1:
@@ -128,15 +131,32 @@ def exibir_cadastro(supabase):
                     if url:
                         st.image(url, width=60)
                     else:
-                        st.warning("⚠️") # Alerta visual de falta de foto
+                        st.warning("⚠️") 
                 
-                # C2: Identificação
+                # C2: Identificação (Nome + Data de Nascimento)
                 with c2:
                     st.write(f"**{aluno['nome']}**")
-                    st.caption(f"ID: {aluno['id']}")
+                    dt_nasc = aluno.get('data_nascimento', 'Não informada')
+                    st.caption(f"🎂 Nasc: {dt_nasc}")
                 
-                # C3: Troca de Turma
+                # C3: Inserção/Edição de Matrícula (SIEPE)
                 with c3:
+                    mat_atual = aluno.get('matricula') or ""
+                    # O campo carrega vazio se não tiver, ou com o número atual se já tiver
+                    nova_mat = st.text_input(
+                        "Matrícula", value=mat_atual, 
+                        key=f"mat_{aluno['id']}", label_visibility="collapsed", placeholder="Nº SIEPE"
+                    )
+                    # Só exibe o botão de salvar se o usuário digitar algo diferente do que está no banco
+                    if nova_mat != mat_atual and nova_mat.strip() != "":
+                        if st.button("💾 Salvar Matrícula", key=f"btn_mat_{aluno['id']}", use_container_width=True):
+                            supabase.table("alunos").update({"matricula": nova_mat.strip()}).eq("id", aluno['id']).execute()
+                            st.toast(f"Matrícula de {aluno['nome']} atualizada!")
+                            time.sleep(0.5)
+                            st.rerun()
+
+                # C4: Troca de Turma
+                with c4:
                     try: idx_atual = lista_turmas.index(aluno['turma'])
                     except: idx_atual = 0
                     
@@ -151,24 +171,24 @@ def exibir_cadastro(supabase):
                         time.sleep(0.5)
                         st.rerun()
                 
-                # C4: Upload para GitHub
-                with c4:
+                # C5: Upload para GitHub
+                with c5:
                     foto_up = st.file_uploader(
                         "Upload", type=['jpg', 'jpeg', 'png'], 
                         key=f"up_{aluno['id']}", label_visibility="collapsed"
                     )
                     if foto_up:
-                        if st.button("💾 Salvar", key=f"btn_s_{aluno['id']}", use_container_width=True):
+                        if st.button("💾 Enviar", key=f"btn_s_{aluno['id']}", use_container_width=True):
                             if salvar_foto_github(foto_up, aluno['nome']):
                                 st.cache_data.clear()
                                 time.sleep(1)
                                 st.rerun()
                 
-                # C5: Exclusão (Delete)
-                with c5:
+                # C6: Exclusão (Delete)
+                with c6:
                     with st.popover("🗑️"):
                         st.write("Confirmar exclusão?")
-                        if st.button("Sim, apagar", key=f"del_{aluno['id']}", type="primary"):
+                        if st.button("Apagar", key=f"del_{aluno['id']}", type="primary"):
                             supabase.table("alunos").delete().eq("id", aluno['id']).execute()
                             st.toast("Aluno removido!")
                             time.sleep(0.5)
@@ -182,22 +202,57 @@ def exibir_cadastro(supabase):
         with st.form("novo_aluno"):
             nome = st.text_input("Nome Completo")
             turma = st.text_input("Turma (Ex: 1º A)")
+            
+            # Novo campo para Data de Nascimento
+            col_dt, col_mat = st.columns(2)
+            with col_dt:
+                dt_nascimento = st.date_input(
+                    "Data de Nascimento", 
+                    value=None, 
+                    min_value=datetime(1980, 1, 1), 
+                    max_value=datetime.today(),
+                    format="DD/MM/YYYY"
+                )
+            with col_mat:
+                matricula = st.text_input("Matrícula SIEPE (Opcional por agora)")
+
             if st.form_submit_button("Salvar Aluno"):
                 if nome and turma:
-                    supabase.table("alunos").insert({"nome": nome.upper(), "turma": turma.upper()}).execute()
-                    st.success("Salvo com sucesso!")
-                    st.cache_data.clear()
+                    # Prepara os dados para envio
+                    dados_insert = {
+                        "nome": nome.upper().strip(), 
+                        "turma": turma.upper().strip()
+                    }
+                    # Adiciona os campos opcionais se foram preenchidos
+                    if dt_nascimento:
+                        dados_insert["data_nascimento"] = dt_nascimento.strftime('%Y-%m-%d')
+                    if matricula:
+                        dados_insert["matricula"] = matricula.strip()
+
+                    try:
+                        supabase.table("alunos").insert(dados_insert).execute()
+                        st.success(f"Estudante {nome.upper()} salvo com sucesso!")
+                    except Exception as e:
+                        st.error(f"Erro ao salvar: {e}")
                 else:
-                    st.warning("Preencha todos os campos.")
+                    st.warning("Preencha pelo menos o Nome e a Turma.")
 
     # --- ABA: CONSULTA RÁPIDA ---
     elif st.session_state.aba_cadastro_ativa == "🔍 Consulta Rápida":
         st.subheader("Busca Geral")
-        busca = st.text_input("Digite o nome do aluno:")
+        busca = st.text_input("Digite o nome do aluno ou matrícula:")
         if busca:
-            res = supabase.table("alunos").select("*").ilike("nome", f"%{busca}%").execute()
+            # Busca tanto por nome quanto por matrícula
+            res = supabase.table("alunos").select("*").or_(f"nome.ilike.%{busca}%,matricula.ilike.%{busca}%").execute()
             if res.data:
                 df = pd.DataFrame(res.data)
-                st.dataframe(df[['id', 'nome', 'turma']], use_container_width=True, hide_index=True)
+                # Garante que a coluna matrícula apareça mesmo se estiver vazia no banco
+                if 'matricula' not in df.columns: df['matricula'] = "Não informada"
+                if 'data_nascimento' not in df.columns: df['data_nascimento'] = "Não informada"
+                
+                st.dataframe(df[['id', 'nome', 'matricula', 'turma', 'data_nascimento']], use_container_width=True, hide_index=True)
             else:
-                st.info("Nenhum aluno encontrado.")
+                st.info("Nenhum aluno encontrado com essa busca.")
+
+if __name__ == "__main__":
+    pass
