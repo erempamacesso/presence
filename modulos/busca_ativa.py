@@ -11,14 +11,13 @@ import traceback
 # 1. FUNÇÕES DE APOIO
 # ==========================================
 def limpar_texto(texto):
+    """Padronização idêntica ao Fotograma para bater com as fotos do GitHub"""
     if not texto: return ""
-    texto = str(texto).strip().lower()
-    if "." in texto: texto = texto.rsplit(".", 1)[0]
-    nfkd = unicodedata.normalize('NFKD', texto)
-    sem_acento = "".join([c for c in nfkd if not unicodedata.combining(c)])
-    return "".join(filter(str.isalnum, sem_acento))
+    if "." in str(texto): texto = str(texto).rsplit('.', 1)[0]
+    nfkd = unicodedata.normalize('NFKD', str(texto))
+    texto_limpo = "".join([c for c in nfkd if not unicodedata.combining(c)]).lower()
+    return "".join(filter(str.isalnum, texto_limpo))
 
-# 👇 SUBSTITUÍDO: Nova função puxando direto do GitHub (padrão do sistema)
 @st.cache_data(ttl=3600)
 def carregar_fotos_github_busca_ativa():
     try:
@@ -186,9 +185,14 @@ def exibir_busca_ativa(supabase):
         </style>
     """, unsafe_allow_html=True)
 
-    st.title("🔎 Busca Ativa")
+    st.title("🔎 Busca Ativa e Monitorização")
 
-    # --- NOVO: Botão para forçar a atualização das fotos ---
+    # Calculamos as datas primeiro para usar na verificação de presenças
+    fuso = pytz.timezone('America/Recife')
+    hoje_date = datetime.now(fuso).date()
+    hoje_str = hoje_date.strftime('%Y-%m-%d')
+    data_hora_atual = datetime.now(fuso).strftime('%d/%m/%Y %H:%M')
+
     if st.button("🔄 Atualizar Fotos do GitHub", key="btn_limpa_cache_ba"):
         st.cache_data.clear()
         st.rerun()
@@ -196,34 +200,40 @@ def exibir_busca_ativa(supabase):
     # Prepara a função de cache do GitHub
     mapa_fotos_github = carregar_fotos_github_busca_ativa()
 
-    # --- NOVO: Puxa todos os alunos do banco para cruzar as fotos ---
+    # ==========================================
+    # VERIFICAÇÃO DE ALUNOS PRESENTES SEM FOTO
+    # ==========================================
     try:
-        res_al = supabase.table("alunos").select("id", "nome").execute()
-        df_al_global = pd.DataFrame(res_al.data)
+        # Puxa APENAS quem teve a chamada feita HOJE e está com status P (Presente)
+        res_presencas = supabase.table("frequencia").select("aluno_nome, turma").eq("data_chamada", hoje_str).eq("status", "P").execute()
+        df_presentes = pd.DataFrame(res_presencas.data)
     except Exception as e:
-        df_al_global = pd.DataFrame()
-        st.error(f"Erro ao carregar alunos para verificação: {e}")
+        df_presentes = pd.DataFrame()
+        st.error(f"Erro ao carregar lista de presentes de hoje: {e}")
 
-    # ==========================================
-    # VERIFICAÇÃO DE ALUNOS SEM FOTO
-    # ==========================================
-    if not df_al_global.empty:
-        qtd_sem_foto = sum(1 for nome in df_al_global['nome'] if limpar_texto(nome) not in mapa_fotos_github)
+    if not df_presentes.empty:
+        # Filtra os presentes verificando se o nome não está no mapa de fotos
+        df_sem_foto = df_presentes[~df_presentes['aluno_nome'].apply(lambda x: limpar_texto(x) in mapa_fotos_github)]
+        qtd_sem_foto = len(df_sem_foto)
         
         if qtd_sem_foto > 0:
-            st.warning(f"📸 **Aviso Visual:** Existem **{qtd_sem_foto}** estudantes registrados na escola que ainda estão sem foto no sistema.")
+            st.warning(f"📸 **Aviso Visual:** Existem **{qtd_sem_foto}** estudantes PRESENTES HOJE na escola que estão sem foto no sistema.")
+            
+            with st.expander("🛠️ Ver lista de estudantes presentes sem foto (Clique para abrir)"):
+                st.write("Estes alunos estão na escola hoje, aproveite para atualizar as fotos!")
+                
+                # Formatando a tabela para ficar mais bonita
+                df_exibicao = df_sem_foto.rename(columns={'aluno_nome': 'Estudante', 'turma': 'Turma'})
+                st.dataframe(df_exibicao.sort_values(by=['Turma', 'Estudante']), use_container_width=True, hide_index=True)
         else:
-            st.success("📸 **Excelente!** Todos os estudantes registrados possuem foto no sistema.")
+            st.success("📸 **Excelente!** Todos os estudantes presentes hoje já possuem foto no sistema.")
+    else:
+        st.info("📸 **Aguardando Chamada:** A chamada de hoje ainda não foi registada ou não há alunos presentes.")
 
     st.divider()
-    
-    fuso = pytz.timezone('America/Recife')
-    hoje_date = datetime.now(fuso).date()
-    hoje_str = hoje_date.strftime('%Y-%m-%d')
-    data_hora_atual = datetime.now(fuso).strftime('%d/%m/%Y %H:%M')
 
     # 👇 Filtro Global de Período
-    st.subheader("📅 Filtro de Período")
+    st.subheader("📅 Filtro de Período Geral")
     col_di, col_df = st.columns(2)
     # Por padrão, do primeiro dia do mês atual até hoje
     primeiro_dia_mes = hoje_date.replace(day=1)
@@ -250,7 +260,7 @@ def exibir_busca_ativa(supabase):
 
     # --- ABAS ---
     aba_ranking, aba_zero, aba_lista, aba_registro = st.tabs([
-        "🚨 Alertas & Ranking", "❌ Presença Zero", "🗺️ Mapa de Intensidade", "📝 Registrar Ação"
+        "🚨 Alertas & Ranking", "❌ Presença Zero", "🗺️ Mapa de Intensidade", "📝 Registar Ação"
     ])
 
     with aba_ranking:
@@ -284,7 +294,7 @@ def exibir_busca_ativa(supabase):
                     else:
                         st.error("⚠️ Ocorreu um erro interno ao gerar o PDF.")
                         st.code(pdf_r)
-            else: st.info("Sem registros no período selecionado.")
+            else: st.info("Sem registos no período selecionado.")
         except Exception as e: st.error(f"Erro: {e}")
 
     with aba_zero:
@@ -310,7 +320,7 @@ def exibir_busca_ativa(supabase):
                     else:
                         st.error("⚠️ Ocorreu um erro interno ao gerar o PDF.")
                         st.code(pdf_z)
-                else: st.success("Nenhum abandono detectado neste período.")
+                else: st.success("Nenhum abandono detetado neste período.")
         except Exception as e: st.error(f"Erro: {e}")
 
     with aba_lista:
@@ -382,7 +392,7 @@ def exibir_busca_ativa(supabase):
         except Exception as e: st.error(f"Erro: {e}")
 
     with aba_registro:
-        st.subheader("➕ Registrar Ação / Ocorrência")
+        st.subheader("➕ Registar Ação / Ocorrência")
         try:
             r_al = supabase.table("alunos").select("id, nome, turma").order("nome").execute()
             if r_al.data:
