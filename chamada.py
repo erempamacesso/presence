@@ -4,8 +4,6 @@ from datetime import datetime, time as dt_time
 import pytz
 import unicodedata
 import time
-from urllib.parse import quote
-import requests  # <-- NOVO IMPORT NECESSÁRIO
 
 # ==========================================
 # 1. CONFIGURAÇÃO E CONEXÃO
@@ -13,8 +11,6 @@ import requests  # <-- NOVO IMPORT NECESSÁRIO
 st.set_page_config(page_title="Chamada Digital EREMPAM", layout="centered")
 
 try:
-    # ATUALIZAÇÃO AQUI: Usa .get() para não travar o app se a chave específica não for encontrada.
-    # Ele tenta primeiro a "_ALUNOS", se não achar, tenta a padrão.
     SUPABASE_URL = st.secrets.get("SUPABASE_URL_ALUNOS", st.secrets.get("SUPABASE_URL"))
     SUPABASE_KEY = st.secrets.get("SUPABASE_KEY_ALUNOS", st.secrets.get("SUPABASE_KEY"))
     
@@ -41,38 +37,41 @@ MAPA_TURMAS = {
     "k4m2": "3º A", "w3v4": "3º B", "r9s0": "3º C", "y2w1": "3º D"
 }
 
-# NOVA BASE URL DO GITHUB
-GITHUB_BASE_URL = "https://raw.githubusercontent.com/BrenoBenevides/FOTOGRAMA/main/alunos_fotos"
-
 def limpar_texto_absoluto(texto):
     if not texto: return ""
+    if "." in str(texto): texto = str(texto).rsplit('.', 1)[0]
     texto = str(texto).strip().lower()
     nfkd = unicodedata.normalize('NFKD', texto)
     sem_acento = "".join([c for c in nfkd if not unicodedata.combining(c)])
     return "".join(filter(str.isalnum, sem_acento))
 
-# --- SUBSTITUÍDO: Agora busca do GitHub com cache de 1 hora ---
+# 👇 A MESMA FUNÇÃO PERFEITA DO FOTOGRAMA
 @st.cache_data(ttl=3600)
-def listar_arquivos_github():
-    url_api = "https://api.github.com/repos/BrenoBenevides/FOTOGRAMA/contents/alunos_fotos"
-    mapa = {}
+def listar_fotos_github():
     try:
-        resposta = requests.get(url_api, timeout=10)
-        if resposta.status_code == 200:
-            arquivos = resposta.json()
-            for arq in arquivos:
-                if arq['type'] == 'file':
-                    nome_arquivo = arq['name']
-                    # Limpa o nome ignorando a extensão para servir de chave
-                    nome_limpo = limpar_texto_absoluto(nome_arquivo.rsplit('.', 1)[0])
-                    mapa[nome_limpo] = nome_arquivo
-        return mapa
+        import github
+        from github import Github, Auth
+        
+        if "GITHUB_TOKEN" not in st.secrets:
+            st.error("🚨 ERRO: 'GITHUB_TOKEN' não configurado nos secrets!")
+            return {}
+            
+        auth = Auth.Token(st.secrets["GITHUB_TOKEN"])
+        g = Github(auth=auth)
+        repo = g.get_repo("erempamacesso/presence")
+        contents = repo.get_contents("alunos_fotos")
+        
+        # Retorna um dicionário: {'nome_limpo': 'url_direta'}
+        return {limpar_texto_absoluto(arq.name): arq.download_url for arq in contents}
+        
+    except ImportError:
+        st.error("🚨 ERRO: A biblioteca 'PyGithub' não está instalada! Rode 'pip install PyGithub'.")
+        return {}
     except Exception as e:
-        st.error(f"Erro ao buscar fotos no GitHub: {e}")
+        st.error(f"🚨 ERRO na conexão com GitHub: {e}")
         return {}
 
 def descobrir_aula_atual(hora_agora):
-    # Comparação direta com objetos dt_time
     if hora_agora < dt_time(7, 30): return "Pré-aula"
     elif hora_agora < dt_time(8, 20): return "1º Aula"
     elif hora_agora < dt_time(9, 10): return "2º Aula"
@@ -98,18 +97,17 @@ if token_url and token_url in MAPA_TURMAS:
     turma_real = MAPA_TURMAS[token_url]
     st.title(f"📱 Painel: {turma_real}")
     
-    # --- CONFIGURAÇÃO DE TEMPO REAL ---
-    mapa_fotos = listar_arquivos_github()  # Chama a nova função do GitHub
+    # --- BUSCA AS FOTOS COM A FUNÇÃO NOVA ---
+    mapa_fotos = listar_fotos_github()  
+    
     fuso = pytz.timezone('America/Recife')
     agora = datetime.now(fuso)
     data_hoje = agora.strftime('%Y-%m-%d')
     hora_atual = dt_time(agora.hour, agora.minute) 
 
-    # Barra de status para conferência do professor/aluno
     st.info(f"🕒 **Relógio do Sistema:** {agora.strftime('%H:%M')} | **Data:** {agora.strftime('%d/%m/%Y')}")
 
     try:
-        # Busca da tabela 'alunos' (Projeto ChamadaEscolar)
         response = supabase.table("alunos").select("nome").eq("turma", turma_real).order("nome").execute()
         alunos = response.data
     except Exception as e:
@@ -126,7 +124,6 @@ if token_url and token_url in MAPA_TURMAS:
             st.markdown("### 📋 Registro de Presença")
             st.caption("Desmarque os alunos ausentes e clique em Finalizar.")
 
-            # 1. VERIFICAR SE A CHAMADA JÁ FOI FEITA HOJE
             try:
                 res_freq = supabase.table("frequencia").select("aluno_nome, status").eq("turma", turma_real).eq("data_chamada", data_hoje).execute()
                 dados_freq_hoje = res_freq.data
@@ -135,13 +132,11 @@ if token_url and token_url in MAPA_TURMAS:
                 st.warning(f"Aviso ao verificar chamada anterior: {e}")
                 status_banco = {}
 
-            # Mensagem de status visual para o usuário
             if status_banco:
                 st.success("✅ A chamada de hoje já foi registrada! Você pode alterá-la abaixo se necessário.")
             else:
                 st.info("⚠️ A chamada de hoje ainda não foi feita.")
 
-            # 2. FORMULÁRIO DE CHAMADA
             with st.form("form_chamada"):
                 presencas = {}
                 
@@ -149,14 +144,16 @@ if token_url and token_url in MAPA_TURMAS:
                     nome_aluno = aluno['nome']
                     col_foto, col_nome, col_check = st.columns([1, 3, 2])
                     
-                    # --- ATUALIZADO: Buscar a foto do GitHub ---
-                    nome_arq = mapa_fotos.get(limpar_texto_absoluto(nome_aluno))
-                    url_img = f"{GITHUB_BASE_URL}/{quote(nome_arq)}" if nome_arq else "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png"
+                    # --- APLICA A MESMA LÓGICA DO FOTOGRAMA PARA A IMAGEM ---
+                    chave = limpar_texto_absoluto(nome_aluno)
+                    url_img = mapa_fotos.get(chave)
+                    
+                    if not url_img:
+                        url_img = "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png"
                     
                     col_foto.image(url_img, width=60)
                     col_nome.markdown(f"<div style='padding-top:15px'><b>{nome_aluno}</b></div>", unsafe_allow_html=True)
                     
-                    # Lógica do checkbox: respeita o banco de dados se a chamada já foi feita
                     if status_banco:
                         valor_padrao = True if status_banco.get(nome_aluno) == "P" else False
                     else:
@@ -164,7 +161,6 @@ if token_url and token_url in MAPA_TURMAS:
                         
                     presencas[nome_aluno] = col_check.checkbox("Presente", value=valor_padrao, key=f"c_{i}")
 
-                # 3. LÓGICA DE SALVAMENTO SEGURA
                 submit = st.form_submit_button("🚀 FINALIZAR CHAMADA", use_container_width=True, type="primary")
                 
                 if submit:
@@ -180,14 +176,12 @@ if token_url and token_url in MAPA_TURMAS:
                     
                     try:
                         with st.spinner("Salvando chamada no sistema..."):
-                            # Deleta registros anteriores do dia para evitar duplicidade
                             supabase.table("frequencia").delete().match({"turma": turma_real, "data_chamada": data_hoje}).execute()
-                            # Insere a nova lista validada
                             res_insert = supabase.table("frequencia").insert(dados_insercao).execute()
                             
                         if res_insert.data:
                             st.success("🎉 Chamada salva com sucesso!")
-                            time.sleep(1.5) # Aguarda para garantir que a inserção terminou e o usuário leu a msg
+                            time.sleep(1.5) 
                             st.rerun()
                         else:
                              st.error("Falha ao salvar. Nenhuma confirmação recebida do servidor.")
@@ -220,9 +214,12 @@ if token_url and token_url in MAPA_TURMAS:
             for i, aluno in enumerate(alunos):
                 c1, c2, c3 = st.columns([1, 3, 2])
                 
-                # --- ATUALIZADO: Buscar a foto do GitHub ---
-                nome_arq = mapa_fotos.get(limpar_texto_absoluto(aluno['nome']))
-                url_img = f"{GITHUB_BASE_URL}/{quote(nome_arq)}" if nome_arq else "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png"
+                # --- APLICA A MESMA LÓGICA DO FOTOGRAMA PARA A IMAGEM NA EVASÃO ---
+                chave = limpar_texto_absoluto(aluno['nome'])
+                url_img = mapa_fotos.get(chave)
+                
+                if not url_img:
+                    url_img = "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png"
                 
                 c1.image(url_img, width=55)
                 c2.markdown(f"<div style='padding-top:10px;'><b>{aluno['nome']}</b></div>", unsafe_allow_html=True)
