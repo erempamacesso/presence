@@ -10,7 +10,7 @@ import traceback
 # ==========================================
 # 1. FUNÇÕES DE APOIO
 # ==========================================
-def limpar_texto_absoluto(texto):
+def limpar_texto(texto):
     if not texto: return ""
     texto = str(texto).strip().lower()
     if "." in texto: texto = texto.rsplit(".", 1)[0]
@@ -18,18 +18,22 @@ def limpar_texto_absoluto(texto):
     sem_acento = "".join([c for c in nfkd if not unicodedata.combining(c)])
     return "".join(filter(str.isalnum, sem_acento))
 
-@st.cache_data(ttl=300)
-def listar_arquivos_bucket(_supabase):
+# 👇 SUBSTITUÍDO: Nova função puxando direto do GitHub (padrão do sistema)
+@st.cache_data(ttl=3600)
+def carregar_fotos_github_busca_ativa():
     try:
-        arquivos = _supabase.storage.from_('fotos-alunos').list(path=None, options={'limit': 5000})
-        mapa = {}
-        if arquivos:
-            for arq in arquivos:
-                nome_original = arq.get('name')
-                if nome_original:
-                    nome_sem_ext = nome_original.rsplit('.', 1)[0] if '.' in nome_original else nome_original
-                    mapa[limpar_texto_absoluto(nome_sem_ext)] = nome_original
-        return mapa
+        import github
+        from github import Github, Auth
+        
+        if "GITHUB_TOKEN" not in st.secrets:
+            return {}
+            
+        auth = Auth.Token(st.secrets["GITHUB_TOKEN"])
+        g = Github(auth=auth)
+        repo = g.get_repo("erempamacesso/presence")
+        contents = repo.get_contents("alunos_fotos")
+        
+        return {limpar_texto(arq.name): arq.download_url for arq in contents}
     except Exception:
         return {}
 
@@ -184,22 +188,38 @@ def exibir_busca_ativa(supabase):
 
     st.title("🔎 Busca Ativa")
     
+    # Prepara a função de cache invisível do GitHub (pronto para uso no futuro ou por módulos integrados)
+    mapa_fotos_github = carregar_fotos_github_busca_ativa()
+    
     fuso = pytz.timezone('America/Recife')
-    hoje = datetime.now(fuso).strftime('%Y-%m-%d')
+    hoje_date = datetime.now(fuso).date()
+    hoje_str = hoje_date.strftime('%Y-%m-%d')
     data_hora_atual = datetime.now(fuso).strftime('%d/%m/%Y %H:%M')
 
+    # 👇 NOVO: Filtro Global de Período
+    st.subheader("📅 Filtro de Período")
+    col_di, col_df = st.columns(2)
+    # Por padrão, do primeiro dia do mês atual até hoje
+    primeiro_dia_mes = hoje_date.replace(day=1)
+    d_i = col_di.date_input("Data Inicial", primeiro_dia_mes)
+    d_f = col_df.date_input("Data Final", hoje_date)
+    
+    d_i_str = d_i.strftime('%Y-%m-%d')
+    d_f_str = d_f.strftime('%Y-%m-%d')
+
     # --- MÉTRICAS ---
-    st.subheader(f"📊 Resumo do Dia: {datetime.now(fuso).strftime('%d/%m/%Y')}")
+    st.subheader(f"📊 Resumo do Período: {d_i.strftime('%d/%m/%Y')} a {d_f.strftime('%d/%m/%Y')}")
     c1, c2, c3 = st.columns(3)
 
     try:
-        res_f = supabase.table("frequencia").select("id", count="exact").eq("data_chamada", hoje).eq("status", "F").execute()
-        res_e = supabase.table("evasoes").select("id", count="exact").eq("data_registro", hoje).execute()
-        res_p = supabase.table("frequencia").select("id", count="exact").eq("data_chamada", hoje).eq("status", "P").execute()
+        # As métricas agora respeitam as datas escolhidas
+        res_f = supabase.table("frequencia").select("id", count="exact").gte("data_chamada", d_i_str).lte("data_chamada", d_f_str).eq("status", "F").execute()
+        res_e = supabase.table("evasoes").select("id", count="exact").gte("data_registro", d_i_str).lte("data_registro", d_f_str).execute()
+        res_p = supabase.table("frequencia").select("id", count="exact").gte("data_chamada", d_i_str).lte("data_chamada", d_f_str).eq("status", "P").execute()
 
         c1.metric("Faltas (Entrada)", res_f.count or 0)
         c2.metric("Evasões (Em aula)", res_e.count or 0)
-        c3.metric("Presentes Agora", res_p.count or 0)
+        c3.metric("Presenças no Período", res_p.count or 0)
     except: st.error("Erro ao carregar métricas.")
 
     # --- ABAS ---
@@ -208,9 +228,10 @@ def exibir_busca_ativa(supabase):
     ])
 
     with aba_ranking:
-        st.subheader("🏆 Alunos com Mais Faltas")
+        st.subheader("🏆 Alunos com Mais Faltas no Período")
         try:
-            res_h = supabase.table("frequencia").select("aluno_nome, turma").eq("status", "F").execute()
+            # Filtro aplicado na consulta
+            res_h = supabase.table("frequencia").select("aluno_nome, turma").gte("data_chamada", d_i_str).lte("data_chamada", d_f_str).eq("status", "F").execute()
             if res_h.data:
                 df_h = pd.DataFrame(res_h.data)
                 col_t, col_s = st.columns([1, 2])
@@ -230,45 +251,44 @@ def exibir_busca_ativa(supabase):
                     rk.rename(columns={'turma': 'Turma'}, inplace=True)
                     st.dataframe(rk.sort_values(by=['Turma', 'Faltas'], ascending=[True, False]), use_container_width=True, hide_index=True)
                     
-                    pdf_r = gerar_pdf_relatorio(rk, f"Ranking de Faltas", data_hora_atual)
+                    pdf_r = gerar_pdf_relatorio(rk, f"Ranking de Faltas ({d_i.strftime('%d/%m')} a {d_f.strftime('%d/%m')})", data_hora_atual)
                     
                     if isinstance(pdf_r, bytes):
                         st.download_button("📄 Baixar PDF", pdf_r, "ranking.pdf", "application/pdf", use_container_width=True)
                     else:
                         st.error("⚠️ Ocorreu um erro interno ao gerar o PDF.")
                         st.code(pdf_r)
-            else: st.info("Sem registros.")
+            else: st.info("Sem registros no período selecionado.")
         except Exception as e: st.error(f"Erro: {e}")
 
     with aba_zero:
-        st.subheader("❌ Abandono (Presença Zero)")
+        st.subheader("❌ Abandono (Presença Zero no Período)")
         try:
             r_todos = supabase.table("alunos").select("nome, turma").execute()
-            r_com_p = supabase.table("frequencia").select("aluno_nome").eq("status", "P").execute()
+            # Puxa apenas as presenças ocorridas no período
+            r_com_p = supabase.table("frequencia").select("aluno_nome").gte("data_chamada", d_i_str).lte("data_chamada", d_f_str).eq("status", "P").execute()
+            
             if r_todos.data:
                 df_todos = pd.DataFrame(r_todos.data)
                 n_p = [x['aluno_nome'] for x in r_com_p.data] if r_com_p.data else []
+                # Filtra os alunos que NÃO apareceram na lista de presentes do período
                 df_z = df_todos[~df_todos['nome'].isin(n_p)].copy()
                 df_z.rename(columns={'nome': 'Aluno', 'turma': 'Turma'}, inplace=True)
                 if not df_z.empty:
-                    st.warning(f"Alunos em risco: {len(df_z)}")
+                    st.warning(f"Alunos em risco no período: {len(df_z)}")
                     st.dataframe(df_z.sort_values(by=['Turma', 'Aluno']), use_container_width=True, hide_index=True)
-                    pdf_z = gerar_pdf_relatorio(df_z, "Abandono Escolar", data_hora_atual)
+                    pdf_z = gerar_pdf_relatorio(df_z, f"Abandono Escolar ({d_i.strftime('%d/%m')} a {d_f.strftime('%d/%m')})", data_hora_atual)
                     
                     if isinstance(pdf_z, bytes):
                         st.download_button("📄 Baixar Relatório", pdf_z, "abandono.pdf", "application/pdf", use_container_width=True)
                     else:
                         st.error("⚠️ Ocorreu um erro interno ao gerar o PDF.")
                         st.code(pdf_z)
-                else: st.success("Nenhum abandono detectado.")
+                else: st.success("Nenhum abandono detectado neste período.")
         except Exception as e: st.error(f"Erro: {e}")
 
     with aba_lista:
         st.subheader("🗺️ Mapa de Intensidade de Evasões")
-        
-        col_i, col_f, col_t = st.columns([1, 1, 2])
-        d_i = col_i.date_input("Início", datetime.now(fuso).date() - pd.Timedelta(days=7))
-        d_f = col_f.date_input("Fim", datetime.now(fuso).date())
         
         try:
             r_turmas = supabase.table("alunos").select("turma").execute()
@@ -276,11 +296,12 @@ def exibir_busca_ativa(supabase):
             if r_turmas.data:
                 lista_turmas += sorted(list(set([x['turma'] for x in r_turmas.data if x['turma']])))
                 
-            t_escolhida = col_t.selectbox("Selecione a Turma:", lista_turmas)
+            t_escolhida = st.selectbox("Selecione a Turma:", lista_turmas)
 
+            # Usa as datas globais escolhidas lá no topo
             res_e_mapa = supabase.table("evasoes").select("aluno_nome, turma, aula_periodo, data_registro")\
-                .gte("data_registro", d_i.strftime('%Y-%m-%d'))\
-                .lte("data_registro", d_f.strftime('%Y-%m-%d')).execute()
+                .gte("data_registro", d_i_str)\
+                .lte("data_registro", d_f_str).execute()
 
             if res_e_mapa.data:
                 df_m = pd.DataFrame(res_e_mapa.data)
@@ -324,7 +345,7 @@ def exibir_busca_ativa(supabase):
                     pdf_e = gerar_pdf_relatorio(m_ev, titulo_pdf, data_hora_atual)
                     
                     if isinstance(pdf_e, bytes):
-                        st.download_button("📄 Baixar Mapa (PDF)", pdf_e, f"mapa_evasoes_{hoje}.pdf", use_container_width=True, type="primary")
+                        st.download_button("📄 Baixar Mapa (PDF)", pdf_e, f"mapa_evasoes_{hoje_str}.pdf", use_container_width=True, type="primary")
                     else:
                         st.error("⚠️ Não foi possível gerar o PDF. Tire um print do erro abaixo:")
                         st.code(pdf_e)
@@ -356,7 +377,8 @@ def exibir_busca_ativa(supabase):
                             supabase.table("ocorrencias_disciplinares").insert({
                                 "aluno_id": al_dict[n_escolhido], "aluno_nome": n_escolhido,
                                 "turma": t_escolhida_reg, "tipo_ocorrencia": t_ac,
-                                "motivo": mot, "quem_registrou": mat, "status": "Ativa"
+                                "motivo": mot, "quem_registrou": mat, "status": "Ativa",
+                                "data_registro": hoje_str # Garante que o registro usa o dia de hoje
                             }).execute()
                             st.success("Gravado com Sucesso!")
                             st.balloons()
