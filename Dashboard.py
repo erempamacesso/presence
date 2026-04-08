@@ -394,12 +394,163 @@ elif menu == "Gerar Modelo de Prova":
         st.warning("Não há questões cadastradas no banco de dados. Vá em 'Cadastrar Questões' primeiro.")
 
 elif menu == "Provas Elaboradas":
-    st.title("📂 Gerenciamento de Provas")
-    # Listagem de provas com botões Editar, Ativar/Desativar e Excluir...
+    st.title("📂 Gerenciamento de Provas Elaboradas")
+    
+    # Busca todas as provas cadastradas no banco
+    res_m = supabase.table("modelos_prova").select("*").order("id", desc=True).execute()
+    
+    if res_m.data:
+        df_provas = pd.DataFrame(res_m.data)
+        st.write(f"Total de provas criadas: **{len(df_provas)}**")
+        st.divider()
+        
+        # Lista cada prova em um "cartão" (container)
+        for index, prova in df_provas.iterrows():
+            # Define cor e texto do status
+            is_ativa = prova.get('ativa', False)
+            status_texto = "🟢 ATIVA (Aberta para os alunos)" if is_ativa else "🔴 INATIVA (Fechada)"
+            
+            # Calcula dados básicos
+            qtd_questoes = len(prova.get('questoes_ids', []))
+            valor_q = prova.get('valor_questao', 0)
+            valor_total = qtd_questoes * valor_q
+            
+            with st.container(border=True):
+                c1, c2, c3 = st.columns([3, 1, 1.2])
+                
+                with c1:
+                    st.subheader(f"📝 {prova['titulo']}")
+                    st.write(f"**Quantidade:** {qtd_questoes} questões | **Por questão:** {valor_q} pts | **Total:** {valor_total:.1f} pts")
+                    st.markdown(f"**Status atual:** {status_texto}")
+                
+                with c2:
+                    st.write("") # Espaçamento
+                    # Botão para ativar/desativar a prova
+                    texto_btn = "⏸️ Desativar" if is_ativa else "▶️ Ativar"
+                    if st.button(texto_btn, key=f"tog_{prova['id']}", use_container_width=True):
+                        novo_status = not is_ativa
+                        try:
+                            supabase.table("modelos_prova").update({"ativa": novo_status}).eq("id", prova['id']).execute()
+                            time.sleep(0.5)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao mudar status: {e}")
+                            
+                with c3:
+                    st.write("") # Espaçamento
+                    # Botão para excluir a prova
+                    if st.button("🗑️ Excluir Prova", key=f"del_p_{prova['id']}", type="primary", use_container_width=True):
+                        try:
+                            # 1. Primeiro apagamos os resultados dessa prova (se houver) para evitar erros de dependência
+                            supabase.table("resultados_provas").delete().eq("prova_id", prova['id']).execute()
+                            # 2. Depois apagamos o modelo da prova
+                            supabase.table("modelos_prova").delete().eq("id", prova['id']).execute()
+                            
+                            st.success("Prova excluída com sucesso!")
+                            time.sleep(1)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao excluir: {e}")
+    else:
+        st.info("Nenhuma prova elaborada ainda. Vá na aba 'Gerar Modelo de Prova' para criar a primeira!")
+
 
 elif menu == "Lista de Matrículas":
     st.title("👥 Listas por Turma (PDF)")
-    # Geração de PDF de frequência...
+    st.write("Gere listas de frequência prontas para impressão com base nos alunos cadastrados.")
+    
+    # 1. Busca os alunos usando a conexão específica de alunos
+    try:
+        res_a = supabase_alunos.table("alunos").select("*").execute()
+        
+        if res_a.data:
+            df_alunos = pd.DataFrame(res_a.data)
+            
+            # Proteção caso os nomes das colunas variem no seu banco
+            coluna_turma = 'serie' if 'serie' in df_alunos.columns else ('turma' if 'turma' in df_alunos.columns else None)
+            coluna_nome = 'nome' if 'nome' in df_alunos.columns else None
+            
+            if not coluna_turma or not coluna_nome:
+                st.error("As colunas 'nome' e/ou 'serie' (ou 'turma') não foram encontradas no banco de alunos.")
+            else:
+                col_t1, col_t2 = st.columns([2, 1])
+                
+                # Dropdown para escolher a turma
+                turmas_disponiveis = sorted(df_alunos[coluna_turma].dropna().unique())
+                turma_selecionada = col_t1.selectbox("Selecione a Turma/Série:", turmas_disponiveis)
+                
+                # Filtra os alunos e coloca em ordem alfabética
+                df_turma = df_alunos[df_alunos[coluna_turma] == turma_selecionada].sort_values(by=coluna_nome)
+                
+                st.write(f"Total de alunos na turma **{turma_selecionada}**: {len(df_turma)}")
+                
+                # Exibe uma prévia na tela
+                st.dataframe(df_turma[[coluna_nome, coluna_turma]], use_container_width=True, hide_index=True)
+                
+                st.divider()
+                st.subheader("🖨️ Geração de Arquivo")
+                
+                # --- LÓGICA DO PDF ---
+                if st.button("Gerar PDF de Frequência", type="primary"):
+                    with st.spinner("Montando o PDF..."):
+                        pdf = FPDF()
+                        pdf.add_page()
+                        
+                        # Título
+                        pdf.set_font('Arial', 'B', 14)
+                        pdf.cell(0, 10, 'EREMPAM - Lista de Frequencia', ln=True, align='C')
+                        
+                        # Subtítulo (Turma)
+                        pdf.set_font('Arial', 'B', 12)
+                        # Remove acentos da turma para não dar erro no PDF
+                        turma_limpa = unicodedata.normalize('NFKD', str(turma_selecionada)).encode('ASCII', 'ignore').decode('ASCII')
+                        pdf.cell(0, 10, f'Turma: {turma_limpa}', ln=True, align='L')
+                        pdf.ln(5)
+                        
+                        # Cabeçalho da Tabela
+                        pdf.set_font('Arial', 'B', 10)
+                        pdf.cell(10, 8, 'N', border=1, align='C')
+                        pdf.cell(110, 8, 'NOME DO ALUNO', border=1, align='C')
+                        pdf.cell(20, 8, 'AULA 1', border=1, align='C')
+                        pdf.cell(20, 8, 'AULA 2', border=1, align='C')
+                        pdf.cell(20, 8, 'AULA 3', border=1, align='C')
+                        pdf.ln()
+                        
+                        # Linhas dos Alunos
+                        pdf.set_font('Arial', '', 10)
+                        for i, row in enumerate(df_turma.itertuples(), 1):
+                            nome_original = getattr(row, coluna_nome)
+                            # Remove acentos e limita o tamanho para caber na célula
+                            nome_limpo = unicodedata.normalize('NFKD', str(nome_original)).encode('ASCII', 'ignore').decode('ASCII')[:40]
+                            
+                            pdf.cell(10, 8, str(i), border=1, align='C')
+                            pdf.cell(110, 8, nome_limpo, border=1, align='L')
+                            pdf.cell(20, 8, '', border=1, align='C')
+                            pdf.cell(20, 8, '', border=1, align='C')
+                            pdf.cell(20, 8, '', border=1, align='C')
+                            pdf.ln()
+                        
+                        # Salva o PDF num arquivo temporário seguro
+                        import tempfile
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                            pdf.output(tmp.name)
+                            with open(tmp.name, "rb") as f:
+                                pdf_bytes = f.read()
+                                
+                        st.success("✅ PDF gerado com sucesso!")
+                        # Cria o botão de download real
+                        st.download_button(
+                            label="⬇️ Baixar PDF Agora",
+                            data=pdf_bytes,
+                            file_name=f"Frequencia_{turma_limpa.replace(' ', '_')}.pdf",
+                            mime="application/pdf",
+                            type="primary"
+                        )
+        else:
+            st.warning("Nenhum aluno encontrado no banco de dados 'alunos'.")
+            
+    except Exception as e:
+        st.error(f"Erro ao buscar lista de alunos ou gerar PDF: {e}")
 
 elif menu == "Central de Avisos":
     st.title("📲 Disparador de WhatsApp")
@@ -407,10 +558,153 @@ elif menu == "Central de Avisos":
         st.warning("Biblioteca 'pywhatkit' não instalada para disparos.")
     # Lógica de envio em massa...
 
+
 elif menu == "Diagnósticos IA":
     st.title("🤖 Importar Diagnósticos Pedagógicos")
-    # Lógica de colagem do JSON da IA para feedback dos alunos...
+    st.write("Vincule feedbacks gerados por Inteligência Artificial aos alunos após uma prova.")
+    
+    # Puxa as provas para o professor selecionar
+    res_provas = supabase.table("modelos_prova").select("id, titulo").order("id", desc=True).execute()
+    
+    if res_provas.data:
+        c1, c2 = st.columns([1, 1.5], gap="large")
+        
+        # ==========================================
+        # LADO ESQUERDO: SELEÇÃO E INSTRUÇÕES
+        # ==========================================
+        with c1:
+            st.subheader("1️⃣ Selecione a Prova")
+            # Cria dicionário para o selectbox associar o Título ao ID
+            provas_dict = {p['titulo']: p['id'] for p in res_provas.data}
+            prova_selecionada = st.selectbox("Vincular feedbacks à qual prova?", list(provas_dict.keys()))
+            prova_id = provas_dict[prova_selecionada]
+            
+            st.divider()
+            st.markdown("**Como usar?**")
+            st.write("1. Exporte a planilha de notas e erros para o ChatGPT/Gemini.")
+            st.write("2. Peça para a IA gerar um diagnóstico curto para cada aluno em formato JSON.")
+            st.write("3. O formato **obrigatório** deve ser:")
+            st.code('{\n  "123": "O aluno precisa revisar o assunto X.",\n  "124": "Excelente desempenho!"\n}', language="json")
+            st.caption("*Onde '123' e '124' são os IDs ou Matrículas dos alunos.*")
+            
+        # ==========================================
+        # LADO DIREITO: SALVAR NO BANCO
+        # ==========================================
+        with c2:
+            st.subheader("2️⃣ Importar Diagnósticos")
+            json_input = st.text_area("Cole o JSON da IA aqui:", height=250, placeholder='{\n  "ID_DO_ALUNO": "Feedback gerado pela IA..."\n}')
+            
+            if st.button("💾 Salvar Feedbacks no Banco", type="primary", use_container_width=True):
+                if not json_input.strip():
+                    st.warning("⚠️ Cole o código JSON antes de tentar salvar.")
+                else:
+                    try:
+                        dados_ia = json.loads(json_input)
+                        count = 0
+                        
+                        with st.spinner("Salvando feedbacks no banco de dados..."):
+                            for al_id, txt in dados_ia.items():
+                                supabase.table("feedback_ia_alunos").insert({
+                                    "aluno_id": str(al_id), # CORREÇÃO: Força string para evitar erro de tipo
+                                    "prova_id": str(prova_id),
+                                    "diagnostico_pedagogico": txt,
+                                    "revisado_professor": True
+                                }).execute()
+                                count += 1
+                                
+                        st.success(f"✅ {count} feedbacks salvos na tabela 'feedback_ia_alunos' para a prova '{prova_selecionada}'!")
+                        st.balloons()
+                        
+                    except json.JSONDecodeError:
+                        st.error("❌ Erro: O texto colado não é um JSON válido. Verifique se faltam aspas, vírgulas ou chaves ({}).")
+                    except Exception as e:
+                        st.error("❌ Erro ao salvar no banco. Mensagem:")
+                        st.code(str(e))
+    else:
+        st.warning("Nenhuma prova encontrada. Crie uma prova primeiro na aba 'Gerar Modelo de Prova'.")
 
 elif menu == "Boletim Final SIEPE":
     st.title("🏫 Consolidação de Notas SIEPE")
-    # Editor de notas AT1-AT5 e N2...
+    st.write("Preencha as notas das atividades e da prova. O sistema calculará as médias automaticamente para você lançar no portal oficial.")
+
+    # Busca todos os alunos de uma vez (usando a mesma lógica da Lista de Frequência)
+    try:
+        res_a = supabase_alunos.table("alunos").select("*").execute()
+        
+        if res_a.data:
+            df_todos = pd.DataFrame(res_a.data)
+            
+            # Descobre os nomes exatos das colunas dinamicamente para não dar erro
+            col_t = 'turma' if 'turma' in df_todos.columns else ('serie' if 'serie' in df_todos.columns else None)
+            col_n = 'nome' if 'nome' in df_todos.columns else ('Nome' if 'Nome' in df_todos.columns else ('aluno' if 'aluno' in df_todos.columns else None))
+            
+            if col_t and col_n:
+                turmas_list = sorted(df_todos[col_t].dropna().unique())
+                turma_sel = st.selectbox("Selecione a Turma:", turmas_list)
+                
+                if turma_sel:
+                    # Filtra os alunos da turma selecionada e coloca em ordem alfabética
+                    df_turma = df_todos[df_todos[col_t] == turma_sel].sort_values(by=col_n).copy()
+                    
+                    # Criamos uma tabela limpa garantindo que a coluna se chame 'nome'
+                    df_tabela = pd.DataFrame()
+                    df_tabela['nome'] = df_turma[col_n]
+                    
+                    # Adiciona as colunas de notas com valor zero
+                    colunas_notas = ['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N2']
+                    for col in colunas_notas:
+                        df_tabela[col] = 0.0
+                            
+                    st.divider()
+                    st.subheader(f"📝 Lançamento de Notas - {turma_sel}")
+                    st.info("💡 Dica: Clique duas vezes dentro de uma célula para editar o valor. Pressione Enter para confirmar.")
+                    
+                    # Tabela editável na tela
+                    df_editado = st.data_editor(
+                        df_tabela,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "nome": st.column_config.TextColumn("Nome do Aluno", disabled=True),
+                            "AT1": st.column_config.NumberColumn("AT1", min_value=0.0, max_value=10.0, format="%.1f", step=0.5),
+                            "AT2": st.column_config.NumberColumn("AT2", min_value=0.0, max_value=10.0, format="%.1f", step=0.5),
+                            "AT3": st.column_config.NumberColumn("AT3", min_value=0.0, max_value=10.0, format="%.1f", step=0.5),
+                            "AT4": st.column_config.NumberColumn("AT4", min_value=0.0, max_value=10.0, format="%.1f", step=0.5),
+                            "AT5": st.column_config.NumberColumn("AT5", min_value=0.0, max_value=10.0, format="%.1f", step=0.5),
+                            "N2": st.column_config.NumberColumn("N2 (Prova)", min_value=0.0, max_value=10.0, format="%.1f", step=0.5)
+                        }
+                    )
+                    
+                    # Lógica de cálculo (N1 = Média das ATs, Final = Média entre N1 e N2)
+                    df_editado['N1 (Média das ATs)'] = df_editado[['AT1', 'AT2', 'AT3', 'AT4', 'AT5']].mean(axis=1)
+                    df_editado['Média Final'] = (df_editado['N1 (Média das ATs)'] + df_editado['N2']) / 2
+                    
+                    # Arredondamento
+                    df_editado['N1 (Média das ATs)'] = df_editado['N1 (Média das ATs)'].round(1)
+                    df_editado['Média Final'] = df_editado['Média Final'].round(1)
+                    
+                    st.divider()
+                    st.subheader("📊 Resultado e Exportação")
+                    
+                    # Exibe os resultados
+                    st.dataframe(df_editado[['nome', 'N1 (Média das ATs)', 'N2', 'Média Final']], use_container_width=True, hide_index=True)
+                    
+                    # Gerador de Excel
+                    output = io.BytesIO()
+                    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                        df_editado.to_excel(writer, sheet_name=f"Notas_{turma_sel}", index=False)
+                    
+                    st.download_button(
+                        label="📥 Baixar Planilha Pronta para o SIEPE (Excel)",
+                        data=output.getvalue(),
+                        file_name=f"Boletim_SIEPE_{turma_sel.replace(' ', '_')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        type="primary"
+                    )
+            else:
+                st.error("As colunas de turma/série ou nome não foram encontradas no banco de alunos.")
+        else:
+            st.info("Banco de alunos vazio ou sem turmas cadastradas.")
+            
+    except Exception as e:
+        st.error(f"Erro ao carregar dados do SIEPE: {e}")
