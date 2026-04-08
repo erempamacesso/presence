@@ -497,7 +497,7 @@ elif menu == "Lista de Matrículas":
                 if col_m in df_alunos.columns:
                     df_exibir = df_exibir.rename(columns={col_m: "Matrícula"})
                 
-                st.dataframe(df_exibir, use_container_width=True, hide_index=True)
+                st.dataframe(df_exibir, use_container_width=False, hide_index=True)
 
                 st.divider()
 
