@@ -145,100 +145,96 @@ if menu == "Análise de Dados":
             st.info("Sem respostas para esta avaliação.")
 
 elif menu == "Cadastrar Questões":
-    st.title("🖊️ Cadastro de Questões (Texto + Imagens)")
+    st.title("🖊️ Cadastro de Questões (Upload de Imagens)")
     
-    tab1, tab2 = st.tabs(["📝 Cadastro Individual", "⚡ Importação Flash (JSON)"])
+    # --- FUNÇÃO DE UPLOAD PARA O SUPABASE STORAGE ---
+    def upload_imagem(arquivo_upload):
+        if arquivo_upload is not None:
+            try:
+                # Gera um nome único para o arquivo
+                nome_unico = f"{int(time.time())}_{arquivo_upload.name.replace(' ', '_')}"
+                # Faz o upload para o bucket 'imagens'
+                res = supabase.storage.from_("imagens").upload(
+                    path=nome_unico, 
+                    file=arquivo_upload.getvalue(),
+                    file_options={"content-type": arquivo_upload.type}
+                )
+                # Pega a URL pública
+                return supabase.storage.from_("imagens").get_public_url(nome_unico)
+            except Exception as e:
+                st.error(f"Erro no upload da imagem: {e}")
+                return ""
+        return ""
+
+    tab1, tab2 = st.tabs(["📝 Cadastro Individual", "⚡ Importação Flash"])
     
     with tab1:
-        with st.form("form_nova_questao_completo", clear_on_submit=True):
+        with st.form("form_nova_questao_upload", clear_on_submit=True):
             st.subheader("1️⃣ Enunciado")
-            # Editor rico para o corpo da questão
-            enunciado = st_quill(
-                placeholder="Digite o enunciado aqui...",
-                html=True,
-                key="quill_cadastro_full"
-            )
+            enunciado = st_quill(placeholder="Digite o enunciado...", html=True, key="quill_up")
             
-            col_mat, col_ass = st.columns(2)
-            with col_mat:
-                materia = st.selectbox("Disciplina", 
-                    ["Matemática", "Português", "Física", "Química", "Biologia", 
-                     "História", "Geografia", "Inglês", "Espanhol", "Sociologia", "Filosofia"])
-            with col_ass:
-                assunto = st.text_input("Assunto", placeholder="Ex: Frações")
+            col_m, col_a = st.columns(2)
+            materia = col_m.selectbox("Disciplina", ["Matemática", "Português", "Física", "Química", "Biologia", "História", "Geografia"])
+            assunto = col_a.text_input("Assunto")
 
             st.divider()
-            st.subheader("2️⃣ Alternativas")
-            st.info("Você pode preencher apenas o texto, apenas a URL da imagem, ou ambos.")
+            st.subheader("2️⃣ Alternativas (Faça Upload da Imagem ou digite o texto)")
             
-            # Dicionário para armazenar os dados das alternativas
-            alts_dados = {}
+            # Arrays para segurar os uploads temporariamente
+            textos_alts = {}
+            arquivos_alts = {}
             
             for letra in ["A", "B", "C", "D", "E"]:
-                with st.container():
-                    col_t, col_i = st.columns([2, 1])
-                    txt = col_t.text_input(f"Texto da {letra})", key=f"input_txt_{letra}")
-                    img_url = col_i.text_input(f"URL da Imagem {letra})", key=f"input_img_{letra}", placeholder="http://...")
-                    
-                    # Salva no formato estruturado
-                    alts_dados[letra] = {"texto": txt, "imagem": img_url}
-                    
-                    # Preview da imagem se a URL for preenchida
-                    if img_url:
-                        st.image(img_url, caption=f"Preview da imagem {letra}", width=150)
+                c_txt, c_up = st.columns([2, 1])
+                textos_alts[letra] = c_txt.text_input(f"Texto da {letra})", key=f"t_{letra}")
+                # BOTÃO DE CARREGAR IMAGEM
+                arquivos_alts[letra] = c_up.file_uploader(f"Anexar Img {letra}", type=['png', 'jpg', 'jpeg'], key=f"f_{letra}")
 
             st.divider()
             st.subheader("3️⃣ Resposta Correta")
-            correta = st.radio("Selecione a alternativa correta:", ["A", "B", "C", "D", "E"], horizontal=True)
+            correta = st.radio("Selecione a correta:", ["A", "B", "C", "D", "E"], horizontal=True)
             
-            st.write("---")
-            btn_salvar = st.form_submit_button("💾 Salvar na Biblioteca", type="primary", use_container_width=True)
+            btn_salvar = st.form_submit_button("💾 Salvar na Biblioteca e Fazer Upload", type="primary")
 
             if btn_salvar:
                 if not enunciado or len(enunciado) < 5:
-                    st.error("❌ Por favor, preencha o enunciado da questão.")
+                    st.error("Preencha o enunciado!")
                 else:
-                    dados_final = {
-                        "enunciado": enunciado,
-                        "materia": materia,
-                        "assunto": assunto,
-                        "alternativas": alts_dados, # Dicionário estruturado
-                        "correta": correta,
-                        "revisada": True
-                    }
-                    try:
-                        supabase.table("questoes").insert(dados_final).execute()
-                        st.success("✅ Questão cadastrada com sucesso!")
-                        st.balloons()
-                    except Exception as e:
-                        st.error(f"❌ Erro ao salvar no banco: {e}")
+                    with st.spinner("Fazendo upload das imagens e salvando..."):
+                        alts_dados = {}
+                        
+                        # Processa cada alternativa
+                        for letra in ["A", "B", "C", "D", "E"]:
+                            # Se tiver arquivo, faz upload e pega a URL. Se não, URL fica vazia.
+                            url_final = upload_imagem(arquivos_alts[letra])
+                            alts_dados[letra] = {
+                                "texto": textos_alts[letra],
+                                "imagem": url_final
+                            }
+
+                        dados_final = {
+                            "enunciado": enunciado,
+                            "materia": materia,
+                            "assunto": assunto,
+                            "alternativas": alts_dados,
+                            "correta": correta,
+                            "revisada": True
+                        }
+                        
+                        try:
+                            supabase.table("questoes").insert(dados_final).execute()
+                            st.success("✅ Questão e imagens salvas com sucesso!")
+                        except Exception as e:
+                            st.error(f"Erro ao salvar no banco: {e}")
 
     with tab2:
         st.subheader("⚡ Importador Flash")
-        st.write("Cole abaixo o JSON gerado pela IA. Certifique-se de que a estrutura das alternativas siga o novo padrão `{ 'A': {'texto': '...', 'imagem': '...'} }` se quiser incluir imagens.")
-        
-        json_input = st.text_area("JSON de Questões:", height=300)
-        
-        if st.button("🚀 Iniciar Importação", use_container_width=True):
-            if json_input:
-                try:
-                    lista_q = json.loads(json_input)
-                    count = 0
-                    for q in lista_q:
-                        # Pequena limpeza para evitar erros de colunas inexistentes
-                        limpo = {
-                            "enunciado": q.get("enunciado", ""),
-                            "materia": q.get("materia", "Geral"),
-                            "assunto": q.get("assunto", ""),
-                            "alternativas": q.get("alternativas", {}),
-                            "correta": q.get("correta", "A"),
-                            "revisada": True
-                        }
-                        supabase.table("questoes").insert(limpo).execute()
-                        count += 1
-                    st.success(f"✅ {count} questões importadas com sucesso!")
-                except Exception as e:
-                    st.error(f"Erro ao processar JSON: {e}")
+        json_input = st.text_area("JSON de Questões:")
+        if st.button("🚀 Iniciar Importação"):
+            try:
+                for q in json.loads(json_input): supabase.table("questoes").insert(q).execute()
+                st.success("Importado!")
+            except: st.error("Erro JSON")
 
 elif menu == "Biblioteca de Questões":
     st.title("📚 Biblioteca de Questões")
