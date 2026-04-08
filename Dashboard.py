@@ -632,6 +632,8 @@ elif menu == "Diagnósticos IA":
     else:
         st.warning("Nenhuma prova encontrada. Crie uma prova primeiro na aba 'Gerar Modelo de Prova'.")
 
+# BLOCO DAS NOTAS TRIMESTRE #
+
 elif menu == "Boletim Final SIEPE":
     st.title("🏫 Consolidação de Notas SIEPE")
     st.write("Preencha as notas ou importe-as das avaliações online. O sistema calculará as médias automaticamente.")
@@ -664,7 +666,7 @@ elif menu == "Boletim Final SIEPE":
                         df_tabela[col_nota] = 0.0
 
                     # =====================================================================
-                    # 🔄 NOVO: MÓDULO DE IMPORTAÇÃO AUTOMÁTICA
+                    # 🔄 MÓDULO DE IMPORTAÇÃO AUTOMÁTICA
                     # =====================================================================
                     st.divider()
                     with st.expander("📥 Importar Notas de Provas Online", expanded=False):
@@ -704,11 +706,12 @@ elif menu == "Boletim Final SIEPE":
                                         df_nomes_map = pd.DataFrame(res_al_nomes.data)
                                         df_nomes_map['id'] = df_nomes_map['id'].astype(str)
                                         
-                                        df_final_map = pd.merge(df_nomes_map, df_notas_calc, on="id")
+                                        # A CORREÇÃO FOI FEITA AQUI NESTA LINHA ABAIXO (left_on e right_on):
+                                        df_final_map = pd.merge(df_nomes_map, df_notas_calc, left_on="id", right_on="aluno_id")
                                         mapa_notas = dict(zip(df_final_map['nome'], df_final_map['nota_final']))
                                         
                                         # Aplica na tabela que vai para o editor
-                                        df_tabela[coluna_destino] = df_tabela['nome'].map(mapa_notas).fillna(0.0)
+                                        df_tabela[coluna_destino] = df_tabela['nome'].map(mapa_notas).fillna(df_tabela[coluna_destino])
                                         st.success(f"✅ Notas de '{prova_selecionada}' carregadas em {coluna_destino}!")
                                 else:
                                     st.warning("Nenhum resultado encontrado para esta prova.")
@@ -734,7 +737,6 @@ elif menu == "Boletim Final SIEPE":
                     )
                     
                     # Cálculos automáticos
-                    # axis=1 calcula a média da linha (horizontal)
                     df_editado['N1 (Média)'] = df_editado[['AT1', 'AT2', 'AT3', 'AT4', 'AT5']].mean(axis=1).round(1)
                     df_editado['Média Final'] = ((df_editado['N1 (Média)'] + df_editado['N2']) / 2).round(1)
                     
