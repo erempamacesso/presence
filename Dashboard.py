@@ -146,9 +146,88 @@ if menu == "Análise de Dados":
 
 elif menu == "Cadastrar Questões":
     st.title("🖊️ Cadastro de Questões")
-    # Lógica de cadastro manual e importação JSON...
-    # (Mantenha seu código de importação JSON aqui, ele estava funcional)
-    st.info("Use o Importador Flash para colagens em massa via IA.")
+    
+    tab1, tab2 = st.tabs(["📝 Cadastro Individual", "⚡ Importação Flash (IA/JSON)"])
+    
+    with tab1:
+        with st.form("form_nova_questao", clear_on_submit=True):
+            st.subheader("Enunciado da Questão")
+            # Editor de texto rico para fórmulas e formatação
+            enunciado = st_quill(
+                placeholder="Digite ou cole o enunciado aqui...",
+                html=True,
+                key="quill_cadastro"
+            )
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                materia = st.selectbox("Disciplina", 
+                    ["Matemática", "Português", "Física", "Química", "Biologia", 
+                     "História", "Geografia", "Inglês", "Espanhol", "Sociologia", "Filosofia"])
+            with col2:
+                assunto = st.text_input("Assunto Específico", placeholder="Ex: Estequiometria")
+
+            st.divider()
+            st.write("**Alternativas:**")
+            colA, colB = st.columns(2)
+            alt_a = colA.text_input("A)", placeholder="Texto da alternativa A")
+            alt_b = colB.text_input("B)", placeholder="Texto da alternativa B")
+            alt_c = colA.text_input("C)", placeholder="Texto da alternativa C")
+            alt_d = colB.text_input("D)", placeholder="Texto da alternativa D")
+            alt_e = st.text_input("E)", placeholder="Texto da alternativa E")
+            
+            correta = st.radio("Qual é a alternativa correta?", 
+                             ["A", "B", "C", "D", "E"], horizontal=True)
+            
+            btn_salvar = st.form_submit_button("💾 Salvar Questão na Biblioteca", type="primary")
+
+            if btn_salvar:
+                if not enunciado or len(enunciado) < 10:
+                    st.error("O enunciado está muito curto ou vazio!")
+                else:
+                    dados_q = {
+                        "enunciado": enunciado,
+                        "materia": materia,
+                        "assunto": assunto,
+                        "alternativas": {
+                            "A": alt_a, "B": alt_b, "C": alt_c, "D": alt_d, "E": alt_e
+                        },
+                        "correta": correta,
+                        "revisada": True
+                    }
+                    try:
+                        supabase.table("questoes").insert(dados_q).execute()
+                        st.success("✅ Questão salva com sucesso!")
+                        st.balloons()
+                    except Exception as e:
+                        st.error(f"Erro ao salvar: {e}")
+
+    with tab2:
+        st.subheader("⚡ Importador em Massa")
+        st.info("Cole abaixo o código JSON gerado pela IA (ChatGPT/Gemini) para cadastrar várias questões de uma vez.")
+        
+        json_input = st.text_area("Cole o JSON aqui:", height=300, 
+                                 placeholder='[\n  {\n    "enunciado": "...", \n    "materia": "...", \n    "alternativas": {...}, \n    "correta": "A"\n  }\n]')
+        
+        if st.button("🚀 Iniciar Importação em Massa", use_container_width=True):
+            if json_input:
+                try:
+                    lista_questoes = json.loads(json_input)
+                    if isinstance(lista_questoes, list):
+                        sucessos = 0
+                        for q in lista_questoes:
+                            # Garante que campos extras não quebrem o banco
+                            limpo = {k: q[k] for k in ["enunciado", "materia", "assunto", "alternativas", "correta"] if k in q}
+                            limpo["revisada"] = True
+                            supabase.table("questoes").insert(limpo).execute()
+                            sucessos += 1
+                        st.success(f"✅ {sucessos} questões importadas com sucesso!")
+                    else:
+                        st.error("O JSON deve ser uma lista de questões [ {...}, {...} ]")
+                except Exception as e:
+                    st.error(f"Erro no processamento do JSON: {e}")
+
+
 
 elif menu == "Biblioteca de Questões":
     if 'editando_id' not in st.session_state: st.session_state.editando_id = None
