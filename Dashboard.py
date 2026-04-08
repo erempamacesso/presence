@@ -244,38 +244,46 @@ elif menu == "Biblioteca de Questões":
     if res_q.data:
         df_q = pd.DataFrame(res_q.data)
         
+        # Proteção extra: se alguma coluna antiga faltar, ele cria vazia para não dar erro
+        if 'serie' not in df_q.columns: df_q['serie'] = "Geral"
+        if 'assunto' not in df_q.columns: df_q['assunto'] = ""
+        
         col_f1, col_f2 = st.columns(2)
         with col_f1:
-            filtro_mat = st.multiselect("Filtrar por Disciplina:", options=sorted(df_q['materia'].unique()))
+            # Puxa o filtro pela SÉRIE, igual era antes
+            filtro_serie = st.multiselect("Filtrar por Série:", options=sorted(df_q['serie'].dropna().unique()))
         with col_f2:
             busca_assunto = st.text_input("Buscar por Assunto:")
 
-        if filtro_mat: df_q = df_q[df_q['materia'].isin(filtro_mat)]
+        if filtro_serie: df_q = df_q[df_q['serie'].isin(filtro_serie)]
         if busca_assunto: df_q = df_q[df_q['assunto'].str.contains(busca_assunto, case=False, na=False)]
 
         st.write(f"Exibindo **{len(df_q)}** questões.")
         st.divider()
 
         for index, row in df_q.iterrows():
-            with st.expander(f"ID {row['id']} | {row['materia']} - {row['assunto']}"):
+            # Exibe os dados garantindo que não vai dar erro se a coluna estiver vazia
+            str_serie = row.get('serie', '')
+            str_assunto = row.get('assunto', '')
+            
+            with st.expander(f"ID {row['id']} | {str_serie} - {str_assunto}"):
                 st.markdown(row['enunciado'], unsafe_allow_html=True)
                 st.write("**Alternativas:**")
                 
-                # --- BLINDAGEM CONTRA O ERRO (Lida com texto antigo e dicionário novo) ---
-                alts = row['alternativas']
-                
-                # Se vier como string do banco, tenta converter para dicionário
+                # Trata as alternativas
+                alts = row.get('alternativas', {})
                 if isinstance(alts, str):
                     try:
                         alts = json.loads(alts.replace("'", '"'))
                     except:
-                        alts = {} # Previne travamento total se a string for muito maluca
+                        alts = {}
                 
+                resposta_certa = row.get('resposta_correta', 'A')
+
                 if isinstance(alts, dict):
-                    for letra in ["A", "B", "C", "D", "E"]:
+                    for letra in ["A", "B", "C", "D"]:
                         item = alts.get(letra, "")
                         
-                        # Verifica se é o formato novo (com imagem) ou antigo (só texto)
                         if isinstance(item, dict):
                             txt_alt = item.get("texto", "")
                             url_img = item.get("imagem", "")
@@ -283,8 +291,8 @@ elif menu == "Biblioteca de Questões":
                             txt_alt = str(item)
                             url_img = ""
 
-                        cor = "green" if letra == row['correta'] else "black"
-                        marcador = "✅" if letra == row['correta'] else "⚪"
+                        cor = "green" if letra == resposta_certa else "black"
+                        marcador = "✅" if letra == resposta_certa else "⚪"
                         
                         st.markdown(f"<span style='color:{cor}'>{marcador} **{letra})** {txt_alt}</span>", unsafe_allow_html=True)
                         
