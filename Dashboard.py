@@ -457,100 +457,86 @@ elif menu == "Provas Elaboradas":
 
 elif menu == "Lista de Matrículas":
     st.title("👥 Listas por Turma (PDF)")
-    st.write("Gere listas de frequência prontas para impressão com base nos alunos cadastrados.")
-    
-    # 1. Busca os alunos usando a conexão específica de alunos
+    st.write("Gere listas de frequência prontas para impressão.")
+
     try:
+        # Busca os alunos
         res_a = supabase_alunos.table("alunos").select("*").execute()
         
         if res_a.data:
             df_alunos = pd.DataFrame(res_a.data)
             
-            # Proteção caso os nomes das colunas variem no seu banco
-            coluna_turma = 'serie' if 'serie' in df_alunos.columns else ('turma' if 'turma' in df_alunos.columns else None)
-            coluna_nome = 'nome' if 'nome' in df_alunos.columns else None
-            
-            if not coluna_turma or not coluna_nome:
-                st.error("As colunas 'nome' e/ou 'serie' (ou 'turma') não foram encontradas no banco de alunos.")
+            # --- DESCOBERTA DINÂMICA DE COLUNAS ---
+            # Mesma lógica que funcionou no seu Boletim
+            col_t = 'turma' if 'turma' in df_alunos.columns else ('serie' if 'serie' in df_alunos.columns else None)
+            col_n = 'nome' if 'nome' in df_alunos.columns else ('Nome' if 'Nome' in df_alunos.columns else ('aluno' if 'aluno' in df_alunos.columns else None))
+
+            if not col_t or not col_n:
+                st.error(f"Não encontrei as colunas de Nome ou Turma. Colunas atuais: {list(df_alunos.columns)}")
             else:
-                col_t1, col_t2 = st.columns([2, 1])
+                # Seletor de Turma
+                turmas_disponiveis = sorted(df_alunos[col_t].dropna().unique())
+                turma_selecionada = st.selectbox("Selecione a Turma para gerar o PDF:", turmas_disponiveis)
+
+                # Filtro e Ordenação
+                df_turma = df_alunos[df_alunos[col_t] == turma_selecionada].sort_values(by=col_n)
                 
-                # Dropdown para escolher a turma
-                turmas_disponiveis = sorted(df_alunos[coluna_turma].dropna().unique())
-                turma_selecionada = col_t1.selectbox("Selecione a Turma/Série:", turmas_disponiveis)
-                
-                # Filtra os alunos e coloca em ordem alfabética
-                df_turma = df_alunos[df_alunos[coluna_turma] == turma_selecionada].sort_values(by=coluna_nome)
-                
-                st.write(f"Total de alunos na turma **{turma_selecionada}**: {len(df_turma)}")
-                
-                # Exibe uma prévia na tela
-                st.dataframe(df_turma[[coluna_nome, coluna_turma]], use_container_width=True, hide_index=True)
-                
+                st.write(f"Alunos encontrados: **{len(df_turma)}**")
+                st.dataframe(df_turma[[col_n, col_t]], use_container_width=True, hide_index=True)
+
                 st.divider()
-                st.subheader("🖨️ Geração de Arquivo")
+
+                # --- GERAÇÃO DO PDF ---
+                # Geramos o PDF automaticamente quando a turma é selecionada para o botão de download estar sempre pronto
+                pdf = FPDF()
+                pdf.add_page()
+                pdf.set_font('Arial', 'B', 14)
+                pdf.cell(0, 10, 'EREMPAM - LISTA DE FREQUENCIA', ln=True, align='C')
                 
-                # --- LÓGICA DO PDF ---
-                if st.button("Gerar PDF de Frequência", type="primary"):
-                    with st.spinner("Montando o PDF..."):
-                        pdf = FPDF()
-                        pdf.add_page()
-                        
-                        # Título
-                        pdf.set_font('Arial', 'B', 14)
-                        pdf.cell(0, 10, 'EREMPAM - Lista de Frequencia', ln=True, align='C')
-                        
-                        # Subtítulo (Turma)
-                        pdf.set_font('Arial', 'B', 12)
-                        # Remove acentos da turma para não dar erro no PDF
-                        turma_limpa = unicodedata.normalize('NFKD', str(turma_selecionada)).encode('ASCII', 'ignore').decode('ASCII')
-                        pdf.cell(0, 10, f'Turma: {turma_limpa}', ln=True, align='L')
-                        pdf.ln(5)
-                        
-                        # Cabeçalho da Tabela
-                        pdf.set_font('Arial', 'B', 10)
-                        pdf.cell(10, 8, 'N', border=1, align='C')
-                        pdf.cell(110, 8, 'NOME DO ALUNO', border=1, align='C')
-                        pdf.cell(20, 8, 'AULA 1', border=1, align='C')
-                        pdf.cell(20, 8, 'AULA 2', border=1, align='C')
-                        pdf.cell(20, 8, 'AULA 3', border=1, align='C')
-                        pdf.ln()
-                        
-                        # Linhas dos Alunos
-                        pdf.set_font('Arial', '', 10)
-                        for i, row in enumerate(df_turma.itertuples(), 1):
-                            nome_original = getattr(row, coluna_nome)
-                            # Remove acentos e limita o tamanho para caber na célula
-                            nome_limpo = unicodedata.normalize('NFKD', str(nome_original)).encode('ASCII', 'ignore').decode('ASCII')[:40]
-                            
-                            pdf.cell(10, 8, str(i), border=1, align='C')
-                            pdf.cell(110, 8, nome_limpo, border=1, align='L')
-                            pdf.cell(20, 8, '', border=1, align='C')
-                            pdf.cell(20, 8, '', border=1, align='C')
-                            pdf.cell(20, 8, '', border=1, align='C')
-                            pdf.ln()
-                        
-                        # Salva o PDF num arquivo temporário seguro
-                        import tempfile
-                        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                            pdf.output(tmp.name)
-                            with open(tmp.name, "rb") as f:
-                                pdf_bytes = f.read()
-                                
-                        st.success("✅ PDF gerado com sucesso!")
-                        # Cria o botão de download real
-                        st.download_button(
-                            label="⬇️ Baixar PDF Agora",
-                            data=pdf_bytes,
-                            file_name=f"Frequencia_{turma_limpa.replace(' ', '_')}.pdf",
-                            mime="application/pdf",
-                            type="primary"
-                        )
+                # Nome da Turma sem acentos para o PDF
+                t_limpa = unicodedata.normalize('NFKD', str(turma_selecionada)).encode('ASCII', 'ignore').decode('ASCII')
+                pdf.set_font('Arial', 'B', 12)
+                pdf.cell(0, 10, f'TURMA: {t_limpa}', ln=True, align='L')
+                pdf.ln(5)
+
+                # Cabeçalho
+                pdf.set_font('Arial', 'B', 10)
+                pdf.cell(10, 8, 'N', border=1, align='C')
+                pdf.cell(110, 8, 'NOME DO ALUNO', border=1, align='C')
+                pdf.cell(20, 8, 'AULA 1', border=1, align='C')
+                pdf.cell(20, 8, 'AULA 2', border=1, align='C')
+                pdf.cell(20, 8, 'AULA 3', border=1, align='C')
+                pdf.ln()
+
+                # Linhas
+                pdf.set_font('Arial', '', 10)
+                for i, row in enumerate(df_turma.itertuples(), 1):
+                    nome_original = str(getattr(row, col_n))
+                    nome_pdf = unicodedata.normalize('NFKD', nome_original).encode('ASCII', 'ignore').decode('ASCII')[:40]
+                    
+                    pdf.cell(10, 8, str(i), border=1, align='C')
+                    pdf.cell(110, 8, nome_pdf, border=1, align='L')
+                    pdf.cell(20, 8, '', border=1, align='C')
+                    pdf.cell(20, 8, '', border=1, align='C')
+                    pdf.cell(20, 8, '', border=1, align='C')
+                    pdf.ln()
+
+                # Transformar PDF em bytes para o download
+                pdf_output = pdf.output(dest='S').encode('latin-1', errors='ignore')
+
+                st.download_button(
+                    label="📥 Baixar Lista de Frequência (PDF)",
+                    data=pdf_output,
+                    file_name=f"Frequencia_{t_limpa.replace(' ', '_')}.pdf",
+                    mime="application/pdf",
+                    type="primary",
+                    use_container_width=True
+                )
         else:
-            st.warning("Nenhum aluno encontrado no banco de dados 'alunos'.")
-            
+            st.warning("Nenhum dado de aluno encontrado.")
+
     except Exception as e:
-        st.error(f"Erro ao buscar lista de alunos ou gerar PDF: {e}")
+        st.error(f"Erro no menu de Matrículas: {e}")
 
 elif menu == "Central de Avisos":
     st.title("📲 Disparador de WhatsApp")
