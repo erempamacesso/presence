@@ -145,101 +145,175 @@ if menu == "Análise de Dados":
             st.info("Sem respostas para esta avaliação.")
 
 elif menu == "Cadastrar Questões":
-    st.title("🖊️ Cadastro de Questões")
+    st.title("🖊️ Cadastro de Questões (Texto + Imagens)")
     
-    tab1, tab2 = st.tabs(["📝 Cadastro Individual", "⚡ Importação Flash (IA/JSON)"])
+    tab1, tab2 = st.tabs(["📝 Cadastro Individual", "⚡ Importação Flash (JSON)"])
     
     with tab1:
-        with st.form("form_nova_questao", clear_on_submit=True):
-            st.subheader("Enunciado da Questão")
-            # Editor de texto rico para fórmulas e formatação
+        with st.form("form_nova_questao_completo", clear_on_submit=True):
+            st.subheader("1️⃣ Enunciado")
+            # Editor rico para o corpo da questão
             enunciado = st_quill(
-                placeholder="Digite ou cole o enunciado aqui...",
+                placeholder="Digite o enunciado aqui...",
                 html=True,
-                key="quill_cadastro"
+                key="quill_cadastro_full"
             )
             
-            col1, col2 = st.columns(2)
-            with col1:
+            col_mat, col_ass = st.columns(2)
+            with col_mat:
                 materia = st.selectbox("Disciplina", 
                     ["Matemática", "Português", "Física", "Química", "Biologia", 
                      "História", "Geografia", "Inglês", "Espanhol", "Sociologia", "Filosofia"])
-            with col2:
-                assunto = st.text_input("Assunto Específico", placeholder="Ex: Estequiometria")
+            with col_ass:
+                assunto = st.text_input("Assunto", placeholder="Ex: Frações")
 
             st.divider()
-            st.write("**Alternativas:**")
-            colA, colB = st.columns(2)
-            alt_a = colA.text_input("A)", placeholder="Texto da alternativa A")
-            alt_b = colB.text_input("B)", placeholder="Texto da alternativa B")
-            alt_c = colA.text_input("C)", placeholder="Texto da alternativa C")
-            alt_d = colB.text_input("D)", placeholder="Texto da alternativa D")
-            alt_e = st.text_input("E)", placeholder="Texto da alternativa E")
+            st.subheader("2️⃣ Alternativas")
+            st.info("Você pode preencher apenas o texto, apenas a URL da imagem, ou ambos.")
             
-            correta = st.radio("Qual é a alternativa correta?", 
-                             ["A", "B", "C", "D", "E"], horizontal=True)
+            # Dicionário para armazenar os dados das alternativas
+            alts_dados = {}
             
-            btn_salvar = st.form_submit_button("💾 Salvar Questão na Biblioteca", type="primary")
+            for letra in ["A", "B", "C", "D", "E"]:
+                with st.container():
+                    col_t, col_i = st.columns([2, 1])
+                    txt = col_t.text_input(f"Texto da {letra})", key=f"input_txt_{letra}")
+                    img_url = col_i.text_input(f"URL da Imagem {letra})", key=f"input_img_{letra}", placeholder="http://...")
+                    
+                    # Salva no formato estruturado
+                    alts_dados[letra] = {"texto": txt, "imagem": img_url}
+                    
+                    # Preview da imagem se a URL for preenchida
+                    if img_url:
+                        st.image(img_url, caption=f"Preview da imagem {letra}", width=150)
+
+            st.divider()
+            st.subheader("3️⃣ Resposta Correta")
+            correta = st.radio("Selecione a alternativa correta:", ["A", "B", "C", "D", "E"], horizontal=True)
+            
+            st.write("---")
+            btn_salvar = st.form_submit_button("💾 Salvar na Biblioteca", type="primary", use_container_width=True)
 
             if btn_salvar:
-                if not enunciado or len(enunciado) < 10:
-                    st.error("O enunciado está muito curto ou vazio!")
+                if not enunciado or len(enunciado) < 5:
+                    st.error("❌ Por favor, preencha o enunciado da questão.")
                 else:
-                    dados_q = {
+                    dados_final = {
                         "enunciado": enunciado,
                         "materia": materia,
                         "assunto": assunto,
-                        "alternativas": {
-                            "A": alt_a, "B": alt_b, "C": alt_c, "D": alt_d, "E": alt_e
-                        },
+                        "alternativas": alts_dados, # Dicionário estruturado
                         "correta": correta,
                         "revisada": True
                     }
                     try:
-                        supabase.table("questoes").insert(dados_q).execute()
-                        st.success("✅ Questão salva com sucesso!")
+                        supabase.table("questoes").insert(dados_final).execute()
+                        st.success("✅ Questão cadastrada com sucesso!")
                         st.balloons()
                     except Exception as e:
-                        st.error(f"Erro ao salvar: {e}")
+                        st.error(f"❌ Erro ao salvar no banco: {e}")
 
     with tab2:
-        st.subheader("⚡ Importador em Massa")
-        st.info("Cole abaixo o código JSON gerado pela IA (ChatGPT/Gemini) para cadastrar várias questões de uma vez.")
+        st.subheader("⚡ Importador Flash")
+        st.write("Cole abaixo o JSON gerado pela IA. Certifique-se de que a estrutura das alternativas siga o novo padrão `{ 'A': {'texto': '...', 'imagem': '...'} }` se quiser incluir imagens.")
         
-        json_input = st.text_area("Cole o JSON aqui:", height=300, 
-                                 placeholder='[\n  {\n    "enunciado": "...", \n    "materia": "...", \n    "alternativas": {...}, \n    "correta": "A"\n  }\n]')
+        json_input = st.text_area("JSON de Questões:", height=300)
         
-        if st.button("🚀 Iniciar Importação em Massa", use_container_width=True):
+        if st.button("🚀 Iniciar Importação", use_container_width=True):
             if json_input:
                 try:
-                    lista_questoes = json.loads(json_input)
-                    if isinstance(lista_questoes, list):
-                        sucessos = 0
-                        for q in lista_questoes:
-                            # Garante que campos extras não quebrem o banco
-                            limpo = {k: q[k] for k in ["enunciado", "materia", "assunto", "alternativas", "correta"] if k in q}
-                            limpo["revisada"] = True
-                            supabase.table("questoes").insert(limpo).execute()
-                            sucessos += 1
-                        st.success(f"✅ {sucessos} questões importadas com sucesso!")
-                    else:
-                        st.error("O JSON deve ser uma lista de questões [ {...}, {...} ]")
+                    lista_q = json.loads(json_input)
+                    count = 0
+                    for q in lista_q:
+                        # Pequena limpeza para evitar erros de colunas inexistentes
+                        limpo = {
+                            "enunciado": q.get("enunciado", ""),
+                            "materia": q.get("materia", "Geral"),
+                            "assunto": q.get("assunto", ""),
+                            "alternativas": q.get("alternativas", {}),
+                            "correta": q.get("correta", "A"),
+                            "revisada": True
+                        }
+                        supabase.table("questoes").insert(limpo).execute()
+                        count += 1
+                    st.success(f"✅ {count} questões importadas com sucesso!")
                 except Exception as e:
-                    st.error(f"Erro no processamento do JSON: {e}")
-
-
+                    st.error(f"Erro ao processar JSON: {e}")
 
 elif menu == "Biblioteca de Questões":
-    if 'editando_id' not in st.session_state: st.session_state.editando_id = None
+    st.title("📚 Biblioteca de Questões")
     
-    if st.session_state.editando_id:
-        if st.button("⬅️ Voltar"): 
-            st.session_state.editando_id = None
-            st.rerun()
-        # Formulário de edição...
+    # 1. BUSCAR QUESTÕES NO BANCO
+    res_q = supabase.table("questoes").select("*").order("id", desc=True).execute()
+    
+    if res_q.data:
+        df_q = pd.DataFrame(res_q.data)
+        
+        # --- FILTROS DE BUSCA ---
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            filtro_mat = st.multiselect("Filtrar por Disciplina:", options=sorted(df_q['materia'].unique()))
+        with col_f2:
+            busca_assunto = st.text_input("Buscar por Assunto:", placeholder="Ex: Frações")
+
+        # Aplicar filtros no DataFrame
+        if filtro_mat:
+            df_q = df_q[df_q['materia'].isin(filtro_mat)]
+        if busca_assunto:
+            df_q = df_q[df_q['assunto'].str.contains(busca_assunto, case=False, na=False)]
+
+        st.write(f"Exibindo **{len(df_q)}** questões.")
+        st.divider()
+
+        # 2. LISTAGEM DE QUESTÕES
+        for index, row in df_q.iterrows():
+            with st.expander(f"ID {row['id']} | {row['materia']} - {row['assunto']}"):
+                # Exibe o enunciado (HTML do Quill)
+                st.markdown(row['enunciado'], unsafe_allow_html=True)
+                
+                st.write("**Alternativas:**")
+                alts = row['alternativas'] # Aqui está o nosso dicionário novo
+
+                for letra in ["A", "B", "C", "D", "E"]:
+                    # Verifica se a alternativa existe e se é o formato novo (dicionário) ou antigo (texto)
+                    item = alts.get(letra, "")
+                    
+                    # Lógica para suportar tanto o formato antigo quanto o novo com imagens
+                    if isinstance(item, dict):
+                        txt_alt = item.get("texto", "")
+                        url_img = item.get("imagem", "")
+                    else:
+                        txt_alt = item
+                        url_img = ""
+
+                    # Cor de destaque para a correta
+                    cor = "green" if letra == row['correta'] else "black"
+                    marcador = "✅" if letra == row['correta'] else "⚪"
+                    
+                    st.markdown(f"<span style='color:{cor}'>{marcador} **{letra})** {txt_alt}</span>", unsafe_allow_html=True)
+                    
+                    # Se houver imagem na alternativa, exibe
+                    if url_img:
+                        st.image(url_img, width=200)
+
+                st.divider()
+                
+                # Ações da questão
+                c_del, c_edit, _ = st.columns([1, 1, 3])
+                if c_del.button("🗑️ Excluir", key=f"del_{row['id']}", type="secondary"):
+                    try:
+                        supabase.table("questoes").delete().eq("id", row['id']).execute()
+                        st.success(f"Questão {row['id']} removida!")
+                        time.sleep(1)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao excluir: {e}")
+                
+                if c_edit.button("✏️ Editar", key=f"edit_{row['id']}"):
+                    st.info("Funcionalidade de edição em desenvolvimento. Por enquanto, exclua e cadastre novamente se precisar alterar.")
+
     else:
-        st.title("📚 Biblioteca de Questões")
-        # Filtros e Tabela de questões...
+        st.info("Nenhuma questão encontrada na biblioteca. Vá em 'Cadastrar Questões' para começar!")
 
 elif menu == "Gerar Modelo de Prova":
     st.title("📄 Gerar Nova Prova")
