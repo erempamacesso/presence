@@ -47,11 +47,10 @@ menu = st.sidebar.radio("Navegação", [
     "🖨️ Lista de Matrículas",
     "📲 Central de Avisos" ,
     "🧠 Diagnósticos IA",
-    "🏫 Boletim Final"  
+    "🏫 Notas do Professor"
 ])
 
 st.sidebar.divider()
-# Botão de sair (caso você já tenha, pode manter o seu)
 if st.sidebar.button("Sair"):
     st.session_state.autenticado = False
     st.rerun()
@@ -952,6 +951,140 @@ elif menu == "📲 Central de Avisos":
                 st.warning(f"Nenhum aluno cadastrado na turma {dados_p['serie']}.")
         else:
             st.warning("Nenhuma atividade cadastrada ainda.")
+
+# --- 11. BOLETIM FINAL SIEPE (REGISTRO COMPARTILHÁVEL) ---
+elif menu == "🏫 Boletim Final SIEPE":
+    st.title("🏫 Boletim Consolidado (Padrão SIEPE)")
+    st.markdown("Gerencie as notas das atividades (**AT1 a AT5**) e da Prova (**N2**). A **N1** (soma das ATs) e a **Média** final são calculadas e salvas automaticamente.")
+
+    # Filtros principais
+    col_t, col_b = st.columns(2)
+    with col_t:
+        # Puxa turmas dinamicamente do banco de alunos
+        try:
+            res_turmas = supabase_alunos.table("alunos").select("turma").execute()
+            lista_turmas = sorted(list(set([t['turma'] for t in res_turmas.data if t['turma']]))) if res_turmas.data else ["1º Ano A"]
+        except:
+            lista_turmas = ["1º Ano A"]
+        turma_sel = st.selectbox("Selecione a Turma:", lista_turmas)
+    
+    with col_b:
+        bim_sel = st.selectbox("Bimestre:", ["1º Bimestre", "2º Bimestre", "3º Bimestre", "4º Bimestre"])
+    
+    st.divider()
+
+    # Cabeçalho da Tabela e Botão de Automação
+    st.write("### 📝 Planilha de Lançamento de Notas")
+    col_sync1, col_sync2 = st.columns([3, 1])
+    with col_sync1:
+        st.info("💡 Digite as notas na tabela abaixo como se fosse no Excel. O cálculo da N1 e da Média ocorrerá ao salvar.")
+    with col_sync2:
+        if st.button("🔄 Sincronizar Atividades Online", use_container_width=True):
+            st.toast("Automação engatilhada! Na próxima fase, este botão vai puxar os acertos direto das provas online.", icon="🚀")
+    
+    # 1. Puxar alunos da turma selecionada
+    res_alunos = supabase_alunos.table("alunos").select("id, nome").eq("turma", turma_sel).order("nome").execute()
+    
+    if res_alunos.data:
+        df_alunos = pd.DataFrame(res_alunos.data)
+        
+        # 2. Puxar notas já salvas no Boletim para esta turma e bimestre
+        try:
+            res_notas = supabase_alunos.table("boletim_notas").select("*").eq("turma", turma_sel).eq("bimestre", bim_sel).execute()
+            df_notas = pd.DataFrame(res_notas.data)
+        except Exception as e:
+            df_notas = pd.DataFrame() # Tabela ainda não existe ou vazia
+
+        # 3. Mesclar dados (Se já tem nota, puxa. Senão, cria linha a zeros)
+        dados_tabela = []
+        for _, aluno in df_alunos.iterrows():
+            linha = {
+                "aluno_id": aluno["id"],
+                "Nome do Aluno": aluno["nome"],
+                "AT1": 0.0, "AT2": 0.0, "AT3": 0.0, "AT4": 0.0, "AT5": 0.0,
+                "N2 (Prova)": 0.0
+            }
+            if not df_notas.empty:
+                nota_existente = df_notas[df_notas["aluno_id"] == aluno["id"]]
+                if not nota_existente.empty:
+                    linha["AT1"] = float(nota_existente.iloc[0].get("at1", 0.0))
+                    linha["AT2"] = float(nota_existente.iloc[0].get("at2", 0.0))
+                    linha["AT3"] = float(nota_existente.iloc[0].get("at3", 0.0))
+                    linha["AT4"] = float(nota_existente.iloc[0].get("at4", 0.0))
+                    linha["AT5"] = float(nota_existente.iloc[0].get("at5", 0.0))
+                    linha["N2 (Prova)"] = float(nota_existente.iloc[0].get("n2", 0.0))
+            
+            dados_tabela.append(linha)
+        
+        df_edicao = pd.DataFrame(dados_tabela)
+        
+        # 4. Exibir o Editor de Dados (Tabela Interativa do Streamlit)
+        colunas_config = {
+            "aluno_id": st.column_config.TextColumn("ID", disabled=True),
+            "Nome do Aluno": st.column_config.TextColumn("Estudante", disabled=True, width="medium"),
+            "AT1": st.column_config.NumberColumn("AT1", min_value=0.0, max_value=10.0, step=0.1, format="%.1f"),
+            "AT2": st.column_config.NumberColumn("AT2", min_value=0.0, max_value=10.0, step=0.1, format="%.1f"),
+            "AT3": st.column_config.NumberColumn("AT3", min_value=0.0, max_value=10.0, step=0.1, format="%.1f"),
+            "AT4": st.column_config.NumberColumn("AT4", min_value=0.0, max_value=10.0, step=0.1, format="%.1f"),
+            "AT5": st.column_config.NumberColumn("AT5", min_value=0.0, max_value=10.0, step=0.1, format="%.1f"),
+            "N2 (Prova)": st.column_config.NumberColumn("N2 (Prova)", min_value=0.0, max_value=10.0, step=0.1, format="%.1f")
+        }
+
+        # A tabela onde a magia acontece
+        df_editado = st.data_editor(
+            df_edicao, 
+            column_config=colunas_config,
+            hide_index=True,
+            use_container_width=True,
+            key=f"editor_notas_{turma_sel}_{bim_sel}"
+        )
+
+        # 5. Salvar e Calcular
+        if st.button("💾 Salvar Planilha e Calcular SIEPE", type="primary"):
+            with st.spinner("A consolidar N1 e Médias..."):
+                dados_para_salvar = []
+                for _, row in df_editado.iterrows():
+                    # Lógica SIEPE: N1 = Soma das Atividades
+                    n1 = round(row["AT1"] + row["AT2"] + row["AT3"] + row["AT4"] + row["AT5"], 1)
+                    n2 = round(row["N2 (Prova)"], 1)
+                    # Média Final
+                    media = round((n1 + n2) / 2, 1)
+
+                    dados_para_salvar.append({
+                        "aluno_id": row["aluno_id"],
+                        "aluno_nome": row["Nome do Aluno"],
+                        "turma": turma_sel,
+                        "bimestre": bim_sel,
+                        "at1": row["AT1"],
+                        "at2": row["AT2"],
+                        "at3": row["AT3"],
+                        "at4": row["AT4"],
+                        "at5": row["AT5"],
+                        "n1": n1,
+                        "n2": n2,
+                        "media": media
+                    })
+                
+                try:
+                    # Apagamos o registo anterior da turma neste bimestre para não duplicar, e inserimos as novas notas
+                    supabase_alunos.table("boletim_notas").delete().eq("turma", turma_sel).eq("bimestre", bim_sel).execute()
+                    supabase_alunos.table("boletim_notas").insert(dados_para_salvar).execute()
+                    
+                    st.success("✅ Notas salvas! Os alunos já podem visualizar estas médias nos seus portais.")
+                    st.balloons()
+                    
+                    # Mostra um mini-relatório do cálculo final
+                    st.write("📊 **Resumo Final Consolidado:**")
+                    df_final = pd.DataFrame(dados_para_salvar)
+                    df_view = df_final[["aluno_nome", "n1", "n2", "media"]].rename(
+                        columns={"aluno_nome":"Estudante", "n1":"N1 (Soma ATs)", "n2":"N2 (Prova)", "media":"Média Final"}
+                    )
+                    st.dataframe(df_view.style.highlight_between(left=0, right=5.9, subset=['Média Final'], color='#ffcccc'), use_container_width=True, hide_index=True)
+
+                except Exception as e:
+                    st.error(f"❌ Erro ao salvar: {e}. ATENÇÃO: Verifique se criou a tabela 'boletim_notas' no Supabase.")
+    else:
+        st.warning(f"Nenhum aluno encontrado matriculado na turma {turma_sel}.")
 
 # =================================================================
 # 12. MESTRE LARDIÃO - DIAGNÓSTICOS EM LOTE 
