@@ -634,16 +634,16 @@ elif menu == "Diagnósticos IA":
 
 elif menu == "Boletim Final SIEPE":
     st.title("🏫 Consolidação de Notas SIEPE")
-    st.write("Preencha as notas das atividades e da prova. O sistema calculará as médias automaticamente para você lançar no portal oficial.")
+    st.write("Preencha as notas ou importe-as das avaliações online. O sistema calculará as médias automaticamente.")
 
-    # Busca todos os alunos de uma vez (usando a mesma lógica da Lista de Frequência)
     try:
+        # 1. Busca todos os alunos
         res_a = supabase_alunos.table("alunos").select("*").execute()
         
         if res_a.data:
             df_todos = pd.DataFrame(res_a.data)
             
-            # Descobre os nomes exatos das colunas dinamicamente para não dar erro
+            # Identificação dinâmica de colunas
             col_t = 'turma' if 'turma' in df_todos.columns else ('serie' if 'serie' in df_todos.columns else None)
             col_n = 'nome' if 'nome' in df_todos.columns else ('Nome' if 'Nome' in df_todos.columns else ('aluno' if 'aluno' in df_todos.columns else None))
             
@@ -652,68 +652,116 @@ elif menu == "Boletim Final SIEPE":
                 turma_sel = st.selectbox("Selecione a Turma:", turmas_list)
                 
                 if turma_sel:
-                    # Filtra os alunos da turma selecionada e coloca em ordem alfabética
+                    # Filtra e ordena
                     df_turma = df_todos[df_todos[col_t] == turma_sel].sort_values(by=col_n).copy()
                     
-                    # Criamos uma tabela limpa garantindo que a coluna se chame 'nome'
+                    # Inicializa a tabela base
                     df_tabela = pd.DataFrame()
-                    df_tabela['nome'] = df_turma[col_n]
+                    df_tabela['nome'] = df_turma[col_n].values
                     
-                    # Adiciona as colunas de notas com valor zero
                     colunas_notas = ['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N2']
-                    for col in colunas_notas:
-                        df_tabela[col] = 0.0
-                            
+                    for col_nota in colunas_notas:
+                        df_tabela[col_nota] = 0.0
+
+                    # =====================================================================
+                    # 🔄 NOVO: MÓDULO DE IMPORTAÇÃO AUTOMÁTICA
+                    # =====================================================================
                     st.divider()
-                    st.subheader(f"📝 Lançamento de Notas - {turma_sel}")
-                    st.info("💡 Dica: Clique duas vezes dentro de uma célula para editar o valor. Pressione Enter para confirmar.")
+                    with st.expander("📥 Importar Notas de Provas Online", expanded=False):
+                        st.info("Selecione uma prova realizada no sistema para preencher as notas automaticamente.")
+                        
+                        # Busca modelos de prova
+                        res_p_modelos = supabase.table("modelos_prova").select("id, titulo, valor_questao").order("id", desc=True).execute()
+                        
+                        if res_p_modelos.data:
+                            provas_dict = {p['titulo']: p for p in res_p_modelos.data}
+                            col_imp1, col_imp2 = st.columns(2)
+                            
+                            prova_selecionada = col_imp1.selectbox("Selecione a Prova:", ["Não importar"] + list(provas_dict.keys()))
+                            coluna_destino = col_imp2.selectbox("Importar para qual coluna?", colunas_notas)
+                            
+                            if prova_selecionada != "Não importar":
+                                p_obj = provas_dict[prova_selecionada]
+                                id_prova = p_obj['id']
+                                valor_q = float(p_obj.get('valor_questao', 1.0))
+                                
+                                # Busca resultados
+                                res_res = supabase.table("resultados_provas").select("*").eq("prova_id", id_prova).execute()
+                                
+                                if res_res.data:
+                                    df_res = pd.DataFrame(res_res.data)
+                                    df_res['aluno_id'] = df_res['aluno_id'].astype(str)
+                                    df_res['pontos'] = df_res['acertou'].apply(lambda x: 1 if x is True else 0)
+                                    
+                                    # Agrupa e calcula nota
+                                    df_notas_calc = df_res.groupby('aluno_id').agg(total_acertos=('pontos', 'sum')).reset_index()
+                                    df_notas_calc['nota_final'] = df_notas_calc['total_acertos'] * valor_q
+                                    
+                                    # Busca nomes para cruzar (usando a base de alunos)
+                                    res_al_nomes = supabase_alunos.table("alunos").select("id, nome").in_("id", df_notas_calc['aluno_id'].tolist()).execute()
+                                    
+                                    if res_al_nomes.data:
+                                        df_nomes_map = pd.DataFrame(res_al_nomes.data)
+                                        df_nomes_map['id'] = df_nomes_map['id'].astype(str)
+                                        
+                                        df_final_map = pd.merge(df_nomes_map, df_notas_calc, on="id")
+                                        mapa_notas = dict(zip(df_final_map['nome'], df_final_map['nota_final']))
+                                        
+                                        # Aplica na tabela que vai para o editor
+                                        df_tabela[coluna_destino] = df_tabela['nome'].map(mapa_notas).fillna(0.0)
+                                        st.success(f"✅ Notas de '{prova_selecionada}' carregadas em {coluna_destino}!")
+                                else:
+                                    st.warning("Nenhum resultado encontrado para esta prova.")
+
+                    # =====================================================================
                     
-                    # Tabela editável na tela
+                    st.subheader(f"📝 Lançamento de Notas - {turma_sel}")
+                    
+                    # Tabela editável (recebe os dados já importados ou zerados)
                     df_editado = st.data_editor(
                         df_tabela,
                         use_container_width=True,
                         hide_index=True,
                         column_config={
                             "nome": st.column_config.TextColumn("Nome do Aluno", disabled=True),
-                            "AT1": st.column_config.NumberColumn("AT1", min_value=0.0, max_value=10.0, format="%.1f", step=0.5),
-                            "AT2": st.column_config.NumberColumn("AT2", min_value=0.0, max_value=10.0, format="%.1f", step=0.5),
-                            "AT3": st.column_config.NumberColumn("AT3", min_value=0.0, max_value=10.0, format="%.1f", step=0.5),
-                            "AT4": st.column_config.NumberColumn("AT4", min_value=0.0, max_value=10.0, format="%.1f", step=0.5),
-                            "AT5": st.column_config.NumberColumn("AT5", min_value=0.0, max_value=10.0, format="%.1f", step=0.5),
-                            "N2": st.column_config.NumberColumn("N2 (Prova)", min_value=0.0, max_value=10.0, format="%.1f", step=0.5)
+                            "AT1": st.column_config.NumberColumn("AT1", min_value=0.0, max_value=10.0, format="%.1f", step=0.1),
+                            "AT2": st.column_config.NumberColumn("AT2", min_value=0.0, max_value=10.0, format="%.1f", step=0.1),
+                            "AT3": st.column_config.NumberColumn("AT3", min_value=0.0, max_value=10.0, format="%.1f", step=0.1),
+                            "AT4": st.column_config.NumberColumn("AT4", min_value=0.0, max_value=10.0, format="%.1f", step=0.1),
+                            "AT5": st.column_config.NumberColumn("AT5", min_value=0.0, max_value=10.0, format="%.1f", step=0.1),
+                            "N2": st.column_config.NumberColumn("N2 (Prova)", min_value=0.0, max_value=10.0, format="%.1f", step=0.1)
                         }
                     )
                     
-                    # Lógica de cálculo (N1 = Média das ATs, Final = Média entre N1 e N2)
-                    df_editado['N1 (Média das ATs)'] = df_editado[['AT1', 'AT2', 'AT3', 'AT4', 'AT5']].mean(axis=1)
-                    df_editado['Média Final'] = (df_editado['N1 (Média das ATs)'] + df_editado['N2']) / 2
-                    
-                    # Arredondamento
-                    df_editado['N1 (Média das ATs)'] = df_editado['N1 (Média das ATs)'].round(1)
-                    df_editado['Média Final'] = df_editado['Média Final'].round(1)
+                    # Cálculos automáticos
+                    # axis=1 calcula a média da linha (horizontal)
+                    df_editado['N1 (Média)'] = df_editado[['AT1', 'AT2', 'AT3', 'AT4', 'AT5']].mean(axis=1).round(1)
+                    df_editado['Média Final'] = ((df_editado['N1 (Média)'] + df_editado['N2']) / 2).round(1)
                     
                     st.divider()
                     st.subheader("📊 Resultado e Exportação")
                     
-                    # Exibe os resultados
-                    st.dataframe(df_editado[['nome', 'N1 (Média das ATs)', 'N2', 'Média Final']], use_container_width=True, hide_index=True)
+                    # Exibe apenas o resumo
+                    st.dataframe(df_editado[['nome', 'N1 (Média)', 'N2', 'Média Final']], use_container_width=True, hide_index=True)
                     
-                    # Gerador de Excel
+                    # Exportação Excel
                     output = io.BytesIO()
                     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                        df_editado.to_excel(writer, sheet_name=f"Notas_{turma_sel}", index=False)
+                        df_editado.to_excel(writer, sheet_name="Notas_SIEPE", index=False)
                     
                     st.download_button(
-                        label="📥 Baixar Planilha Pronta para o SIEPE (Excel)",
+                        label="📥 Baixar Planilha Excel para o SIEPE",
                         data=output.getvalue(),
-                        file_name=f"Boletim_SIEPE_{turma_sel.replace(' ', '_')}.xlsx",
+                        file_name=f"SIEPE_{turma_sel.replace(' ', '_')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        type="primary"
+                        type="primary",
+                        use_container_width=True
                     )
+
             else:
-                st.error("As colunas de turma/série ou nome não foram encontradas no banco de alunos.")
+                st.error("Erro nas colunas do banco de dados.")
         else:
-            st.info("Banco de alunos vazio ou sem turmas cadastradas.")
+            st.info("Nenhum aluno cadastrado.")
             
     except Exception as e:
-        st.error(f"Erro ao carregar dados do SIEPE: {e}")
+        st.error(f"Erro no módulo SIEPE: {e}")
