@@ -457,7 +457,7 @@ elif menu == "Provas Elaboradas":
 
 elif menu == "Lista de Matrículas":
     st.title("👥 Listas por Turma (PDF)")
-    st.write("Visualize a listagem de alunos e gere o arquivo PDF para impressão na sala de aula.")
+    st.write("Visualize a listagem de alunos com o número de matrícula oficial.")
 
     try:
         # Busca os alunos
@@ -466,101 +466,110 @@ elif menu == "Lista de Matrículas":
         if res_a.data:
             df_alunos = pd.DataFrame(res_a.data)
             
-            # --- DESCOBERTA DINÂMICA DE COLUNAS ---
+            # --- MAPEAMENTO DE COLUNAS DO SUPABASE ---
+            # Identifica a coluna de turma/série
             col_t = 'turma' if 'turma' in df_alunos.columns else ('serie' if 'serie' in df_alunos.columns else None)
-            col_n = 'nome' if 'nome' in df_alunos.columns else ('Nome' if 'Nome' in df_alunos.columns else ('aluno' if 'aluno' in df_alunos.columns else None))
-            # Tenta achar a matrícula ou o ID do aluno
-            col_m = 'matricula' if 'matricula' in df_alunos.columns else ('id' if 'id' in df_alunos.columns else None)
+            
+            # Identifica a coluna de nome
+            col_n = 'nome' if 'nome' in df_alunos.columns else ('Nome' if 'Nome' in df_alunos.columns else None)
+            
+            # TROCA SOLICITADA: Identifica a coluna de Matrícula (prioridade total)
+            # Se não existir 'matricula', ele tenta 'Matricula' ou 'ID_Aluno'
+            col_m = None
+            for possivel_nome in ['matricula', 'Matricula', 'MATRICULA', 'id_aluno']:
+                if possivel_nome in df_alunos.columns:
+                    col_m = possivel_nome
+                    break
 
             if not col_t or not col_n:
-                st.error(f"Não encontrei as colunas de Nome ou Turma. Colunas atuais: {list(df_alunos.columns)}")
+                st.error(f"Erro técnico: Colunas de Nome ou Turma não encontradas. Colunas disponíveis: {list(df_alunos.columns)}")
             else:
                 # Seletor de Turma
                 turmas_disponiveis = sorted(df_alunos[col_t].dropna().unique())
                 turma_selecionada = st.selectbox("Selecione a Turma:", turmas_disponiveis)
 
-                # Filtro, Ordenação e criação do Número de Ordem
+                # Filtro e Ordenação por Nome
                 df_turma = df_alunos[df_alunos[col_t] == turma_selecionada].sort_values(by=col_n).reset_index(drop=True)
-                df_turma['Nº'] = df_turma.index + 1 # Cria a coluna de Nº de Ordem (1, 2, 3...)
                 
-                # Prepara as colunas que vão aparecer na tela (sem a turma)
-                colunas_exibir = ['Nº']
-                if col_m: colunas_exibir.append(col_m)
-                colunas_exibir.append(col_n)
+                # Adiciona o número de ordem (1, 2, 3...)
+                df_turma['Nº'] = df_turma.index + 1 
+                
+                # Prepara colunas para exibição na tela
+                colunas_tela = ['Nº']
+                if col_m:
+                    colunas_tela.append(col_m) # Aqui entra a Matrícula do Supabase
+                colunas_tela.append(col_n)
 
-                st.write(f"Alunos encontrados: **{len(df_turma)}**")
+                st.write(f"Total de alunos na turma: **{len(df_turma)}**")
                 
-                # Mostra a tabela limpa
-                st.dataframe(df_turma[colunas_exibir], use_container_width=True, hide_index=True)
+                # Exibe a tabela formatada (Renomeando a coluna de matrícula para ficar bonito na tela)
+                df_exibir = df_turma[colunas_tela].copy()
+                if col_m:
+                    df_exibir = df_exibir.rename(columns={col_m: "Matrícula"})
+                
+                st.dataframe(df_exibir, use_container_width=True, hide_index=True)
 
                 st.divider()
 
-                # --- GERAÇÃO DO PDF SEGURO ---
-                # Importamos tempfile para não dar o erro do bytearray
+                # --- GERAÇÃO DO PDF ---
                 import tempfile 
-                
                 pdf = FPDF()
                 pdf.add_page()
                 pdf.set_font('Arial', 'B', 14)
-                pdf.cell(0, 10, 'EREMPAM - LISTAGEM DE ALUNOS', ln=True, align='C')
+                pdf.cell(0, 10, 'EREMPAM - LISTAGEM DE MATRICULAS', ln=True, align='C')
                 
-                # Nome da Turma sem acentos para o PDF
                 t_limpa = unicodedata.normalize('NFKD', str(turma_selecionada)).encode('ASCII', 'ignore').decode('ASCII')
                 pdf.set_font('Arial', 'B', 12)
                 pdf.cell(0, 10, f'TURMA: {t_limpa}', ln=True, align='L')
                 pdf.ln(5)
 
-                # Cabeçalho da Tabela no PDF
+                # Cabeçalho do PDF
                 pdf.set_font('Arial', 'B', 10)
-                pdf.cell(10, 8, 'N', border=1, align='C')
+                pdf.cell(12, 8, 'N', border=1, align='C')
                 
-                largura_nome = 110
+                larg_nome = 110
                 if col_m:
-                    pdf.cell(30, 8, 'MATRICULA', border=1, align='C')
-                    largura_nome = 90 # Diminui o espaço do nome se tiver matrícula
+                    pdf.cell(35, 8, 'MATRICULA', border=1, align='C')
+                    larg_nome = 95
                     
-                pdf.cell(largura_nome, 8, 'NOME DO ALUNO', border=1, align='C')
-                pdf.cell(40, 8, 'ASSINATURA / OBS', border=1, align='C')
+                pdf.cell(larg_nome, 8, 'NOME DO ALUNO', border=1, align='C')
+                pdf.cell(35, 8, 'OBSERVACAO', border=1, align='C')
                 pdf.ln()
 
-                # Linhas da Tabela no PDF
+                # Linhas do PDF
                 pdf.set_font('Arial', '', 10)
                 for row in df_turma.itertuples():
-                    num_ordem = str(getattr(row, 'Nº'))
-                    nome_original = str(getattr(row, col_n))
-                    # Remove acentos para o PDF não travar
-                    nome_pdf = unicodedata.normalize('NFKD', nome_original).encode('ASCII', 'ignore').decode('ASCII')[:35]
-                    
-                    pdf.cell(10, 8, num_ordem, border=1, align='C')
+                    pdf.cell(12, 8, str(getattr(row, 'Nº')), border=1, align='C')
                     
                     if col_m:
-                        matricula_val = str(getattr(row, col_m))
-                        pdf.cell(30, 8, matricula_val, border=1, align='C')
+                        # Pega o valor da matrícula do Supabase
+                        val_m = str(getattr(row, col_m))
+                        pdf.cell(35, 8, val_m, border=1, align='C')
                         
-                    pdf.cell(largura_nome, 8, nome_pdf, border=1, align='L')
-                    pdf.cell(40, 8, '', border=1, align='C') # Espaço em branco para assinar
+                    nome_p = unicodedata.normalize('NFKD', str(getattr(row, col_n))).encode('ASCII', 'ignore').decode('ASCII')[:35]
+                    pdf.cell(larg_nome, 8, nome_p, border=1, align='L')
+                    pdf.cell(35, 8, '', border=1, align='C')
                     pdf.ln()
 
-                # Salva no arquivo temporário e lê os bytes puros
+                # Download
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
                     pdf.output(tmp.name)
                     with open(tmp.name, "rb") as f:
                         pdf_bytes = f.read()
 
-                # Botão de download
                 st.download_button(
-                    label="📥 Baixar Listagem (PDF)",
+                    label="📥 Baixar PDF da Turma",
                     data=pdf_bytes,
-                    file_name=f"Listagem_Alunos_{t_limpa.replace(' ', '_')}.pdf",
+                    file_name=f"Matriculas_{t_limpa.replace(' ', '_')}.pdf",
                     mime="application/pdf",
                     type="primary",
                     use_container_width=True
                 )
         else:
-            st.warning("Nenhum dado de aluno encontrado no banco de dados.")
+            st.warning("Nenhum dado encontrado na tabela de alunos.")
 
     except Exception as e:
-        st.error(f"Erro no menu de Matrículas: {e}")
+        st.error(f"Erro ao processar matrículas: {e}")
 
 elif menu == "Central de Avisos":
     st.title("📲 Disparador de WhatsApp")
