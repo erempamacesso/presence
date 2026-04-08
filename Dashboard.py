@@ -37,21 +37,48 @@ if 'autenticado' not in st.session_state:
     st.session_state.autenticado = True
 
 # --- 4. MENU LATERAL ---
-st.sidebar.title("🎮 Painel do Professor")
-menu = st.sidebar.radio("Navegação", [
-    "📊 Análise de Dados", 
-    "📝 Cadastrar Questões", 
-    "📚 Biblioteca de Questões", 
-    "📜 Gerar Modelo de Prova",
-    "📂 Provas Elaboradas",  
-    "🖨️ Lista de Matrículas",
-    "📲 Central de Avisos" ,
-    "🧠 Diagnósticos IA",
-    "🏫 Notas do Professor"
-])
+from streamlit_option_menu import option_menu
+
+# --- 4. MENU LATERAL ---
+with st.sidebar:
+    st.title("🎮 Painel do Professor")
+    
+    menu = option_menu(
+        menu_title="Navegação",  
+        options=[
+            "Análise de Dados", 
+            "Cadastrar Questões", 
+            "Biblioteca de Questões", 
+            "Gerar Modelo de Prova",
+            "Provas Elaboradas",
+            "Lista de Matrículas",
+            "Central de Avisos",
+            "Diagnósticos IA",
+            "Boletim Final SIEPE"
+        ],
+        icons=[
+            "bar-chart-fill",    # Análise de Dados
+            "pencil-square",     # Cadastrar Questões
+            "book",              # Biblioteca de Questões
+            "file-earmark-text", # Gerar Modelo de Prova
+            "folder-check",      # Provas Elaboradas
+            "people-fill",       # Lista de Matrículas
+            "bell-fill",         # Central de Avisos
+            "robot",             # Diagnósticos IA
+            "bank"               # Boletim Final SIEPE
+        ],
+        menu_icon="cast",
+        default_index=0,
+        styles={
+            "container": {"padding": "0!important", "background-color": "transparent"},
+            "icon": {"color": "#ff9800", "font-size": "18px"}, 
+            "nav-link": {"font-size": "15px", "text-align": "left", "margin":"0px", "--hover-color": "#333333"},
+            "nav-link-selected": {"background-color": "#4CAF50"}, 
+        }
+    )
 
 st.sidebar.divider()
-if st.sidebar.button("Sair"):
+if st.sidebar.button("🚪 Sair do Sistema", use_container_width=True):
     st.session_state.autenticado = False
     st.rerun()
 
