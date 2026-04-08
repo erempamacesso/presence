@@ -243,77 +243,67 @@ elif menu == "Cadastrar Questões":
 elif menu == "Biblioteca de Questões":
     st.title("📚 Biblioteca de Questões")
     
-    # 1. BUSCAR QUESTÕES NO BANCO
     res_q = supabase.table("questoes").select("*").order("id", desc=True).execute()
     
     if res_q.data:
         df_q = pd.DataFrame(res_q.data)
         
-        # --- FILTROS DE BUSCA ---
         col_f1, col_f2 = st.columns(2)
         with col_f1:
             filtro_mat = st.multiselect("Filtrar por Disciplina:", options=sorted(df_q['materia'].unique()))
         with col_f2:
-            busca_assunto = st.text_input("Buscar por Assunto:", placeholder="Ex: Frações")
+            busca_assunto = st.text_input("Buscar por Assunto:")
 
-        # Aplicar filtros no DataFrame
-        if filtro_mat:
-            df_q = df_q[df_q['materia'].isin(filtro_mat)]
-        if busca_assunto:
-            df_q = df_q[df_q['assunto'].str.contains(busca_assunto, case=False, na=False)]
+        if filtro_mat: df_q = df_q[df_q['materia'].isin(filtro_mat)]
+        if busca_assunto: df_q = df_q[df_q['assunto'].str.contains(busca_assunto, case=False, na=False)]
 
         st.write(f"Exibindo **{len(df_q)}** questões.")
         st.divider()
 
-        # 2. LISTAGEM DE QUESTÕES
         for index, row in df_q.iterrows():
             with st.expander(f"ID {row['id']} | {row['materia']} - {row['assunto']}"):
-                # Exibe o enunciado (HTML do Quill)
                 st.markdown(row['enunciado'], unsafe_allow_html=True)
-                
                 st.write("**Alternativas:**")
-                alts = row['alternativas'] # Aqui está o nosso dicionário novo
+                
+                # --- BLINDAGEM CONTRA O ERRO (Lida com texto antigo e dicionário novo) ---
+                alts = row['alternativas']
+                
+                # Se vier como string do banco, tenta converter para dicionário
+                if isinstance(alts, str):
+                    try:
+                        alts = json.loads(alts.replace("'", '"'))
+                    except:
+                        alts = {} # Previne travamento total se a string for muito maluca
+                
+                if isinstance(alts, dict):
+                    for letra in ["A", "B", "C", "D", "E"]:
+                        item = alts.get(letra, "")
+                        
+                        # Verifica se é o formato novo (com imagem) ou antigo (só texto)
+                        if isinstance(item, dict):
+                            txt_alt = item.get("texto", "")
+                            url_img = item.get("imagem", "")
+                        else:
+                            txt_alt = str(item)
+                            url_img = ""
 
-                for letra in ["A", "B", "C", "D", "E"]:
-                    # Verifica se a alternativa existe e se é o formato novo (dicionário) ou antigo (texto)
-                    item = alts.get(letra, "")
-                    
-                    # Lógica para suportar tanto o formato antigo quanto o novo com imagens
-                    if isinstance(item, dict):
-                        txt_alt = item.get("texto", "")
-                        url_img = item.get("imagem", "")
-                    else:
-                        txt_alt = item
-                        url_img = ""
-
-                    # Cor de destaque para a correta
-                    cor = "green" if letra == row['correta'] else "black"
-                    marcador = "✅" if letra == row['correta'] else "⚪"
-                    
-                    st.markdown(f"<span style='color:{cor}'>{marcador} **{letra})** {txt_alt}</span>", unsafe_allow_html=True)
-                    
-                    # Se houver imagem na alternativa, exibe
-                    if url_img:
-                        st.image(url_img, width=200)
+                        cor = "green" if letra == row['correta'] else "black"
+                        marcador = "✅" if letra == row['correta'] else "⚪"
+                        
+                        st.markdown(f"<span style='color:{cor}'>{marcador} **{letra})** {txt_alt}</span>", unsafe_allow_html=True)
+                        
+                        if url_img:
+                            st.image(url_img, width=200)
+                else:
+                    st.warning("Formato corrompido no banco para estas alternativas.")
 
                 st.divider()
-                
-                # Ações da questão
-                c_del, c_edit, _ = st.columns([1, 1, 3])
-                if c_del.button("🗑️ Excluir", key=f"del_{row['id']}", type="secondary"):
-                    try:
-                        supabase.table("questoes").delete().eq("id", row['id']).execute()
-                        st.success(f"Questão {row['id']} removida!")
-                        time.sleep(1)
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao excluir: {e}")
-                
-                if c_edit.button("✏️ Editar", key=f"edit_{row['id']}"):
-                    st.info("Funcionalidade de edição em desenvolvimento. Por enquanto, exclua e cadastre novamente se precisar alterar.")
-
+                if st.button("🗑️ Excluir", key=f"del_{row['id']}", type="secondary"):
+                    supabase.table("questoes").delete().eq("id", row['id']).execute()
+                    time.sleep(0.5)
+                    st.rerun()
     else:
-        st.info("Nenhuma questão encontrada na biblioteca. Vá em 'Cadastrar Questões' para começar!")
+        st.info("Nenhuma questão na biblioteca.")
 
 elif menu == "Gerar Modelo de Prova":
     st.title("📄 Gerar Nova Prova")
