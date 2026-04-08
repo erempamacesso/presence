@@ -244,13 +244,12 @@ elif menu == "Biblioteca de Questões":
     if res_q.data:
         df_q = pd.DataFrame(res_q.data)
         
-        # Proteção extra: se alguma coluna antiga faltar, ele cria vazia para não dar erro
+        # Proteção de colunas
         if 'serie' not in df_q.columns: df_q['serie'] = "Geral"
         if 'assunto' not in df_q.columns: df_q['assunto'] = ""
         
         col_f1, col_f2 = st.columns(2)
         with col_f1:
-            # Puxa o filtro pela SÉRIE, igual era antes
             filtro_serie = st.multiselect("Filtrar por Série:", options=sorted(df_q['serie'].dropna().unique()))
         with col_f2:
             busca_assunto = st.text_input("Buscar por Assunto:")
@@ -258,19 +257,19 @@ elif menu == "Biblioteca de Questões":
         if filtro_serie: df_q = df_q[df_q['serie'].isin(filtro_serie)]
         if busca_assunto: df_q = df_q[df_q['assunto'].str.contains(busca_assunto, case=False, na=False)]
 
-        st.write(f"Exibindo **{len(df_q)}** questões.")
+        st.write(f"Total de questões encontradas: **{len(df_q)}**")
         st.divider()
 
         for index, row in df_q.iterrows():
-            # Exibe os dados garantindo que não vai dar erro se a coluna estiver vazia
             str_serie = row.get('serie', '')
             str_assunto = row.get('assunto', '')
             
-            with st.expander(f"ID {row['id']} | {str_serie} - {str_assunto}"):
+            # --- ALTERAÇÃO AQUI: Removi o ID e a numeração do título do expander ---
+            with st.expander(f"📖 {str_serie} | Assunto: {str_assunto}"):
                 st.markdown(row['enunciado'], unsafe_allow_html=True)
+                
                 st.write("**Alternativas:**")
                 
-                # Trata as alternativas
                 alts = row.get('alternativas', {})
                 if isinstance(alts, str):
                     try:
@@ -298,14 +297,17 @@ elif menu == "Biblioteca de Questões":
                         
                         if url_img:
                             st.image(url_img, width=200)
-                else:
-                    st.warning("Formato corrompido no banco para estas alternativas.")
-
+                
                 st.divider()
-                if st.button("🗑️ Excluir", key=f"del_{row['id']}", type="secondary"):
-                    supabase.table("questoes").delete().eq("id", row['id']).execute()
-                    time.sleep(0.5)
-                    st.rerun()
+                # O ID continua sendo usado apenas "por baixo dos panos" no botão de excluir
+                if st.button("🗑️ Excluir Questão", key=f"del_{row['id']}", type="secondary"):
+                    try:
+                        supabase.table("questoes").delete().eq("id", row['id']).execute()
+                        st.success("Questão removida!")
+                        time.sleep(0.5)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao excluir: {e}")
     else:
         st.info("Nenhuma questão na biblioteca.")
 
