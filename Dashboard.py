@@ -46,8 +46,15 @@ menu = st.sidebar.radio("Navegação", [
     "📂 Provas Elaboradas",  
     "🖨️ Lista de Matrículas",
     "📲 Central de Avisos" ,
-    "🧠 Diagnósticos IA"
+    "🧠 Diagnósticos IA",
+    "🏫 Boletim Final"  
 ])
+
+st.sidebar.divider()
+# Botão de sair (caso você já tenha, pode manter o seu)
+if st.sidebar.button("Sair"):
+    st.session_state.autenticado = False
+    st.rerun()
 
 # --- 5. LÓGICA DO DASHBOARD (NOTAS E RELATÓRIO EXCEL) ---
 if menu == "📊 Análise de Dados":
