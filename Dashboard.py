@@ -466,23 +466,13 @@ elif menu == "Lista de Matrículas":
         if res_a.data:
             df_alunos = pd.DataFrame(res_a.data)
             
-            # --- MAPEAMENTO DE COLUNAS DO SUPABASE ---
-            # Identifica a coluna de turma/série
-            col_t = 'turma' if 'turma' in df_alunos.columns else ('serie' if 'serie' in df_alunos.columns else None)
-            
-            # Identifica a coluna de nome
-            col_n = 'nome' if 'nome' in df_alunos.columns else ('Nome' if 'Nome' in df_alunos.columns else None)
-            
-            # TROCA SOLICITADA: Identifica a coluna de Matrícula (prioridade total)
-            # Se não existir 'matricula', ele tenta 'Matricula' ou 'ID_Aluno'
-            col_m = None
-            for possivel_nome in ['matricula', 'Matricula', 'MATRICULA', 'id_aluno']:
-                if possivel_nome in df_alunos.columns:
-                    col_m = possivel_nome
-                    break
+            # --- MAPEAMENTO EXATO (Baseado no seu Supabase) ---
+            col_t = 'turma' 
+            col_n = 'nome' 
+            col_m = 'numero_matricula' # <-- Agora sim, o nome exato!
 
-            if not col_t or not col_n:
-                st.error(f"Erro técnico: Colunas de Nome ou Turma não encontradas. Colunas disponíveis: {list(df_alunos.columns)}")
+            if col_t not in df_alunos.columns or col_n not in df_alunos.columns:
+                st.error("Erro técnico: Colunas 'nome' ou 'turma' não encontradas. Verifique o banco.")
             else:
                 # Seletor de Turma
                 turmas_disponiveis = sorted(df_alunos[col_t].dropna().unique())
@@ -496,15 +486,15 @@ elif menu == "Lista de Matrículas":
                 
                 # Prepara colunas para exibição na tela
                 colunas_tela = ['Nº']
-                if col_m:
-                    colunas_tela.append(col_m) # Aqui entra a Matrícula do Supabase
+                if col_m in df_alunos.columns:
+                    colunas_tela.append(col_m)
                 colunas_tela.append(col_n)
 
                 st.write(f"Total de alunos na turma: **{len(df_turma)}**")
                 
-                # Exibe a tabela formatada (Renomeando a coluna de matrícula para ficar bonito na tela)
+                # Exibe a tabela formatada (Trocando na tela para ficar bonito)
                 df_exibir = df_turma[colunas_tela].copy()
-                if col_m:
+                if col_m in df_alunos.columns:
                     df_exibir = df_exibir.rename(columns={col_m: "Matrícula"})
                 
                 st.dataframe(df_exibir, use_container_width=True, hide_index=True)
@@ -528,7 +518,7 @@ elif menu == "Lista de Matrículas":
                 pdf.cell(12, 8, 'N', border=1, align='C')
                 
                 larg_nome = 110
-                if col_m:
+                if col_m in df_alunos.columns:
                     pdf.cell(35, 8, 'MATRICULA', border=1, align='C')
                     larg_nome = 95
                     
@@ -541,8 +531,8 @@ elif menu == "Lista de Matrículas":
                 for row in df_turma.itertuples():
                     pdf.cell(12, 8, str(getattr(row, 'Nº')), border=1, align='C')
                     
-                    if col_m:
-                        # Pega o valor da matrícula do Supabase
+                    if col_m in df_alunos.columns:
+                        # Pega o valor da matrícula diretamente
                         val_m = str(getattr(row, col_m))
                         pdf.cell(35, 8, val_m, border=1, align='C')
                         
