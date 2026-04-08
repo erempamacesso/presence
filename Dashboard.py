@@ -700,19 +700,28 @@ elif menu == "Boletim Final SIEPE":
                                     df_notas_calc['nota_final'] = df_notas_calc['total_acertos'] * valor_q
                                     
                                     # Busca nomes para cruzar (usando a base de alunos)
-                                    res_al_nomes = supabase_alunos.table("alunos").select("id, nome").in_("id", df_notas_calc['aluno_id'].tolist()).execute()
-                                    
-                                    if res_al_nomes.data:
-                                        df_nomes_map = pd.DataFrame(res_al_nomes.data)
-                                        df_nomes_map['id'] = df_nomes_map['id'].astype(str)
+                                    lista_ids = df_notas_calc['aluno_id'].tolist()
+                                    if lista_ids:
+                                        res_al_nomes = supabase_alunos.table("alunos").select("id, nome").in_("id", lista_ids).execute()
                                         
-                                        # A CORREÇÃO FOI FEITA AQUI NESTA LINHA ABAIXO (left_on e right_on):
-                                        df_final_map = pd.merge(df_nomes_map, df_notas_calc, left_on="id", right_on="aluno_id")
-                                        mapa_notas = dict(zip(df_final_map['nome'], df_final_map['nota_final']))
-                                        
-                                        # Aplica na tabela que vai para o editor
-                                        df_tabela[coluna_destino] = df_tabela['nome'].map(mapa_notas).fillna(df_tabela[coluna_destino])
-                                        st.success(f"✅ Notas de '{prova_selecionada}' carregadas em {coluna_destino}!")
+                                        if res_al_nomes.data:
+                                            df_nomes_map = pd.DataFrame(res_al_nomes.data)
+                                            # TRAVA DE SEGURANÇA PARA EVITAR O ERRO KEYERROR 'id'
+                                            if not df_nomes_map.empty and 'id' in df_nomes_map.columns:
+                                                df_nomes_map['id'] = df_nomes_map['id'].astype(str)
+                                                
+                                                df_final_map = pd.merge(df_nomes_map, df_notas_calc, left_on="id", right_on="aluno_id")
+                                                mapa_notas = dict(zip(df_final_map['nome'], df_final_map['nota_final']))
+                                                
+                                                # Aplica na tabela que vai para o editor
+                                                df_tabela[coluna_destino] = df_tabela['nome'].map(mapa_notas).fillna(df_tabela[coluna_destino])
+                                                st.success(f"✅ Notas de '{prova_selecionada}' carregadas em {coluna_destino}!")
+                                            else:
+                                                st.warning("Não foi possível mapear os IDs aos nomes dos alunos.")
+                                        else:
+                                            st.warning("Nenhum aluno correspondente encontrado na base de dados para estes resultados.")
+                                    else:
+                                        st.warning("Lista de IDs de alunos está vazia.")
                                 else:
                                     st.warning("Nenhum resultado encontrado para esta prova.")
 
@@ -720,11 +729,15 @@ elif menu == "Boletim Final SIEPE":
                     
                     st.subheader(f"📝 Lançamento de Notas - {turma_sel}")
                     
+                    # Calcula a altura exata para mostrar todos os alunos sem barra de rolagem
+                    altura_tabela = (len(df_tabela) + 1) * 36
+
                     # Tabela editável (recebe os dados já importados ou zerados)
                     df_editado = st.data_editor(
                         df_tabela,
                         use_container_width=True,
                         hide_index=True,
+                        height=altura_tabela,
                         column_config={
                             "nome": st.column_config.TextColumn("Nome do Aluno", disabled=True),
                             "AT1": st.column_config.NumberColumn("AT1", min_value=0.0, max_value=10.0, format="%.1f", step=0.1),
@@ -736,15 +749,15 @@ elif menu == "Boletim Final SIEPE":
                         }
                     )
                     
-                    # Cálculos automáticos
-                    df_editado['N1 (Média)'] = df_editado[['AT1', 'AT2', 'AT3', 'AT4', 'AT5']].mean(axis=1).round(1)
-                    df_editado['Média Final'] = ((df_editado['N1 (Média)'] + df_editado['N2']) / 2).round(1)
+                    # 🎯 Cálculos automáticos (N1 é a SOMA das atividades)
+                    df_editado['N1'] = df_editado[['AT1', 'AT2', 'AT3', 'AT4', 'AT5']].sum(axis=1)
+                    df_editado['Média Final'] = ((df_editado['N1'] + df_editado['N2']) / 2).round(1)
                     
                     st.divider()
                     st.subheader("📊 Resultado e Exportação")
                     
                     # Exibe apenas o resumo
-                    st.dataframe(df_editado[['nome', 'N1 (Média)', 'N2', 'Média Final']], use_container_width=True, hide_index=True)
+                    st.dataframe(df_editado[['nome', 'N1', 'N2', 'Média Final']], use_container_width=True, hide_index=True)
                     
                     # Exportação Excel
                     output = io.BytesIO()
