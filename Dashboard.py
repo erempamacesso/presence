@@ -69,28 +69,26 @@ def exibir_cenario(supabase):
             st.info("Nenhuma presença registrada para este dia.")
 
     # ==========================================
-    # 4. COLUNA DIREITA: A TABELA QUE VOCÊ QUERIA
+    # 4. COLUNA DIREITA: TABELA COM SOMATÓRIO POR TURMA
     # ==========================================
     with col_dir:
         st.subheader("📋 Resumo por Sala")
         
         if not df_matriculas_total.empty:
-            # 1. Conta total de alunos por turma (da tabela alunos)
+            # 1. Conta total de alunos matriculados por turma
             df_resumo = df_matriculas_total.groupby('turma').size().reset_index(name='Total')
             
-            # 2. Conta presentes por turma (da tabela frequencia)
+            # 2. Conta presentes hoje por turma
             if not df_presentes_hoje.empty:
                 df_p = df_presentes_hoje.groupby('turma').size().reset_index(name='Pres.')
-                # Junta as duas informações
                 df_resumo = pd.merge(df_resumo, df_p, on='turma', how='left').fillna(0)
             else:
                 df_resumo['Pres.'] = 0
             
-            # Formatação final
             df_resumo['Pres.'] = df_resumo['Pres.'].astype(int)
             df_resumo = df_resumo.sort_values(by='turma')
             
-            # Exibe a tabela organizada: Turma | Presentes | Total
+            # Exibe a tabela organizada
             st.dataframe(
                 df_resumo[['turma', 'Pres.', 'Total']],
                 use_container_width=True,
@@ -98,8 +96,8 @@ def exibir_cenario(supabase):
                 height=550,
                 column_config={
                     "turma": "Turma",
-                    "Pres.": st.column_config.NumberColumn("Pres.", help="Alunos presentes hoje"),
-                    "Total": st.column_config.NumberColumn("Total", help="Total de matriculados")
+                    "Pres.": st.column_config.NumberColumn("Pres."),
+                    "Total": st.column_config.NumberColumn("Total")
                 }
             )
         else:
@@ -120,18 +118,23 @@ def exibir_cenario(supabase):
                 res_f = supabase.table("frequencia").select("aluno_nome").eq("data_chamada", hoje_iso).eq("turma", t_sel).eq("status", "F").execute()
                 if res_f.data:
                     df_f = pd.DataFrame(res_f.data).sort_values(by="aluno_nome")
-                    st.table(df_f)
                     
-                    # Gerar PDF
-                    buf = io.BytesIO()
-                    c = canvas.Canvas(buf, pagesize=A4)
-                    c.drawString(50, 800, f"Ausentes - {t_sel} - {data_hoje}")
-                    y = 770
-                    for n in df_f['aluno_nome']:
-                        c.drawString(60, y, f"• {n}")
-                        y -= 20
-                    c.save()
-                    st.download_button("📥 Baixar PDF", buf.getvalue(), f"Faltas_{t_sel}.pdf", "application/pdf")
+                    # Layout da lista de faltosos
+                    c_tab, c_pdf = st.columns([2, 1])
+                    with c_tab:
+                        st.table(df_f)
+                    
+                    with c_pdf:
+                        # Gerar PDF
+                        buf = io.BytesIO()
+                        c = canvas.Canvas(buf, pagesize=A4)
+                        c.drawString(50, 800, f"Ausentes - {t_sel} - {data_hoje}")
+                        y = 770
+                        for n in df_f['aluno_nome']:
+                            c.drawString(60, y, f"• {n}")
+                            y -= 20
+                        c.save()
+                        st.download_button("📥 Baixar PDF", buf.getvalue(), f"Faltas_{t_sel}.pdf", "application/pdf")
                 else:
                     st.success("Tudo certo! Nenhuma falta nesta turma.")
     except Exception as e:
