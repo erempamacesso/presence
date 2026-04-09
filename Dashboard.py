@@ -634,9 +634,9 @@ elif menu == "Diagnósticos IA":
 
 # BLOCO DAS NOTAS TRIMESTRE #
 
-elif menu == "Boletim Final SIEPE":
+elif menu == "PLANILHA DE NOTAS":
     st.title("🏫 Consolidação de Notas SIEPE")
-    st.write("Preencha as notas ou importe-as das avaliações online. O sistema calculará as médias automaticamente.")
+    st.write("Importe provas para colunas específicas para travá-las, ou digite manualmente as notas de projetos.")
 
     try:
         # 1. Busca todos os alunos
@@ -644,8 +644,6 @@ elif menu == "Boletim Final SIEPE":
         
         if res_a.data:
             df_todos = pd.DataFrame(res_a.data)
-            
-            # Identificação dinâmica de colunas
             col_t = 'turma' if 'turma' in df_todos.columns else ('serie' if 'serie' in df_todos.columns else None)
             col_n = 'nome' if 'nome' in df_todos.columns else ('Nome' if 'Nome' in df_todos.columns else ('aluno' if 'aluno' in df_todos.columns else None))
             
@@ -654,138 +652,135 @@ elif menu == "Boletim Final SIEPE":
                 turma_sel = st.selectbox("Selecione a Turma:", turmas_list)
                 
                 if turma_sel:
-                    # Filtra e ordena alunos da turma
-                    df_turma = df_todos[df_todos[col_t] == turma_sel].sort_values(by=col_n).copy()
-                    
                     # =====================================================================
-                    # 🧠 CONTROLE DE MEMÓRIA (Evita resetar dados e atrasar cálculos)
+                    # 🧠 GESTÃO DE ESTADO E TRAVAMENTO
                     # =====================================================================
                     state_key = f"tabela_notas_{turma_sel}"
+                    locked_key = f"colunas_travadas_{turma_sel}"
                     editor_key = f"editor_notas_{turma_sel}"
                     
-                    # 1. Se a turma ainda não tem dados na memória, cria a base com zeros
+                    # Inicializa a tabela se não existir
                     if state_key not in st.session_state:
                         df_base = pd.DataFrame()
-                        df_base['nome'] = df_turma[col_n].values
+                        df_base['nome'] = df_todos[df_todos[col_t] == turma_sel].sort_values(by=col_n)[col_n].values
                         for col in ['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N1', 'N2', 'Média Final']:
                             df_base[col] = 0.0
                         st.session_state[state_key] = df_base
-                        
-                    # 2. Intercepta edições manuais *antes* de renderizar (atualização instantânea)
-                    if editor_key in st.session_state:
-                        edicoes_pendentes = st.session_state[editor_key].get("edited_rows", {})
-                        for row_idx, alteracoes_coluna in edicoes_pendentes.items():
-                            for col_name, novo_valor in alteracoes_coluna.items():
-                                st.session_state[state_key].at[row_idx, col_name] = float(novo_valor) if novo_valor is not None else 0.0
+                    
+                    # Inicializa lista de colunas travadas (vazia no início)
+                    if locked_key not in st.session_state:
+                        st.session_state[locked_key] = []
 
-                    # 3. Calcula as fórmulas dinamicamente direto na memória
+                    # Sincroniza edições manuais
+                    if editor_key in st.session_state:
+                        edicoes = st.session_state[editor_key].get("edited_rows", {})
+                        for row_idx, alteracoes in edicoes.items():
+                            for col_name, valor in alteracoes.items():
+                                st.session_state[state_key].at[row_idx, col_name] = float(valor) if valor is not None else 0.0
+
+                    # Cálculos Automáticos
                     st.session_state[state_key]['N1'] = st.session_state[state_key][['AT1', 'AT2', 'AT3', 'AT4', 'AT5']].sum(axis=1).round(1)
                     st.session_state[state_key]['Média Final'] = ((st.session_state[state_key]['N1'] + st.session_state[state_key]['N2']) / 2).round(1)
 
                     # =====================================================================
-                    # 🔄 MÓDULO DE IMPORTAÇÃO (Agora gravando via botão)
+                    # 📥 IMPORTAÇÃO E TRAVAMENTO DINÂMICO
                     # =====================================================================
                     st.divider()
-                    with st.expander("📥 Importar Notas de Provas Online", expanded=False):
-                        st.info("Selecione a prova e o destino. O botão fixará os dados na tabela abaixo.")
+                    with st.expander("📥 Importar Prova e Travar Coluna", expanded=False):
+                        res_p = supabase.table("modelos_prova").select("id, titulo, valor_questao").order("id", desc=True).execute()
                         
-                        res_p_modelos = supabase.table("modelos_prova").select("id, titulo, valor_questao").order("id", desc=True).execute()
-                        
-                        if res_p_modelos.data:
-                            provas_dict = {p['titulo']: p for p in res_p_modelos.data}
-                            col_imp1, col_imp2 = st.columns(2)
+                        if res_p.data:
+                            provas_dict = {p['titulo']: p for p in res_p.data}
+                            col_i1, col_i2 = st.columns(2)
                             
-                            prova_selecionada = col_imp1.selectbox("Selecione a Prova:", list(provas_dict.keys()))
-                            coluna_destino = col_imp2.selectbox("Importar para qual coluna?", ['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N2'])
+                            prova_escolhida = col_i1.selectbox("Selecione a Prova:", list(provas_dict.keys()))
+                            coluna_alvo = col_i2.selectbox("Destino (Travar coluna):", ['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N2'])
                             
-                            # 🎯 BOTÃO DE APLICAÇÃO (Trava o dado na Session State)
-                            if st.button("⬇️ Aplicar Importação à Tabela", use_container_width=True, type="primary"):
-                                p_obj = provas_dict[prova_selecionada]
-                                id_prova = p_obj['id']
-                                valor_q = float(p_obj.get('valor_questao', 1.0))
-                                
-                                res_res = supabase.table("resultados_provas").select("*").eq("prova_id", id_prova).execute()
+                            if st.button(f"🔒 Importar e Travar {coluna_alvo}", use_container_width=True):
+                                p_obj = provas_dict[prova_escolhida]
+                                res_res = supabase.table("resultados_provas").select("*").eq("prova_id", p_obj['id']).execute()
                                 
                                 if res_res.data:
+                                    # Processamento das notas
                                     df_res = pd.DataFrame(res_res.data)
-                                    df_res['aluno_id'] = df_res['aluno_id'].astype(str)
-                                    df_res['pontos'] = df_res['acertou'].apply(lambda x: 1 if x is True else 0)
+                                    df_res['acertos'] = df_res['acertou'].apply(lambda x: 1 if x is True else 0)
+                                    df_calc = df_res.groupby('aluno_id')['acertos'].sum().reset_index()
+                                    df_calc['nota'] = df_calc['acertos'] * float(p_obj['valor_questao'])
                                     
-                                    df_notas_calc = df_res.groupby('aluno_id').agg(total_acertos=('pontos', 'sum')).reset_index()
-                                    df_notas_calc['nota_final'] = df_notas_calc['total_acertos'] * valor_q
+                                    # Mapeamento para nomes
+                                    res_n = supabase_alunos.table("alunos").select("id, nome").in_("id", df_calc['aluno_id'].astype(str).tolist()).execute()
+                                    mapa = {str(item['id']): item['nome'] for item in res_n.data}
+                                    df_calc['nome_aluno'] = df_calc['aluno_id'].astype(str).map(mapa)
+                                    mapa_notas = dict(zip(df_calc['nome_aluno'], df_calc['nota']))
                                     
-                                    lista_ids = df_notas_calc['aluno_id'].tolist()
-                                    if lista_ids:
-                                        res_al_nomes = supabase_alunos.table("alunos").select("id, nome").in_("id", lista_ids).execute()
-                                        if res_al_nomes.data:
-                                            df_nomes_map = pd.DataFrame(res_al_nomes.data)
-                                            if not df_nomes_map.empty and 'id' in df_nomes_map.columns:
-                                                df_nomes_map['id'] = df_nomes_map['id'].astype(str)
-                                                df_final_map = pd.merge(df_nomes_map, df_notas_calc, left_on="id", right_on="aluno_id")
-                                                mapa_notas = dict(zip(df_final_map['nome'], df_final_map['nota_final']))
-                                                
-                                                # Grava o resultado DEFINITIVAMENTE na memória
-                                                st.session_state[state_key][coluna_destino] = st.session_state[state_key]['nome'].map(mapa_notas).fillna(st.session_state[state_key][coluna_destino])
-                                                
-                                                # Recalcula as fórmulas na hora
-                                                st.session_state[state_key]['N1'] = st.session_state[state_key][['AT1', 'AT2', 'AT3', 'AT4', 'AT5']].sum(axis=1).round(1)
-                                                st.session_state[state_key]['Média Final'] = ((st.session_state[state_key]['N1'] + st.session_state[state_key]['N2']) / 2).round(1)
-                                                
-                                                st.success(f"✅ Notas da prova '{prova_selecionada}' gravadas com sucesso em {coluna_destino}!")
-                                            else:
-                                                st.warning("Não foi possível mapear os IDs aos nomes dos alunos.")
-                                        else:
-                                            st.warning("Nenhum aluno correspondente encontrado na base de dados.")
-                                    else:
-                                        st.warning("Lista de IDs de alunos está vazia.")
-                                else:
-                                    st.warning("Nenhum resultado encontrado para esta prova.")
+                                    # Grava na memória e TRAVA a coluna
+                                    st.session_state[state_key][coluna_alvo] = st.session_state[state_key]['nome'].map(mapa_notas).fillna(0.0)
+                                    if coluna_alvo not in st.session_state[locked_key]:
+                                        st.session_state[locked_key].append(coluna_alvo)
+                                    
+                                    st.success(f"✅ Coluna {coluna_alvo} preenchida e bloqueada!")
+                                    st.rerun()
 
                     # =====================================================================
-                    st.subheader(f"📝 Lançamento de Notas - {turma_sel}")
+                    # 📝 EDITOR DE NOTAS (COM TRAVAMENTO DINÂMICO)
+                    # =====================================================================
+                    st.subheader(f"Notas: {turma_sel}")
                     
-                    altura_tabela = (len(st.session_state[state_key]) + 1) * 36
+                    # Construção dinâmica das configurações de colunas
+                    config_colunas = {
+                        "nome": st.column_config.TextColumn("Estudante", disabled=True, width="medium"),
+                        "N1": st.column_config.NumberColumn("N1 (Soma)", disabled=True, width="small"),
+                        "Média Final": st.column_config.NumberColumn("Média", disabled=True, width="small"),
+                    }
+                    
+                    # Colunas de Notas (AT1 a AT5 e N2)
+                    for c in ['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N2']:
+                        # Se a coluna estiver na lista de travadas, disabled = True
+                        esta_travada = c in st.session_state[locked_key]
+                        label = f"{c} 🔒" if esta_travada else c
+                        
+                        config_colunas[c] = st.column_config.NumberColumn(
+                            label, 
+                            min_value=0.0, 
+                            max_value=10.0, 
+                            format="%.1f", 
+                            disabled=esta_travada, # 👈 AQUI ACONTECE A MÁGICA
+                            width="small"
+                        )
 
-                    # 🎯 ÚNICA TABELA (Larga, com resultados travados)
                     st.data_editor(
                         st.session_state[state_key],
-                        key=editor_key, # Conecta com o sistema de memória lá de cima
-                        use_container_width=False,
+                        key=editor_key,
                         hide_index=True,
-                        height=altura_tabela,
-                        column_config={
-                            "nome": st.column_config.TextColumn("Nome do Aluno", disabled=True, width="medium"),
-                            "AT1": st.column_config.NumberColumn("AT1", min_value=0.0, max_value=10.0, format="%.1f", step=0.1, width="small"),
-                            "AT2": st.column_config.NumberColumn("AT2", min_value=0.0, max_value=10.0, format="%.1f", step=0.1, width="small"),
-                            "AT3": st.column_config.NumberColumn("AT3", min_value=0.0, max_value=10.0, format="%.1f", step=0.1, width="small"),
-                            "AT4": st.column_config.NumberColumn("AT4", min_value=0.0, max_value=10.0, format="%.1f", step=0.1, width="small"),
-                            "AT5": st.column_config.NumberColumn("AT5", min_value=0.0, max_value=10.0, format="%.1f", step=0.1, width="small"),
-                            "N1": st.column_config.NumberColumn("N1 (Soma)", disabled=True, width="small"), # 👈 COLUNA TRAVADA
-                            "N2": st.column_config.NumberColumn("N2 (Prova)", min_value=0.0, max_value=10.0, format="%.1f", step=0.1, width="small"),
-                            "Média Final": st.column_config.NumberColumn("Média", disabled=True, width="small") # 👈 COLUNA TRAVADA
-                        }
+                        use_container_width=False, # 👈 LARGURA MÍNIMA
+                        column_config=config_colunas,
+                        height=(len(st.session_state[state_key]) + 1) * 35 + 40
                     )
                     
+                    if st.button("🔓 Resetar Travas desta Turma", type="secondary"):
+                        st.session_state[locked_key] = []
+                        st.rerun()
+
+                    # =====================================================================
+                    # 📥 EXPORTAÇÃO
+                    # =====================================================================
                     st.divider()
-                    
-                    # 📊 Exportação Excel usando os dados em memória
                     output = io.BytesIO()
                     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                        st.session_state[state_key].to_excel(writer, sheet_name="Notas_SIEPE", index=False)
+                        st.session_state[state_key].to_excel(writer, sheet_name="SIEPE", index=False)
                     
                     st.download_button(
-                        label="📥 Baixar Planilha Excel para o SIEPE",
+                        label="📥 Baixar Planilha para o SIEPE",
                         data=output.getvalue(),
-                        file_name=f"SIEPE_{turma_sel.replace(' ', '_')}.xlsx",
+                        file_name=f"SIEPE_{turma_sel}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        type="primary",
-                        use_container_width=False
+                        type="primary"
                     )
 
             else:
-                st.error("Erro nas colunas do banco de dados.")
+                st.error("Colunas de 'turma' ou 'nome' não encontradas.")
         else:
-            st.info("Nenhum aluno cadastrado.")
+            st.info("Nenhum aluno encontrado.")
             
     except Exception as e:
-        st.error(f"Erro no módulo SIEPE: {e}")
+        st.error(f"Erro no Boletim: {e}")
