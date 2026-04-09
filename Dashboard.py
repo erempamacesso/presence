@@ -31,21 +31,17 @@ def exibir_cenario(supabase):
     df_presentes_hoje = pd.DataFrame()
     df_matriculas = pd.DataFrame()
     n_presentes, total_alunos, n_faltas, perc = 0, 0, 0, 0
-    coluna_t = 'turma' # Nome padrão
 
     try:
-        # Mudança 1: Pegar tudo ("*") para descobrir o nome real da coluna
-        res_total = supabase.table("alunos").select("*").execute()
+        # Pega a lista de alunos com suas turmas para poder agrupar por série
+        res_alunos = supabase.table("alunos").select("id, turma").execute()
         
-        if res_total.data:
-            df_matriculas = pd.DataFrame(res_total.data)
+        if res_alunos.data:
+            df_matriculas = pd.DataFrame(res_alunos.data)
             total_alunos = len(df_matriculas)
-            
-            # Descobre qual é a coluna de turma/série dinâmica
-            coluna_t = next((c for c in ['turma', 'Turma', 'serie', 'Serie', 'ano'] if c in df_matriculas.columns), None)
         else:
             total_alunos = 0
-        
+            
         # Pega presentes do dia
         res_freq = supabase.table("frequencia").select("*").eq("data_chamada", hoje_iso).eq("status", "P").execute()
         
@@ -80,74 +76,66 @@ def exibir_cenario(supabase):
             st.info("ℹ️ Período de Recesso Escolar")
 
         st.divider()
-        
-        # ==========================================
+
+        # Gráfico esticado para mostrar todas as turmas
+        try:
+            if not df_presentes_hoje.empty and 'turma' in df_presentes_hoje.columns:
+                st.subheader("🏫 Presença por Turma")
+                df_turmas = df_presentes_hoje.groupby('turma').size().reset_index(name='Presentes')
+                
+                # O parâmetro height=400 estica o gráfico para baixo, dando espaço para o Eixo X
+                st.bar_chart(
+                    data=df_turmas,
+                    x="turma",
+                    y="Presentes",
+                    color="turma",
+                    height=450, 
+                    use_container_width=True
+                )
+            else:
+                st.info("Aguardando registros de chamada para gerar o gráfico.")
+        except:
+            pass
+
+    # ==========================================
+    # 4. LADO DIREITO (Matrículas por Série e Tabela de Presentes)
+    # ==========================================
+    with col_dir:
         # 🆕 NOVA SEÇÃO: DETALHAMENTO DE MATRÍCULAS (ACORDEÃO)
-        # ==========================================
-        if not df_matriculas.empty and coluna_t:
-            # Filtra apenas quem tem turma preenchida para evitar erros
-            df_valido = df_matriculas.dropna(subset=[coluna_t]).copy()
+        st.subheader("🎓 Total por Série")
+        
+        if not df_matriculas.empty and 'turma' in df_matriculas.columns:
+            # Filtra vazios e evita erros
+            df_valido = df_matriculas.dropna(subset=['turma']).copy()
             
-            # Função para identificar o ano (procura por 1, 2 ou 3 no nome)
+            # Lógica para achar 1, 2 ou 3 no nome da turma
             def identificar_ano(t):
                 t_str = str(t).upper()
                 if '1' in t_str: return "1º Ano"
                 if '2' in t_str: return "2º Ano"
                 if '3' in t_str: return "3º Ano"
-                return "Outras"
+                return "Outros"
             
-            df_valido['ano_identificado'] = df_valido[coluna_t].apply(identificar_ano)
+            df_valido['serie'] = df_valido['turma'].apply(identificar_ano)
+            resumo_series = df_valido.groupby(['serie', 'turma']).size().reset_index(name='qtd')
             
-            # Agrupa os dados
-            resumo_series = df_valido.groupby(['ano_identificado', coluna_t]).size().reset_index(name='qtd')
-            
-            # Colunas para os botões expanders
-            col_s1, col_s2, col_s3 = st.columns(3)
-            colunas_disp = {"1º Ano": col_s1, "2º Ano": col_s2, "3º Ano": col_s3}
-            
+            # Gera os botões retráteis (expanders)
             for serie_nome in ["1º Ano", "2º Ano", "3º Ano"]:
-                df_serie_atual = resumo_series[resumo_series['ano_identificado'] == serie_nome].sort_values(by=coluna_t)
+                df_serie_atual = resumo_series[resumo_series['serie'] == serie_nome].sort_values(by='turma')
                 
                 if not df_serie_atual.empty:
                     total_serie = df_serie_atual['qtd'].sum()
-                    with colunas_disp[serie_nome].expander(f"🎓 {serie_nome} (Total: {total_serie})"):
+                    with st.expander(f"📚 {serie_nome} (Total: {total_serie})", expanded=False):
                         for _, row in df_serie_atual.iterrows():
-                            st.markdown(f"**{row[coluna_t]}**: {row['qtd']} estudantes")
-                else:
-                    # Se não achar turmas desse ano, coloca um aviso vazio no lugar para não quebrar o layout
-                    with colunas_disp[serie_nome]:
-                        st.empty()
-        elif not coluna_t:
-             st.warning("⚠️ Coluna de turmas não encontrada no banco de dados ('turma', 'serie', etc).")
+                            # Exibe o texto de forma limpa
+                            st.write(f"**{row['turma']}**: {row['qtd']} estudantes")
+        else:
+            st.info("Sem dados de turmas.")
+
+        st.divider() # Dá um espacinho visual elegante
         
-        st.divider()
-
-        # Gráfico esticado para mostrar todas as turmas (Ajustado para usar a coluna dinâmica)
-        try:
-            if not df_presentes_hoje.empty:
-                col_turma_freq = next((c for c in ['turma', 'Turma', 'serie'] if c in df_presentes_hoje.columns), None)
-                if col_turma_freq:
-                    st.subheader("🏫 Presença por Turma")
-                    df_turmas = df_presentes_hoje.groupby(col_turma_freq).size().reset_index(name='Presentes')
-                    
-                    st.bar_chart(
-                        data=df_turmas,
-                        x=col_turma_freq,
-                        y="Presentes",
-                        color=col_turma_freq,
-                        height=450, 
-                        use_container_width=True
-                    )
-                else:
-                    st.info("Aguardando registros de chamada para gerar o gráfico.")
-        except:
-            pass
-
-    # ==========================================
-    # 4. LADO DIREITO (Tabela de Presentes)
-    # ==========================================
-    with col_dir:
-        st.subheader("📋 Resumo por Sala")
+        # TABELA ORIGINAL DE RESUMO POR SALA
+        st.subheader("📋 Presentes por Sala")
         
         if not df_presentes_hoje.empty and 'turma' in df_presentes_hoje.columns:
             df_resumo = df_presentes_hoje.groupby('turma').size().reset_index(name='Qtd')
@@ -157,7 +145,7 @@ def exibir_cenario(supabase):
                 df_resumo,
                 use_container_width=True,
                 hide_index=True,
-                height=530, # 👇 A mágica está aqui! Altura travada para caber as 13 turmas sem scroll
+                height=350, # Altura ajustada para conviver bem com o acordeão de cima
                 column_config={
                     "turma": st.column_config.TextColumn("Turma"),
                     "Qtd": st.column_config.NumberColumn("Presentes")
@@ -198,7 +186,7 @@ def exibir_cenario(supabase):
                     df_faltosos = df_faltosos.sort_values(by="aluno_nome")
                     
                     # ---------------------------------------------------------
-                    # 🚀 NOVA LÓGICA: MOTOR DE GERAÇÃO DO PDF EM MEMÓRIA
+                    # 🚀 LÓGICA: MOTOR DE GERAÇÃO DO PDF EM MEMÓRIA
                     # ---------------------------------------------------------
                     buffer = io.BytesIO()
                     pdf = canvas.Canvas(buffer, pagesize=A4)
