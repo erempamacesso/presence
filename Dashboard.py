@@ -29,19 +29,23 @@ def exibir_cenario(supabase):
     
     hoje_iso = data_hoje.isoformat()
     df_presentes_hoje = pd.DataFrame()
-    df_matriculas = pd.DataFrame()
+    df_total_por_turma = pd.DataFrame()
     n_presentes, total_alunos, n_faltas, perc = 0, 0, 0, 0
 
     try:
-        # Pega a lista de alunos com suas turmas para poder agrupar por série
-        res_alunos = supabase.table("alunos").select("id, turma").execute()
+        # Pega os alunos com a turma para podermos contar os totais de cada sala
+        res_total = supabase.table("alunos").select("id, turma").execute()
         
-        if res_alunos.data:
-            df_matriculas = pd.DataFrame(res_alunos.data)
+        if res_total.data:
+            df_matriculas = pd.DataFrame(res_total.data)
             total_alunos = len(df_matriculas)
+            
+            # Agrupa os alunos para saber o total por turma
+            if 'turma' in df_matriculas.columns:
+                df_total_por_turma = df_matriculas.groupby('turma').size().reset_index(name='Total Matriculados')
         else:
             total_alunos = 0
-            
+        
         # Pega presentes do dia
         res_freq = supabase.table("frequencia").select("*").eq("data_chamada", hoje_iso).eq("status", "P").execute()
         
@@ -70,7 +74,7 @@ def exibir_cenario(supabase):
         c1.metric("Presentes", n_presentes)
         c2.metric("Ausentes do Dia", n_faltas, delta=f"{n_faltas}", delta_color="inverse")
         c3.metric("% Freq", f"{perc:.1f}%")
-        c4.metric("Matrícula Geral", total_alunos)
+        c4.metric("Matrícula", total_alunos)
 
         if RECESSO[0] <= data_hoje <= RECESSO[1]:
             st.info("ℹ️ Período de Recesso Escolar")
@@ -98,61 +102,46 @@ def exibir_cenario(supabase):
             pass
 
     # ==========================================
-    # 4. LADO DIREITO (Matrículas por Série e Tabela de Presentes)
+    # 4. LADO DIREITO (Tabela de Presentes com Total de Matrículas)
     # ==========================================
     with col_dir:
-        # 🆕 NOVA SEÇÃO: DETALHAMENTO DE MATRÍCULAS (ACORDEÃO)
-        st.subheader("🎓 Total por Série")
+        st.subheader("📋 Resumo por Sala")
         
-        if not df_matriculas.empty and 'turma' in df_matriculas.columns:
-            # Filtra vazios e evita erros
-            df_valido = df_matriculas.dropna(subset=['turma']).copy()
+        # Só cria a tabela se tivermos o total de alunos por turma
+        if not df_total_por_turma.empty:
+            df_resumo_final = df_total_por_turma.copy()
             
-            # Lógica para achar 1, 2 ou 3 no nome da turma
-            def identificar_ano(t):
-                t_str = str(t).upper()
-                if '1' in t_str: return "1º Ano"
-                if '2' in t_str: return "2º Ano"
-                if '3' in t_str: return "3º Ano"
-                return "Outros"
+            # Se já houver chamada hoje, junta as informações (Merge)
+            if not df_presentes_hoje.empty and 'turma' in df_presentes_hoje.columns:
+                df_presentes_agrupado = df_presentes_hoje.groupby('turma').size().reset_index(name='Presentes')
+                # Junta o total com os presentes (Left Join para não perder as turmas que ninguém foi ainda)
+                df_resumo_final = pd.merge(df_resumo_final, df_presentes_agrupado, on='turma', how='left')
+            else:
+                # Se não tem chamada, a coluna presentes é zero para todos
+                df_resumo_final['Presentes'] = 0
             
-            df_valido['serie'] = df_valido['turma'].apply(identificar_ano)
-            resumo_series = df_valido.groupby(['serie', 'turma']).size().reset_index(name='qtd')
+            # Limpa os nulos (turmas que estão no banco mas não tiveram chamada hoje)
+            df_resumo_final['Presentes'] = df_resumo_final['Presentes'].fillna(0).astype(int)
             
-            # Gera os botões retráteis (expanders)
-            for serie_nome in ["1º Ano", "2º Ano", "3º Ano"]:
-                df_serie_atual = resumo_series[resumo_series['serie'] == serie_nome].sort_values(by='turma')
-                
-                if not df_serie_atual.empty:
-                    total_serie = df_serie_atual['qtd'].sum()
-                    with st.expander(f"📚 {serie_nome} (Total: {total_serie})", expanded=False):
-                        for _, row in df_serie_atual.iterrows():
-                            # Exibe o texto de forma limpa
-                            st.write(f"**{row['turma']}**: {row['qtd']} estudantes")
-        else:
-            st.info("Sem dados de turmas.")
-
-        st.divider() # Dá um espacinho visual elegante
-        
-        # TABELA ORIGINAL DE RESUMO POR SALA
-        st.subheader("📋 Presentes por Sala")
-        
-        if not df_presentes_hoje.empty and 'turma' in df_presentes_hoje.columns:
-            df_resumo = df_presentes_hoje.groupby('turma').size().reset_index(name='Qtd')
-            df_resumo = df_resumo.sort_values(by='turma')
+            # Organiza alfabeticamente pela turma
+            df_resumo_final = df_resumo_final.sort_values(by='turma')
+            
+            # Ordena as colunas pra ficar mais bonitinho: Turma | Presentes | Total Matriculados
+            df_resumo_final = df_resumo_final[['turma', 'Presentes', 'Total Matriculados']]
             
             st.dataframe(
-                df_resumo,
+                df_resumo_final,
                 use_container_width=True,
                 hide_index=True,
-                height=350, # Altura ajustada para conviver bem com o acordeão de cima
+                height=530, # Altura travada para caber as turmas sem scroll
                 column_config={
                     "turma": st.column_config.TextColumn("Turma"),
-                    "Qtd": st.column_config.NumberColumn("Presentes")
+                    "Presentes": st.column_config.NumberColumn("Presentes"),
+                    "Total Matriculados": st.column_config.NumberColumn("Total")
                 }
             )
         else:
-            st.info("Nenhuma presença registrada.")
+            st.info("Nenhuma matrícula ou presença registrada para gerar o resumo.")
 
     # ==========================================
     # 5. ÁREA INFERIOR (Alunos Ausentes no Dia)
