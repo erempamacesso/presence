@@ -63,7 +63,7 @@ with st.sidebar:
             "Lista de Matrículas",
             "Central de Avisos",
             "Diagnósticos IA",
-            "Planilha de Notas"
+            "Boletim Final SIEPE"
         ],
         icons=[
             "bar-chart-fill", "pencil-square", "book", "file-earmark-text",
@@ -634,7 +634,7 @@ elif menu == "Diagnósticos IA":
 
 # BLOCO DAS NOTAS TRIMESTRE #
 
-elif menu == "PLANILHA DE NOTAS":
+elif menu == "Boletim Final SIEPE":
     st.title("🏫 Consolidação de Notas SIEPE")
     st.write("Importe provas para colunas específicas para travá-las, ou digite manualmente as notas de projetos.")
 
