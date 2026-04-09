@@ -744,7 +744,7 @@ elif menu == "Boletim Final SIEPE":
                             min_value=0.0, 
                             max_value=10.0, 
                             format="%.1f", 
-                            disabled=esta_travada, # 👈 AQUI ACONTECE A MÁGICA
+                            disabled=esta_travada,
                             width="small"
                         )
 
@@ -752,7 +752,7 @@ elif menu == "Boletim Final SIEPE":
                         st.session_state[state_key],
                         key=editor_key,
                         hide_index=True,
-                        use_container_width=False, # 👈 LARGURA MÍNIMA
+                        use_container_width=False,
                         column_config=config_colunas,
                         height=(len(st.session_state[state_key]) + 1) * 35 + 40
                     )
