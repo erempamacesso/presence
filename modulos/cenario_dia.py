@@ -16,9 +16,6 @@ def exibir_cenario(supabase):
     # ==========================================
     col_esq, col_dir = st.columns([7, 3], gap="large")
 
-    # ==========================================
-    # 2. BUSCA DE DADOS
-    # ==========================================
     with col_esq:
         data_hoje = st.date_input("Data de Análise:", value=datetime.date.today(), format="DD/MM/YYYY")
     
@@ -27,14 +24,15 @@ def exibir_cenario(supabase):
     df_presentes_hoje = pd.DataFrame()
     n_presentes, total_alunos = 0, 0
 
+    # Bloco de busca de dados
     try:
-        # Puxa todos os alunos para contar o total real por turma
+        # Puxa matrículas
         res_alunos = supabase.table("alunos").select("id, turma").execute()
         if res_alunos.data:
             df_matriculas_total = pd.DataFrame(res_alunos.data)
             total_alunos = len(df_matriculas_total)
         
-        # Puxa frequencia do dia
+        # Puxa frequencia
         res_freq = supabase.table("frequencia").select("aluno_nome, turma").eq("data_chamada", hoje_iso).eq("status", "P").execute()
         if res_freq.data:
             df_presentes_hoje = pd.DataFrame(res_freq.data)
@@ -44,10 +42,10 @@ def exibir_cenario(supabase):
         perc = (n_presentes / total_alunos * 100) if total_alunos > 0 else 0
         
     except Exception as e:
-        st.error(f"Erro na conexão: {e}")
+        st.error(f"Erro na conexão com o banco: {e}")
 
     # ==========================================
-    # 3. COLUNA ESQUERDA: MÉTRICAS E GRÁFICO
+    # 2. COLUNA ESQUERDA (Métricas e Gráfico)
     # ==========================================
     with col_esq:
         st.divider()
@@ -57,28 +55,24 @@ def exibir_cenario(supabase):
         m3.metric("% Frequência", f"{perc:.1f}%")
         m4.metric("Matrícula Total", total_alunos)
 
-        if RECESSO[0] <= data_hoje <= RECESSO[1]:
-            st.info("ℹ️ Período de Recesso Escolar")
-
         st.divider()
         st.subheader("🏫 Presença por Turma")
         if not df_presentes_hoje.empty:
             df_graf = df_presentes_hoje.groupby('turma').size().reset_index(name='Presentes')
             st.bar_chart(df_graf, x="turma", y="Presentes", color="turma", height=400)
         else:
-            st.info("Nenhuma presença registrada para este dia.")
+            st.info("Nenhuma presença registrada.")
 
     # ==========================================
-    # 4. COLUNA DIREITA: TABELA COM "TURMA (TOTAL)"
+    # 3. COLUNA DIREITA (Tabela com parênteses)
     # ==========================================
     with col_dir:
         st.subheader("📋 Resumo por Sala")
         
         if not df_matriculas_total.empty:
-            # 1. Conta total de alunos matriculados por turma
+            # Agrupa totais e presentes
             df_resumo = df_matriculas_total.groupby('turma').size().reset_index(name='Total')
             
-            # 2. Conta presentes hoje por turma
             if not df_presentes_hoje.empty:
                 df_p = df_presentes_hoje.groupby('turma').size().reset_index(name='Pres.')
                 df_resumo = pd.merge(df_resumo, df_p, on='turma', how='left').fillna(0)
@@ -88,54 +82,36 @@ def exibir_cenario(supabase):
             df_resumo['Pres.'] = df_resumo['Pres.'].astype(int)
             df_resumo = df_resumo.sort_values(by='turma')
             
-            # ✨ A MÁGICA: Formata a coluna para aparecer "1º A (39)"
-            df_resumo['Turma_Total'] = df_resumo['turma'] + " (" + df_resumo['Total'].astype(str) + ")"
+            # Formatação solicitada: 1º A (39)
+            df_resumo['Turma_Formatada'] = df_resumo['turma'] + " (" + df_resumo['Total'].astype(str) + ")"
             
-            # Exibe apenas a Turma formatada e a quantidade de Presentes
             st.dataframe(
-                df_resumo[['Turma_Total', 'Pres.']],
+                df_resumo[['Turma_Formatada', 'Pres.']],
                 use_container_width=True,
                 hide_index=True,
                 height=550,
                 column_config={
-                    "Turma_Total": st.column_config.TextColumn("Turma (Total)"),
-                    "Pres.": st.column_config.NumberColumn("Pres.")
+                    "Turma_Formatada": "Turma (Total)",
+                    "Pres.": "Presentes"
                 }
             )
         else:
-            st.warning("Sem dados de matrícula.")
+            st.warning("Sem dados.")
 
     # ==========================================
-    # 5. RODAPÉ: LISTA DE AUSENTES (PDF)
+    # 4. LISTA DE AUSENTES
     # ==========================================
     st.divider()
-    st.subheader("🚨 Lista de Estudantes Ausentes")
-    
+    st.subheader("🚨 Estudantes Ausentes")
     try:
         if not df_matriculas_total.empty:
             lista_t = sorted(df_matriculas_total['turma'].unique())
-            t_sel = st.pills("Selecione a turma para ver faltas:", options=lista_t)
+            t_sel = st.pills("Selecione a turma:", options=lista_t)
             
             if t_sel:
                 res_f = supabase.table("frequencia").select("aluno_nome").eq("data_chamada", hoje_iso).eq("turma", t_sel).eq("status", "F").execute()
                 if res_f.data:
                     df_f = pd.DataFrame(res_f.data).sort_values(by="aluno_nome")
-                    
-                    c_tab, c_pdf = st.columns([2, 1])
-                    with c_tab:
-                        st.table(df_f)
-                    
-                    with c_pdf:
-                        buf = io.BytesIO()
-                        c = canvas.Canvas(buf, pagesize=A4)
-                        c.drawString(50, 800, f"Ausentes - {t_sel} - {data_hoje}")
-                        y = 770
-                        for n in df_f['aluno_nome']:
-                            c.drawString(60, y, f"• {n}")
-                            y -= 20
-                        c.save()
-                        st.download_button("📥 Baixar PDF", buf.getvalue(), f"Faltas_{t_sel}.pdf", "application/pdf")
-                else:
-                    st.success("Tudo certo! Nenhuma falta nesta turma.")
+                    st.table(df_f)
     except Exception as e:
-        st.error(f"Erro ao carregar faltosos: {e}")
+        pass # Silencia erro na listagem se houver
