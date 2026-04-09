@@ -9,208 +9,133 @@ def exibir_cenario(supabase):
     st.title("📊 Cenário do Dia") 
     
     # --- CALENDÁRIO PE 2026 ---
-    TRIMESTRES = {
-        "1º Tri": (datetime.date(2026, 2, 2), datetime.date(2026, 5, 20)),
-        "2º Tri": (datetime.date(2026, 5, 21), datetime.date(2026, 9, 11)),
-        "3º Tri": (datetime.date(2026, 9, 12), datetime.date(2026, 12, 30))
-    }
     RECESSO = (datetime.date(2026, 7, 10), datetime.date(2026, 7, 24))
 
     # ==========================================
-    # 1. DIVISÃO DA TELA SUPERIOR (70% Esq / 30% Dir)
+    # 1. DIVISÃO DA TELA (70% Esq / 30% Dir)
     # ==========================================
     col_esq, col_dir = st.columns([7, 3], gap="large")
 
     # ==========================================
-    # 2. BUSCA DE DADOS GLOBAL
+    # 2. BUSCA DE DADOS
     # ==========================================
     with col_esq:
         data_hoje = st.date_input("Data de Análise:", value=datetime.date.today(), format="DD/MM/YYYY")
     
     hoje_iso = data_hoje.isoformat()
+    df_matriculas_total = pd.DataFrame()
     df_presentes_hoje = pd.DataFrame()
-    n_presentes, total_alunos, n_faltas, perc = 0, 0, 0, 0
+    n_presentes, total_alunos = 0, 0
 
     try:
-        # Pega total de alunos
-        res_total = supabase.table("alunos").select("id", count="exact").execute()
-        total_alunos = res_total.count if res_total.count else 0
+        # Puxa todos os alunos para contar o total real por turma
+        res_alunos = supabase.table("alunos").select("id, turma").execute()
+        if res_alunos.data:
+            df_matriculas_total = pd.DataFrame(res_alunos.data)
+            total_alunos = len(df_matriculas_total)
         
-        # Pega presentes do dia
-        res_freq = supabase.table("frequencia").select("*").eq("data_chamada", hoje_iso).eq("status", "P").execute()
-        
+        # Puxa frequencia do dia
+        res_freq = supabase.table("frequencia").select("aluno_nome, turma").eq("data_chamada", hoje_iso).eq("status", "P").execute()
         if res_freq.data:
             df_presentes_hoje = pd.DataFrame(res_freq.data)
-            col_nome = next((c for c in ['aluno_nome', 'nome_aluno'] if c in df_presentes_hoje.columns), None)
-            
-            if col_nome:
-                n_presentes = len(df_presentes_hoje[col_nome].unique())
-            else:
-                n_presentes = len(df_presentes_hoje)
-                
-        # Cálculos de faltas e percentual
+            n_presentes = len(df_presentes_hoje)
+
         n_faltas = total_alunos - n_presentes
         perc = (n_presentes / total_alunos * 100) if total_alunos > 0 else 0
         
     except Exception as e:
-        st.error(f"⚠️ Erro na conexão: {e}")
+        st.error(f"Erro na conexão: {e}")
 
     # ==========================================
-    # 3. LADO ESQUERDO (Gráficos e Censo)
+    # 3. COLUNA ESQUERDA: MÉTRICAS E GRÁFICO
     # ==========================================
     with col_esq:
         st.divider()
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Presentes", n_presentes)
-        c2.metric("Ausentes do Dia", n_faltas, delta=f"{n_faltas}", delta_color="inverse")
-        c3.metric("% Freq", f"{perc:.1f}%")
-        c4.metric("Matrícula", total_alunos)
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Presentes", n_presentes)
+        m2.metric("Ausentes", n_faltas, delta=f"-{n_faltas}", delta_color="inverse")
+        m3.metric("% Frequência", f"{perc:.1f}%")
+        m4.metric("Matrícula Total", total_alunos)
 
         if RECESSO[0] <= data_hoje <= RECESSO[1]:
             st.info("ℹ️ Período de Recesso Escolar")
 
         st.divider()
-
-        # Gráfico esticado para mostrar todas as turmas
-        try:
-            if not df_presentes_hoje.empty and 'turma' in df_presentes_hoje.columns:
-                st.subheader("🏫 Presença por Turma")
-                df_turmas = df_presentes_hoje.groupby('turma').size().reset_index(name='Presentes')
-                
-                # O parâmetro height=400 estica o gráfico para baixo, dando espaço para o Eixo X
-                st.bar_chart(
-                    data=df_turmas,
-                    x="turma",
-                    y="Presentes",
-                    color="turma",
-                    height=450, 
-                    use_container_width=True
-                )
-            else:
-                st.info("Aguardando registros de chamada para gerar o gráfico.")
-        except:
-            pass
+        st.subheader("🏫 Presença por Turma")
+        if not df_presentes_hoje.empty:
+            df_graf = df_presentes_hoje.groupby('turma').size().reset_index(name='Presentes')
+            st.bar_chart(df_graf, x="turma", y="Presentes", color="turma", height=400)
+        else:
+            st.info("Nenhuma presença registrada para este dia.")
 
     # ==========================================
-    # 4. LADO DIREITO (Tabela de Presentes)
+    # 4. COLUNA DIREITA: TABELA COM SOMATÓRIO POR TURMA
     # ==========================================
     with col_dir:
         st.subheader("📋 Resumo por Sala")
         
-        if not df_presentes_hoje.empty and 'turma' in df_presentes_hoje.columns:
-            df_resumo = df_presentes_hoje.groupby('turma').size().reset_index(name='Qtd')
+        if not df_matriculas_total.empty:
+            # 1. Conta total de alunos matriculados por turma
+            df_resumo = df_matriculas_total.groupby('turma').size().reset_index(name='Total')
+            
+            # 2. Conta presentes hoje por turma
+            if not df_presentes_hoje.empty:
+                df_p = df_presentes_hoje.groupby('turma').size().reset_index(name='Pres.')
+                df_resumo = pd.merge(df_resumo, df_p, on='turma', how='left').fillna(0)
+            else:
+                df_resumo['Pres.'] = 0
+            
+            df_resumo['Pres.'] = df_resumo['Pres.'].astype(int)
             df_resumo = df_resumo.sort_values(by='turma')
             
+            # Exibe a tabela organizada
             st.dataframe(
-                df_resumo,
+                df_resumo[['turma', 'Pres.', 'Total']],
                 use_container_width=True,
                 hide_index=True,
-                height=530, # 👇 A mágica está aqui! Altura travada para caber as 13 turmas sem scroll
+                height=550,
                 column_config={
-                    "turma": st.column_config.TextColumn("Turma"),
-                    "Qtd": st.column_config.NumberColumn("Presentes")
+                    "turma": "Turma",
+                    "Pres.": st.column_config.NumberColumn("Pres."),
+                    "Total": st.column_config.NumberColumn("Total")
                 }
             )
         else:
-            st.info("Nenhuma presença registrada.")
+            st.warning("Não há dados de matrícula.")
 
     # ==========================================
-    # 5. ÁREA INFERIOR (Alunos Ausentes no Dia)
+    # 5. RODAPÉ: LISTA DE AUSENTES (PDF)
     # ==========================================
-    st.divider() 
-    st.subheader(f"🚨 Estudantes Ausentes ({data_hoje.strftime('%d/%m/%Y')})")
-    st.caption("Selecione uma turma para ver quem faltou hoje e baixar o relatório.")
-
+    st.divider()
+    st.subheader("🚨 Lista de Estudantes Ausentes")
+    
     try:
-        # Busca todas as turmas para montar os botões (pills)
-        res_t_raw = supabase.table("alunos").select("turma").execute().data
-        lista_turmas = []
-        if res_t_raw:
-            lista_turmas = sorted(list(set([t['turma'] for t in res_t_raw if t.get('turma')])))
-        
-        if lista_turmas:
-            # O st.pills substitui o selectbox
-            turma_selecionada = st.pills("Turmas disponíveis:", options=lista_turmas)
+        if not df_matriculas_total.empty:
+            lista_t = sorted(df_matriculas_total['turma'].unique())
+            t_sel = st.pills("Selecione a turma para ver faltas:", options=lista_t)
             
-            if turma_selecionada:
-                # Busca na tabela de frequência apenas quem tirou falta (F) hoje
-                res_f = supabase.table("frequencia") \
-                    .select("aluno_nome") \
-                    .eq("data_chamada", hoje_iso) \
-                    .eq("turma", turma_selecionada) \
-                    .eq("status", "F") \
-                    .execute().data
-                
-                if res_f:
-                    df_faltosos = pd.DataFrame(res_f)
-                    df_faltosos = df_faltosos.sort_values(by="aluno_nome")
+            if t_sel:
+                res_f = supabase.table("frequencia").select("aluno_nome").eq("data_chamada", hoje_iso).eq("turma", t_sel).eq("status", "F").execute()
+                if res_f.data:
+                    df_f = pd.DataFrame(res_f.data).sort_values(by="aluno_nome")
                     
-                    # ---------------------------------------------------------
-                    # 🚀 NOVA LÓGICA: MOTOR DE GERAÇÃO DO PDF EM MEMÓRIA
-                    # ---------------------------------------------------------
-                    buffer = io.BytesIO()
-                    pdf = canvas.Canvas(buffer, pagesize=A4)
+                    # Layout da lista de faltosos
+                    c_tab, c_pdf = st.columns([2, 1])
+                    with c_tab:
+                        st.table(df_f)
                     
-                    # Título do PDF
-                    pdf.setFont("Helvetica-Bold", 16)
-                    pdf.drawString(50, 800, f"Relatório de Estudantes Ausentes - {turma_selecionada}")
-                    
-                    # Data
-                    pdf.setFont("Helvetica", 12)
-                    pdf.drawString(50, 780, f"Data da Falta: {data_hoje.strftime('%d/%m/%Y')}")
-                    
-                    # Subtítulo da lista
-                    y_pos = 740
-                    pdf.setFont("Helvetica-Bold", 12)
-                    pdf.drawString(50, y_pos, f"Total de ausentes: {len(df_faltosos)} estudantes")
-                    y_pos -= 20
-                    
-                    # Listando os nomes
-                    pdf.setFont("Helvetica", 12)
-                    for idx, row in df_faltosos.iterrows():
-                        pdf.drawString(60, y_pos, f"• {row['aluno_nome']}")
-                        y_pos -= 20
-                        
-                        # Se a página acabar, cria uma nova folha automaticamente
-                        if y_pos < 50:
-                            pdf.showPage()
-                            y_pos = 800
-                            pdf.setFont("Helvetica", 12)
-                            
-                    pdf.save()
-                    buffer.seek(0)
-                    pdf_bytes = buffer.getvalue()
-                    # ---------------------------------------------------------
-
-                    # Tratamento visual da tabela na tela
-                    df_exibicao = df_faltosos.copy()
-                    df_exibicao['Ícone'] = "❌"
-                    df_exibicao = df_exibicao[['Ícone', 'aluno_nome']] 
-                    
-                    # Centraliza a tabela e o botão para manter a elegância visual
-                    col_vazia1, col_tabela, col_vazia2 = st.columns([1, 2, 1])
-                    with col_tabela:
-                        st.dataframe(
-                            df_exibicao,
-                            use_container_width=True,
-                            hide_index=True,
-                            column_config={
-                                "Ícone": st.column_config.TextColumn("", width="small"),
-                                "aluno_nome": st.column_config.TextColumn("Nome do Estudante")
-                            }
-                        )
-                        
-                        # 📥 BOTÃO DE DOWNLOAD DO PDF
-                        st.download_button(
-                            label="📥 Baixar Lista em PDF",
-                            data=pdf_bytes,
-                            file_name=f"Faltas_{turma_selecionada}_{data_hoje.strftime('%d_%m_%Y')}.pdf",
-                            mime="application/pdf",
-                            type="primary",
-                            use_container_width=True
-                        )
+                    with c_pdf:
+                        # Gerar PDF
+                        buf = io.BytesIO()
+                        c = canvas.Canvas(buf, pagesize=A4)
+                        c.drawString(50, 800, f"Ausentes - {t_sel} - {data_hoje}")
+                        y = 770
+                        for n in df_f['aluno_nome']:
+                            c.drawString(60, y, f"• {n}")
+                            y -= 20
+                        c.save()
+                        st.download_button("📥 Baixar PDF", buf.getvalue(), f"Faltas_{t_sel}.pdf", "application/pdf")
                 else:
-                    st.success(f"🎉 Excelente! Nenhuma falta registrada para a turma {turma_selecionada} hoje.")
-                    
+                    st.success("Tudo certo! Nenhuma falta nesta turma.")
     except Exception as e:
-        st.error(f"Erro ao carregar lista de ausentes: {e}")
+        st.error(f"Erro ao listar ausentes: {e}")
