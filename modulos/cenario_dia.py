@@ -69,7 +69,7 @@ def exibir_cenario(supabase):
             st.info("Nenhuma presença registrada para este dia.")
 
     # ==========================================
-    # 4. COLUNA DIREITA: TABELA COM SOMATÓRIO POR TURMA (MODIFICADA)
+    # 4. COLUNA DIREITA: TABELA COM "TURMA (TOTAL)"
     # ==========================================
     with col_dir:
         st.subheader("📋 Resumo por Sala")
@@ -88,22 +88,22 @@ def exibir_cenario(supabase):
             df_resumo['Pres.'] = df_resumo['Pres.'].astype(int)
             df_resumo = df_resumo.sort_values(by='turma')
             
-            # 3. AQUI ESTÁ A MÁGICA: Criando a coluna no formato "1º A (39)"
-            df_resumo['Turma_Formatada'] = df_resumo['turma'] + " (" + df_resumo['Total'].astype(str) + ")"
+            # ✨ A MÁGICA: Formata a coluna para aparecer "1º A (39)"
+            df_resumo['Turma_Total'] = df_resumo['turma'] + " (" + df_resumo['Total'].astype(str) + ")"
             
-            # Exibe a tabela organizada apenas com as duas colunas
+            # Exibe apenas a Turma formatada e a quantidade de Presentes
             st.dataframe(
-                df_resumo[['Turma_Formatada', 'Pres.']],
+                df_resumo[['Turma_Total', 'Pres.']],
                 use_container_width=True,
                 hide_index=True,
                 height=550,
                 column_config={
-                    "Turma_Formatada": st.column_config.TextColumn("Turma (Total)"),
-                    "Pres.": st.column_config.NumberColumn("Presentes")
+                    "Turma_Total": st.column_config.TextColumn("Turma (Total)"),
+                    "Pres.": st.column_config.NumberColumn("Pres.")
                 }
             )
         else:
-            st.warning("Não há dados de matrícula.")
+            st.warning("Sem dados de matrícula.")
 
     # ==========================================
     # 5. RODAPÉ: LISTA DE AUSENTES (PDF)
@@ -121,13 +121,11 @@ def exibir_cenario(supabase):
                 if res_f.data:
                     df_f = pd.DataFrame(res_f.data).sort_values(by="aluno_nome")
                     
-                    # Layout da lista de faltosos
                     c_tab, c_pdf = st.columns([2, 1])
                     with c_tab:
                         st.table(df_f)
                     
                     with c_pdf:
-                        # Gerar PDF
                         buf = io.BytesIO()
                         c = canvas.Canvas(buf, pagesize=A4)
                         c.drawString(50, 800, f"Ausentes - {t_sel} - {data_hoje}")
@@ -140,4 +138,4 @@ def exibir_cenario(supabase):
                 else:
                     st.success("Tudo certo! Nenhuma falta nesta turma.")
     except Exception as e:
-        st.error(f"Erro ao listar ausentes: {e}")
+        st.error(f"Erro ao carregar faltosos: {e}")
