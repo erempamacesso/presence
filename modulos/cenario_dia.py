@@ -69,7 +69,7 @@ def exibir_cenario(supabase):
             st.info("Nenhuma presença registrada para este dia.")
 
     # ==========================================
-    # 4. COLUNA DIREITA: TABELA COM SOMATÓRIO POR TURMA
+    # 4. COLUNA DIREITA: TABELA COM SOMATÓRIO POR TURMA (MODIFICADA)
     # ==========================================
     with col_dir:
         st.subheader("📋 Resumo por Sala")
@@ -88,16 +88,18 @@ def exibir_cenario(supabase):
             df_resumo['Pres.'] = df_resumo['Pres.'].astype(int)
             df_resumo = df_resumo.sort_values(by='turma')
             
-            # Exibe a tabela organizada
+            # 3. AQUI ESTÁ A MÁGICA: Criando a coluna no formato "1º A (39)"
+            df_resumo['Turma_Formatada'] = df_resumo['turma'] + " (" + df_resumo['Total'].astype(str) + ")"
+            
+            # Exibe a tabela organizada apenas com as duas colunas
             st.dataframe(
-                df_resumo[['turma', 'Pres.', 'Total']],
+                df_resumo[['Turma_Formatada', 'Pres.']],
                 use_container_width=True,
                 hide_index=True,
                 height=550,
                 column_config={
-                    "turma": "Turma",
-                    "Pres.": st.column_config.NumberColumn("Pres."),
-                    "Total": st.column_config.NumberColumn("Total")
+                    "Turma_Formatada": st.column_config.TextColumn("Turma (Total)"),
+                    "Pres.": st.column_config.NumberColumn("Presentes")
                 }
             )
         else:
