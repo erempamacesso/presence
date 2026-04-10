@@ -1,15 +1,12 @@
 import streamlit as st
 import pandas as pd
 
-
 def exibir_importacao(supabase):
     st.title("📤 Sistema de Sincronização SIGERPAM")
     st.markdown("---")
 
-    # ─────────────────────────────────────────────
     # 1. UPLOAD DO ARQUIVO
-    # ─────────────────────────────────────────────
-    arquivo = st.file_uploader("Suba a planilha oficial do SIEPE", type=["xls", "xlsx"])
+    arquivo = st.file_uploader("Suba a planilha oficial do SIEPE (.xls ou .xlsx)", type=["xls", "xlsx"])
 
     if not arquivo:
         return
@@ -22,9 +19,7 @@ def exibir_importacao(supabase):
             st.error("Nenhuma aba com 'EM45' encontrada na planilha.")
             return
 
-        # ─────────────────────────────────────────────
         # 2. LEITURA DA PLANILHA
-        # ─────────────────────────────────────────────
         dados_lidos = []
 
         for aba in abas_turmas:
@@ -61,11 +56,15 @@ def exibir_importacao(supabase):
                     if col_matricula and pd.notna(linha[col_matricula])
                     else ""
                 )
-                nascimento = (
-                    str(linha[col_nascimento]).strip()
-                    if col_nascimento and pd.notna(linha[col_nascimento])
-                    else ""
-                )
+                
+                # Tratamento seguro de data para o Supabase
+                nascimento = ""
+                if col_nascimento and pd.notna(linha[col_nascimento]):
+                    try:
+                        nascimento = pd.to_datetime(linha[col_nascimento], dayfirst=True).strftime('%Y-%m-%d')
+                    except:
+                        nascimento = str(linha[col_nascimento]).strip()
+
                 sexo_raw = linha[col_sexo] if col_sexo and pd.notna(linha.get(col_sexo)) else None
                 sexo = str(sexo_raw)[0].upper() if sexo_raw else ""
 
@@ -92,18 +91,16 @@ def exibir_importacao(supabase):
         df_excel = pd.DataFrame(dados_lidos).drop_duplicates(subset=["nome"])
         st.success(f"Planilha lida com sucesso! **{len(df_excel)}** alunos encontrados.")
 
-        # ─────────────────────────────────────────────
         # 3. ABAS DA INTERFACE
-        # ─────────────────────────────────────────────
         tab_raio_x, tab_cruzamento, tab_sincronismo = st.tabs([
             "🔍 1. Raio-X da Planilha",
             "📊 2. Cruzamento com o Banco",
             "🚀 3. Sincronizar",
         ])
 
-        # ══════════════════════════════════════════════
-        # ABA 1 — RAIO-X (igual ao raiox.py)
-        # ══════════════════════════════════════════════
+        # ==========================================
+        # ABA 1 — RAIO-X
+        # ==========================================
         with tab_raio_x:
             st.subheader("Resumo por Turma")
             resumo = df_excel.groupby("turma").size().reset_index(name="Total de Alunos")
@@ -140,9 +137,9 @@ def exibir_importacao(supabase):
                     else:
                         st.success(f"✅ **{busca.upper()}** NÃO está na planilha.")
 
-        # ══════════════════════════════════════════════
+        # ==========================================
         # ABA 2 — CRUZAMENTO COM O BANCO
-        # ══════════════════════════════════════════════
+        # ==========================================
         with tab_cruzamento:
             st.subheader("Comparação com o Banco de Dados (Supabase)")
             st.write("Clique para verificar as três situações abaixo.")
@@ -160,12 +157,9 @@ def exibir_importacao(supabase):
                 nomes_excel = set(df_excel["nome"])
                 nomes_bd    = set(df_bd["nome"]) if not df_bd.empty else set()
 
-                # ── A) Alunos novos (na planilha, fora do banco) ──
-                novos       = nomes_excel - nomes_bd
-                # ── B) Transferidos (no banco, fora da planilha) ──
+                novos        = nomes_excel - nomes_bd
                 transferidos = nomes_bd - nomes_excel
-                # ── C) No banco e na planilha, mas com dados incompletos ──
-                em_comum    = nomes_excel & nomes_bd
+                em_comum     = nomes_excel & nomes_bd
                 df_comuns_bd = df_bd[df_bd["nome"].isin(em_comum)].copy()
 
                 def campo_vazio(val):
@@ -185,7 +179,6 @@ def exibir_importacao(supabase):
                 )
                 df_incompletos = df_comuns_bd[mask_incompletos].copy()
 
-                # Marca quais campos faltam
                 def quais_faltam(r):
                     faltando = []
                     if campo_vazio(r.get("numero_matricula")): faltando.append("matrícula")
@@ -196,7 +189,6 @@ def exibir_importacao(supabase):
                 if not df_incompletos.empty:
                     df_incompletos["campos_faltando"] = df_incompletos.apply(quais_faltam, axis=1)
 
-                # Salva no session_state para usar na aba 3
                 st.session_state["_cruzamento"] = {
                     "df_excel":       df_excel,
                     "df_bd":          df_bd,
@@ -205,18 +197,15 @@ def exibir_importacao(supabase):
                     "df_incompletos": df_incompletos,
                 }
 
-                # ── Exibição ──
                 st.divider()
 
-                # Métricas rápidas no topo
                 m1, m2, m3 = st.columns(3)
-                m1.metric("🟢 Alunos Novos",        len(novos))
-                m2.metric("🔴 Transferidos",         len(transferidos))
+                m1.metric("🟢 Alunos Novos",         len(novos))
+                m2.metric("🔴 Transferidos (Saíram)", len(transferidos))
                 m3.metric("🟡 Dados Incompletos",    len(df_incompletos))
 
                 st.divider()
 
-                # ── A) Novos ──
                 with st.expander(f"🟢 A) Alunos NOVOS — presentes na planilha, ausentes no banco ({len(novos)})", expanded=True):
                     if novos:
                         df_novos_exib = df_excel[df_excel["nome"].isin(novos)][
@@ -226,7 +215,6 @@ def exibir_importacao(supabase):
                     else:
                         st.info("Nenhum aluno novo.")
 
-                # ── B) Transferidos ──
                 with st.expander(f"🔴 B) TRANSFERIDOS — presentes no banco, ausentes na planilha ({len(transferidos)})", expanded=True):
                     if transferidos:
                         df_transf_exib = df_bd[df_bd["nome"].isin(transferidos)][
@@ -236,7 +224,6 @@ def exibir_importacao(supabase):
                     else:
                         st.info("Nenhum transferido.")
 
-                # ── C) Dados incompletos ──
                 with st.expander(f"🟡 C) DADOS INCOMPLETOS — no banco e na planilha, mas faltando campos ({len(df_incompletos)})", expanded=True):
                     if not df_incompletos.empty:
                         cols_exib = ["nome", "turma", "numero_matricula", "data_nascimento", "sexo", "campos_faltando"]
@@ -248,9 +235,9 @@ def exibir_importacao(supabase):
                     else:
                         st.info("Todos os alunos em comum têm matrícula, nascimento e sexo preenchidos.")
 
-        # ══════════════════════════════════════════════
+        # ==========================================
         # ABA 3 — SINCRONIZAR
-        # ══════════════════════════════════════════════
+        # ==========================================
         with tab_sincronismo:
             st.subheader("Aplicar Alterações no SIGERPAM")
 
@@ -278,7 +265,7 @@ def exibir_importacao(supabase):
             if not df_incompletos.empty:
                 st.info(
                     f"ℹ️ {len(df_incompletos)} aluno(s) com dados incompletos **não serão alterados** automaticamente. "
-                    "Corrija manualmente no Supabase ou na planilha."
+                    "Corrija manualmente no Supabase ou verifique na secretaria."
                 )
 
             if tem_mudanca:
@@ -286,31 +273,26 @@ def exibir_importacao(supabase):
                 confirmar = st.button("🚀 CONFIRMAR E SINCRONIZAR AGORA", type="primary")
 
                 if confirmar:
-                    with st.spinner("Sincronizando..."):
+                    with st.spinner("Sincronizando com o banco de dados..."):
                         erros = []
 
-                        # Remove transferidos
-                        for nome_rem in transferidos:
+                        # 1. REMOVER TRANSFERIDOS (Lote)
+                        if transferidos:
                             try:
-                                supabase.table("alunos").delete().eq("nome", nome_rem).execute()
+                                # Deleta todos da lista de uma vez só!
+                                supabase.table("alunos").delete().in_("nome", list(transferidos)).execute()
                             except Exception as e:
-                                erros.append(f"Erro ao remover '{nome_rem}': {e}")
+                                erros.append(f"Erro ao remover alunos transferidos: {e}")
 
-                        # Insere/atualiza novos
+                        # 2. INSERIR/ATUALIZAR NOVOS
                         if novos:
                             registros_novos = (
                                 df_excel_s[df_excel_s["nome"].isin(novos)]
-                                [[
-                                    "nome", "turma",
-                                    "numero_matricula", "data_nascimento", "sexo"
-                                ]]
-                                .rename(columns={
-                                    "numero_matricula": "numero_matricula",
-                                    "data_nascimento":  "data_nascimento",
-                                })
+                                [["nome", "turma", "numero_matricula", "data_nascimento", "sexo"]]
                                 .to_dict("records")
                             )
-                            # Limpa campos vazios para não sobrescrever com string vazia
+                            
+                            # Limpa campos vazios para não gerar strings inúteis no banco (transforma em Null)
                             for r in registros_novos:
                                 for k, v in list(r.items()):
                                     if str(v).strip() in ("", "NAN", "NAT", "NONE"):
@@ -323,15 +305,16 @@ def exibir_importacao(supabase):
                             except Exception as e:
                                 erros.append(f"Erro ao inserir novos alunos: {e}")
 
+                        # 3. VERIFICAÇÃO FINAL DE ERROS
                         if erros:
                             for err in erros:
                                 st.error(err)
                         else:
                             st.success("🎉 Sincronização concluída com sucesso!")
                             st.balloons()
-                            # Limpa o cache do cruzamento
+                            
+                            # Limpa o cache para o usuário não clicar duas vezes sem querer
                             del st.session_state["_cruzamento"]
 
     except Exception as e:
         st.error(f"Erro ao processar o arquivo: {e}")
-        raise e
