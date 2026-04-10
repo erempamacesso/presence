@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 
 def exibir_importacao(supabase):
     st.title("📤 Sistema de Sincronização SIGERPAM")
@@ -24,16 +25,11 @@ def exibir_importacao(supabase):
 
         for aba in abas_turmas:
             sigla = aba.split('-')[-1].strip() if '-' in aba else aba.strip()
-            turma_f = (
-                f"{sigla[0]}º {sigla[-1]}"
-                if len(sigla) >= 2 and sigla[0].isdigit()
-                else aba
-            )
+            turma_f = f"{sigla[0]}º {sigla[-1]}" if len(sigla) >= 2 and sigla[0].isdigit() else aba
 
             df = pd.read_excel(xl, sheet_name=aba, header=0)
             df.columns = df.columns.str.strip().str.upper()
 
-            # Busca flexível pelas colunas
             col_nome       = next((c for c in df.columns if "NOME"        in c), None)
             col_matricula  = next((c for c in df.columns if "MATR"        in c), None)
             col_nascimento = next((c for c in df.columns if "NASCIMENTO"  in c or "NASC" in c), None)
@@ -41,7 +37,6 @@ def exibir_importacao(supabase):
             col_situacao   = next((c for c in df.columns if "SITUA"       in c), None)
 
             if not col_nome:
-                st.warning(f"Aba '{aba}' ignorada: coluna NOME não encontrada.")
                 continue
 
             df = df.dropna(subset=[col_nome])
@@ -51,13 +46,8 @@ def exibir_importacao(supabase):
                 if not nome_limpo or nome_limpo == "NAN":
                     continue
 
-                matricula = (
-                    str(linha[col_matricula]).strip()
-                    if col_matricula and pd.notna(linha[col_matricula])
-                    else ""
-                )
+                matricula = str(linha[col_matricula]).strip() if col_matricula and pd.notna(linha[col_matricula]) else ""
                 
-                # Tratamento seguro de data para o Supabase
                 nascimento = ""
                 if col_nascimento and pd.notna(linha[col_nascimento]):
                     try:
@@ -68,11 +58,7 @@ def exibir_importacao(supabase):
                 sexo_raw = linha[col_sexo] if col_sexo and pd.notna(linha.get(col_sexo)) else None
                 sexo = str(sexo_raw)[0].upper() if sexo_raw else ""
 
-                situacao = (
-                    str(linha[col_situacao]).strip().upper()
-                    if col_situacao and pd.notna(linha.get(col_situacao))
-                    else "NÃO INFORMADA"
-                )
+                situacao = str(linha[col_situacao]).strip().upper() if col_situacao and pd.notna(linha.get(col_situacao)) else "NÃO INFORMADA"
 
                 dados_lidos.append({
                     "nome":             nome_limpo,
@@ -81,15 +67,13 @@ def exibir_importacao(supabase):
                     "data_nascimento":  nascimento,
                     "sexo":             sexo,
                     "situacao":         situacao,
-                    "aba_original":     aba,
                 })
 
         if not dados_lidos:
-            st.error("Nenhum aluno foi encontrado nas abas da planilha.")
+            st.error("Nenhum aluno válido foi encontrado.")
             return
 
         df_excel = pd.DataFrame(dados_lidos).drop_duplicates(subset=["nome"])
-        st.success(f"Planilha lida com sucesso! **{len(df_excel)}** alunos encontrados.")
 
         # 3. ABAS DA INTERFACE
         tab_raio_x, tab_cruzamento, tab_sincronismo = st.tabs([
@@ -102,219 +86,152 @@ def exibir_importacao(supabase):
         # ABA 1 — RAIO-X
         # ==========================================
         with tab_raio_x:
-            st.subheader("Resumo por Turma")
+            st.subheader("Resumo por Turma (Lido do Excel)")
             resumo = df_excel.groupby("turma").size().reset_index(name="Total de Alunos")
             st.dataframe(resumo, hide_index=True, use_container_width=True)
 
-            st.divider()
-
-            col_esq, col_dir = st.columns([1, 2])
-
-            with col_esq:
-                st.subheader("Lista por Sala")
-                turma_sel = st.selectbox(
-                    "Selecione a turma:",
-                    ["Todas"] + sorted(df_excel["turma"].unique().tolist()),
-                )
-                df_exibir = (
-                    df_excel if turma_sel == "Todas"
-                    else df_excel[df_excel["turma"] == turma_sel]
-                )
-                st.dataframe(
-                    df_exibir[["nome", "turma", "numero_matricula", "situacao"]].sort_values("nome"),
-                    hide_index=True,
-                    use_container_width=True,
-                )
-
-            with col_dir:
-                st.subheader("🔎 Busca Rápida por Nome")
-                busca = st.text_input("Digite o nome do aluno:")
-                if busca:
-                    resultado = df_excel[df_excel["nome"].str.contains(busca.strip().upper())]
-                    if not resultado.empty:
-                        st.error(f"⚠️ **{busca.upper()}** ESTÁ na planilha.")
-                        st.dataframe(resultado, hide_index=True, use_container_width=True)
-                    else:
-                        st.success(f"✅ **{busca.upper()}** NÃO está na planilha.")
-
         # ==========================================
-        # ABA 2 — CRUZAMENTO COM O BANCO
+        # ABA 2 — CRUZAMENTO E MESCLAGEM
         # ==========================================
         with tab_cruzamento:
-            st.subheader("Comparação com o Banco de Dados (Supabase)")
-            st.write("Clique para verificar as três situações abaixo.")
+            st.subheader("Comparação com o Banco de Dados")
 
             if st.button("🔍 Iniciar Cruzamento", type="primary"):
-
-                with st.spinner("Buscando alunos no Supabase..."):
-                    res_bd = supabase.table("alunos").select(
-                        "nome, turma, numero_matricula, data_nascimento, sexo"
-                    ).execute()
-                    df_bd = pd.DataFrame(res_bd.data) if res_bd.data else pd.DataFrame(
-                        columns=["nome", "turma", "numero_matricula", "data_nascimento", "sexo"]
-                    )
+                with st.spinner("Analisando e mesclando dados..."):
+                    res_bd = supabase.table("alunos").select("nome, turma, numero_matricula, data_nascimento, sexo").execute()
+                    df_bd = pd.DataFrame(res_bd.data) if res_bd.data else pd.DataFrame(columns=["nome", "turma", "numero_matricula", "data_nascimento", "sexo"])
 
                 nomes_excel = set(df_excel["nome"])
                 nomes_bd    = set(df_bd["nome"]) if not df_bd.empty else set()
 
                 novos        = nomes_excel - nomes_bd
                 transferidos = nomes_bd - nomes_excel
-                em_comum     = nomes_excel & nomes_bd
-                df_comuns_bd = df_bd[df_bd["nome"].isin(em_comum)].copy()
 
+                # 💡 A MÁGICA ACONTECE AQUI: Mesclando Excel com o Banco
+                df_final = df_excel.copy()
+                
+                if not df_bd.empty:
+                    df_bd_idx = df_bd.set_index("nome")
+                    df_final_idx = df_final.set_index("nome")
+
+                    # Se o Excel veio vazio, mas o Banco tem a info, salva a info do banco!
+                    for col in ["numero_matricula", "data_nascimento", "sexo"]:
+                        df_final_idx[col] = df_final_idx[col].replace(r'^\s*$', np.nan, regex=True) # Troca vazio por NaN
+                        if col in df_bd_idx.columns:
+                            df_final_idx[col] = df_final_idx[col].fillna(df_bd_idx[col])
+
+                    df_final = df_final_idx.reset_index()
+
+                # Substitui os NaN de volta por string vazia para exibição na tela
+                df_final = df_final.fillna("")
+
+                # Detectar quem AINDA está com dado faltando (mesmo após juntar Excel + Banco)
                 def campo_vazio(val):
-                    return (
-                        val is None
-                        or str(val).strip() == ""
-                        or str(val).strip().upper() in ("NAN", "NONE", "NAT")
-                    )
+                    return val is None or str(val).strip() == "" or str(val).strip().upper() in ("NAN", "NONE", "NAT")
 
-                mask_incompletos = df_comuns_bd.apply(
-                    lambda r: (
-                        campo_vazio(r.get("numero_matricula"))
-                        or campo_vazio(r.get("data_nascimento"))
-                        or campo_vazio(r.get("sexo"))
-                    ),
-                    axis=1,
+                mask_incompletos = df_final.apply(
+                    lambda r: campo_vazio(r.get("numero_matricula")) or campo_vazio(r.get("data_nascimento")) or campo_vazio(r.get("sexo")),
+                    axis=1
                 )
-                df_incompletos = df_comuns_bd[mask_incompletos].copy()
-
-                def quais_faltam(r):
-                    faltando = []
-                    if campo_vazio(r.get("numero_matricula")): faltando.append("matrícula")
-                    if campo_vazio(r.get("data_nascimento")):  faltando.append("nascimento")
-                    if campo_vazio(r.get("sexo")):             faltando.append("sexo")
-                    return ", ".join(faltando)
-
-                if not df_incompletos.empty:
-                    df_incompletos["campos_faltando"] = df_incompletos.apply(quais_faltam, axis=1)
+                df_incompletos = df_final[mask_incompletos].copy()
 
                 st.session_state["_cruzamento"] = {
-                    "df_excel":       df_excel,
-                    "df_bd":          df_bd,
+                    "df_final":       df_final,
                     "novos":          novos,
                     "transferidos":   transferidos,
                     "df_incompletos": df_incompletos,
                 }
 
-                st.divider()
-
                 m1, m2, m3 = st.columns(3)
-                m1.metric("🟢 Alunos Novos",         len(novos))
+                m1.metric("🟢 Alunos Novos", len(novos))
                 m2.metric("🔴 Transferidos (Saíram)", len(transferidos))
-                m3.metric("🟡 Dados Incompletos",    len(df_incompletos))
+                m3.metric("🟡 Incompletos (Sem dados no Excel/Banco)", len(df_incompletos))
 
                 st.divider()
-
-                with st.expander(f"🟢 A) Alunos NOVOS — presentes na planilha, ausentes no banco ({len(novos)})", expanded=True):
-                    if novos:
-                        df_novos_exib = df_excel[df_excel["nome"].isin(novos)][
-                            ["nome", "turma", "numero_matricula", "data_nascimento", "sexo"]
-                        ].sort_values("turma")
-                        st.dataframe(df_novos_exib, hide_index=True, use_container_width=True)
-                    else:
-                        st.info("Nenhum aluno novo.")
-
-                with st.expander(f"🔴 B) TRANSFERIDOS — presentes no banco, ausentes na planilha ({len(transferidos)})", expanded=True):
-                    if transferidos:
-                        df_transf_exib = df_bd[df_bd["nome"].isin(transferidos)][
-                            ["nome", "turma"]
-                        ].sort_values("turma")
-                        st.dataframe(df_transf_exib, hide_index=True, use_container_width=True)
-                    else:
-                        st.info("Nenhum transferido.")
-
-                with st.expander(f"🟡 C) DADOS INCOMPLETOS — no banco e na planilha, mas faltando campos ({len(df_incompletos)})", expanded=True):
-                    if not df_incompletos.empty:
-                        cols_exib = ["nome", "turma", "numero_matricula", "data_nascimento", "sexo", "campos_faltando"]
-                        st.dataframe(
-                            df_incompletos[cols_exib].sort_values("turma"),
-                            hide_index=True,
-                            use_container_width=True,
-                        )
-                    else:
-                        st.info("Todos os alunos em comum têm matrícula, nascimento e sexo preenchidos.")
+                st.success("Cruzamento finalizado! Avance para a Aba 3 para revisar, editar e sincronizar.")
 
         # ==========================================
-        # ABA 3 — SINCRONIZAR
+        # ABA 3 — SINCRONIZAR (COM TABELA EDITÁVEL)
         # ==========================================
         with tab_sincronismo:
-            st.subheader("Aplicar Alterações no SIGERPAM")
-
             if "_cruzamento" not in st.session_state:
                 st.info("⬅️ Primeiro execute o cruzamento na Aba 2.")
                 return
 
-            dados  = st.session_state["_cruzamento"]
-            novos        = dados["novos"]
-            transferidos = dados["transferidos"]
-            df_excel_s   = dados["df_excel"]
+            dados          = st.session_state["_cruzamento"]
+            novos          = dados["novos"]
+            transferidos   = dados["transferidos"]
+            df_final       = dados["df_final"]
             df_incompletos = dados["df_incompletos"]
 
             tem_mudanca = bool(novos or transferidos)
+            df_editado = pd.DataFrame()
 
-            if not tem_mudanca:
-                st.success("✅ Banco já está idêntico à planilha. Nenhuma ação de entrada/saída necessária.")
-            else:
-                st.warning(
-                    f"⚠️ Serão realizadas as seguintes ações:\n\n"
-                    f"- **Inserir** {len(novos)} aluno(s) novo(s)\n"
-                    f"- **Remover** {len(transferidos)} aluno(s) transferido(s)"
-                )
-
+            # 💡 TABELA EDITÁVEL: Aparece só se tiver aluno incompleto
             if not df_incompletos.empty:
-                st.info(
-                    f"ℹ️ {len(df_incompletos)} aluno(s) com dados incompletos **não serão alterados** automaticamente. "
-                    "Corrija manualmente no Supabase ou verifique na secretaria."
+                st.warning("✏️ **DADOS FALTANTES ENCONTRADOS!**")
+                st.write("Os alunos abaixo não possuem Matrícula, Data de Nascimento ou Sexo nem no Excel nem no Banco. **Você pode digitar diretamente na tabela abaixo antes de salvar:**")
+                
+                # Editor de dados interativo do Streamlit
+                df_editado = st.data_editor(
+                    df_incompletos[["nome", "turma", "numero_matricula", "data_nascimento", "sexo"]],
+                    disabled=["nome", "turma"], # Bloqueia nome e turma para o usuário não quebrar a sincronização
+                    hide_index=True,
+                    use_container_width=True,
+                    key="editor_dados"
                 )
+                st.divider()
 
-            if tem_mudanca:
-                st.error("🔴 **ATENÇÃO:** a remoção é permanente. Confira a Aba 2 antes de confirmar.")
-                confirmar = st.button("🚀 CONFIRMAR E SINCRONIZAR AGORA", type="primary")
+            if not tem_mudanca and df_incompletos.empty:
+                st.success("✅ O banco de dados já está 100% atualizado e sem nenhum dado faltando. Nenhuma ação necessária.")
+                return
 
-                if confirmar:
-                    with st.spinner("Sincronizando com o banco de dados..."):
-                        erros = []
+            st.subheader("Aplicar Alterações no SIGERPAM")
+            st.error("🔴 **ATENÇÃO:** Alunos transferidos serão removidos e os dados editados/mesclados serão salvos.")
+            
+            confirmar = st.button("🚀 CONFIRMAR E SINCRONIZAR AGORA", type="primary")
 
-                        # 1. REMOVER TRANSFERIDOS (Lote)
-                        if transferidos:
-                            try:
-                                # Deleta todos da lista de uma vez só!
-                                supabase.table("alunos").delete().in_("nome", list(transferidos)).execute()
-                            except Exception as e:
-                                erros.append(f"Erro ao remover alunos transferidos: {e}")
+            if confirmar:
+                with st.spinner("Atualizando o Banco de Dados..."):
+                    erros = []
 
-                        # 2. INSERIR/ATUALIZAR NOVOS
-                        if novos:
-                            registros_novos = (
-                                df_excel_s[df_excel_s["nome"].isin(novos)]
-                                [["nome", "turma", "numero_matricula", "data_nascimento", "sexo"]]
-                                .to_dict("records")
-                            )
-                            
-                            # Limpa campos vazios para não gerar strings inúteis no banco (transforma em Null)
-                            for r in registros_novos:
-                                for k, v in list(r.items()):
-                                    if str(v).strip() in ("", "NAN", "NAT", "NONE"):
-                                        r[k] = None
+                    # 1. Se o usuário digitou algo na tabela editável, nós juntamos no df_final
+                    if not df_editado.empty:
+                        df_final_idx = df_final.set_index("nome")
+                        df_editado_idx = df_editado.set_index("nome")
+                        df_final_idx.update(df_editado_idx) # Substitui com os dados que o usuário digitou
+                        df_final = df_final_idx.reset_index()
 
-                            try:
-                                supabase.table("alunos").upsert(
-                                    registros_novos, on_conflict="nome"
-                                ).execute()
-                            except Exception as e:
-                                erros.append(f"Erro ao inserir novos alunos: {e}")
+                    # 2. REMOVER TRANSFERIDOS
+                    if transferidos:
+                        try:
+                            supabase.table("alunos").delete().in_("nome", list(transferidos)).execute()
+                        except Exception as e:
+                            erros.append(f"Erro ao remover transferidos: {e}")
 
-                        # 3. VERIFICAÇÃO FINAL DE ERROS
-                        if erros:
-                            for err in erros:
-                                st.error(err)
-                        else:
-                            st.success("🎉 Sincronização concluída com sucesso!")
-                            st.balloons()
-                            
-                            # Limpa o cache para o usuário não clicar duas vezes sem querer
-                            del st.session_state["_cruzamento"]
+                    # 3. ATUALIZAR TODOS OS ALUNOS (Upsert Geral)
+                    # Isso garante que quem mudou de turma, atualizou no Excel ou foi digitado na tela será salvo.
+                    registros_para_salvar = df_final[["nome", "turma", "numero_matricula", "data_nascimento", "sexo"]].to_dict("records")
+                    
+                    # Limpeza final de vazios para o Supabase aceitar
+                    for r in registros_para_salvar:
+                        for k, v in list(r.items()):
+                            if str(v).strip() in ("", "NAN", "NAT", "NONE"):
+                                r[k] = None
+
+                    try:
+                        # Mandamos a escola inteira. O Upsert ignora quem está igual, atualiza quem mudou e insere os novos!
+                        supabase.table("alunos").upsert(registros_para_salvar, on_conflict="nome").execute()
+                    except Exception as e:
+                        erros.append(f"Erro ao salvar alunos: {e}")
+
+                    if erros:
+                        for err in erros:
+                            st.error(err)
+                    else:
+                        st.success("🎉 Sincronização concluída com sucesso! Banco 100% atualizado.")
+                        st.balloons()
+                        del st.session_state["_cruzamento"]
 
     except Exception as e:
-        st.error(f"Erro ao processar o arquivo: {e}")
+        st.error(f"Erro crítico no processamento: {e}")
