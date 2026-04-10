@@ -12,7 +12,7 @@ def exibir_importacao(supabase):
         3. Você revisará as diferenças e aprovará a sincronização final.
     """)
 
-    arquivo = st.file_uploader("Suba o arquivo Excel Oficial (.xlsx)", type=["xlsx"])
+    arquivo = st.file_uploader("Suba o arquivo Excel Oficial (.xlsx ou .xls)", type=["xlsx", "xls"])
     
     if arquivo:
         # ==========================================
