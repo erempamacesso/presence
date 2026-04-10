@@ -99,10 +99,10 @@ def exibir_cenario(supabase):
             st.warning("Sem dados.")
 
     # ==========================================
-    # 4. LISTA DE AUSENTES
+    # 4. LISTA DE AUSENTES (POR TURMA ÚNICA)
     # ==========================================
     st.divider()
-    st.subheader("🚨 Estudantes Ausentes")
+    st.subheader("🚨 Estudantes Ausentes por Turma")
     try:
         if not df_matriculas_total.empty:
             lista_t = sorted(df_matriculas_total['turma'].unique())
@@ -113,5 +113,106 @@ def exibir_cenario(supabase):
                 if res_f.data:
                     df_f = pd.DataFrame(res_f.data).sort_values(by="aluno_nome")
                     st.table(df_f)
+                else:
+                    st.success("Tudo certo! Nenhuma falta nesta turma.")
     except Exception as e:
-        pass # Silencia erro na listagem se houver
+        st.error(f"Erro ao carregar lista: {e}")
+
+    # ==========================================
+    # 5. RELATÓRIOS DE AUSENTES POR SEGMENTO (DEMANDA DIRETORIA)
+    # ==========================================
+    st.divider()
+    st.subheader("🖨️ Relatórios de Ausentes por Segmento")
+    st.write("Gere um PDF unificado contendo todos os alunos faltosos de um ano específico.")
+
+    # Dicionário mapeando a opção para o prefixo da turma
+    segmentos = {
+        "1ºs Anos": "1º",
+        "2ºs Anos": "2º",
+        "3ºs Anos": "3º"
+    }
+
+    col_sel, col_btn = st.columns([2, 2])
+    with col_sel:
+        seg_selecionado = st.selectbox("Escolha o Segmento:", options=list(segmentos.keys()))
+    
+    with col_btn:
+        st.write("") # Espaço para alinhar o botão com o selectbox
+        st.write("")
+        gerar_relatorio = st.button(f"📄 Preparar Relatório dos {seg_selecionado}", use_container_width=True)
+
+    if gerar_relatorio:
+        try:
+            # Puxa TODAS as faltas do dia
+            res_faltas_geral = supabase.table("frequencia").select("aluno_nome, turma").eq("data_chamada", hoje_iso).eq("status", "F").execute()
+            
+            if res_faltas_geral.data:
+                df_faltas_geral = pd.DataFrame(res_faltas_geral.data)
+                
+                # Filtra apenas as turmas que começam com o prefixo escolhido (ex: "1º")
+                prefixo = segmentos[seg_selecionado]
+                df_segmento = df_faltas_geral[df_faltas_geral['turma'].str.startswith(prefixo)].copy()
+                
+                if not df_segmento.empty:
+                    # Ordena alfabeticamente pela turma e depois pelo nome do aluno
+                    df_segmento = df_segmento.sort_values(by=["turma", "aluno_nome"])
+                    
+                    # === INÍCIO DA GERAÇÃO DO PDF ===
+                    buf = io.BytesIO()
+                    c = canvas.Canvas(buf, pagesize=A4)
+                    largura, altura = A4
+                    
+                    # Cabeçalho do PDF
+                    c.setFont("Helvetica-Bold", 16)
+                    c.drawString(50, altura - 50, f"Relatório de Ausentes - {seg_selecionado}")
+                    c.setFont("Helvetica", 12)
+                    c.drawString(50, altura - 70, f"Data: {data_hoje.strftime('%d/%m/%Y')}")
+                    
+                    y = altura - 110 # Posição inicial no eixo Y (vertical)
+                    turmas_do_segmento = df_segmento['turma'].unique()
+                    
+                    # Escreve turma por turma
+                    for t in turmas_do_segmento:
+                        alunos_da_turma = df_segmento[df_segmento['turma'] == t]
+                        
+                        # Verifica se cabe o título da turma na página
+                        if y < 100:
+                            c.showPage()
+                            y = altura - 50
+                            
+                        c.setFont("Helvetica-Bold", 12)
+                        c.drawString(50, y, f"Turma: {t} ({len(alunos_da_turma)} ausentes)")
+                        y -= 20
+                        
+                        c.setFont("Helvetica", 10)
+                        for _, row in alunos_da_turma.iterrows():
+                            # Se a página acabar, cria uma nova folha no PDF
+                            if y < 50:
+                                c.showPage()
+                                c.setFont("Helvetica", 10)
+                                y = altura - 50
+                                
+                            c.drawString(70, y, f"• {row['aluno_nome']}")
+                            y -= 15
+                        
+                        y -= 15 # Dá um espaço extra antes de começar a próxima turma
+                        
+                    c.save()
+                    # === FIM DA GERAÇÃO DO PDF ===
+
+                    # Exibe o botão real de Download do Arquivo gerado
+                    st.success("Relatório gerado com sucesso!")
+                    st.download_button(
+                        label=f"📥 Baixar Arquivo PDF ({seg_selecionado})",
+                        data=buf.getvalue(),
+                        file_name=f"Ausentes_{seg_selecionado.replace(' ', '_')}_{data_hoje.strftime('%d_%m_%Y')}.pdf",
+                        mime="application/pdf",
+                        type="primary",
+                        use_container_width=True
+                    )
+                else:
+                    st.warning(f"🎉 Maravilha! Nenhuma falta registrada para os {seg_selecionado} hoje.")
+            else:
+                st.info("Nenhuma falta registrada na escola hoje.")
+        except Exception as e:
+            st.error(f"Erro ao gerar o relatório: {e}")
