@@ -18,3 +18,5 @@ reportlab
 fpdf2
 xlsxwriter
 PyGithub
+xlrd>=2.0.1
+openpyxl
