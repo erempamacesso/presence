@@ -1,131 +1,199 @@
 import streamlit as st
 import pandas as pd
+import datetime
 
 def exibir_importacao(supabase):
-    st.title("📤 Gestão e Importação de Dados")
+    st.title("📤 Sincronização Inteligente (Secretaria)")
     
-    # Criando abas para organizar a interface
-    aba_planilha, aba_texto = st.tabs(["📁 Upload do Excel Oficial", "📝 Colar Lista Rápida (Apenas Nomes)"])
+    st.info("""
+        **Como funciona:**
+        1. Suba a planilha oficial (Certifique-se que a 1ª linha seja o cabeçalho: `Matrícula, Nome, Data de nascimento, Sexo`).
+        2. O sistema lerá todas as abas e confrontará com o banco de dados.
+        3. Você revisará as diferenças e aprovará a sincronização final.
+    """)
 
-    # ==========================================
-    # ABA 1: UPLOAD DO EXCEL MULTI-ABAS (NOVO)
-    # ==========================================
-    with aba_planilha:
-        st.subheader("Importação e Atualização em Massa (Excel)")
-        st.info("O sistema lerá as abas (ex: 1 - EM45-1IA), atualizará turmas de alunos existentes e adicionará as datas de nascimento e sexo.")
-        
-        arquivo = st.file_uploader("Suba a planilha oficial da secretaria (.xlsx)", type=["xlsx"])
-        
-        if arquivo:
-            if st.button("🚀 Iniciar Sincronização Global"):
-                try:
-                    xl = pd.ExcelFile(arquivo)
-                    abas = xl.sheet_names
-                    
-                    # Filtra apenas as abas que têm "EM45" no nome
-                    abas_turmas = [a for a in abas if "EM45" in a]
-                    
-                    if not abas_turmas:
-                        st.error("Nenhuma aba com o padrão 'EM45' foi encontrada no arquivo.")
-                    else:
-                        barra = st.progress(0)
-                        st.write(f"📊 Processando {len(abas_turmas)} turmas...")
-                        
-                        sucesso_total = 0
-                        
-                        for i, nome_aba in enumerate(abas_turmas):
-                            # 1. Extrai a turma do nome da aba (ex: "1 - EM45-1IA" -> "1º A")
-                            sigla = nome_aba.split('-')[-1].strip() # Pega "1IA"
-                            if len(sigla) >= 2:
-                                turma_formatada = f"{sigla[0]}º {sigla[-1]}" # Formata para "1º A"
-                            else:
-                                turma_formatada = nome_aba # Fallback
-                                
-                            # 2. Lê a aba
-                            df = pd.read_excel(xl, sheet_name=nome_aba)
-                            dados_upsert = []
-                            
-                            # 3. Prepara os dados
-                            for _, linha in df.iterrows():
-                                if pd.isna(linha.get('Nome')): # Pula linhas vazias
-                                    continue
-                                    
-                                nome_limpo = str(linha['Nome']).upper().strip()
-                                
-                                # Trata a data de nascimento
-                                try:
-                                    dt_nasc = pd.to_datetime(linha['Data de nascimento'], dayfirst=True).strftime('%Y-%m-%d')
-                                except:
-                                    dt_nasc = None
-                                
-                                # Trata o sexo
-                                sexo = str(linha.get('Sexo', '')).upper().strip()
-                                sexo = sexo if sexo in ['M', 'F'] else None
+    arquivo = st.file_uploader("Suba o arquivo Excel Oficial (.xlsx)", type=["xlsx"])
+    
+    if arquivo:
+        # ==========================================
+        # PASSO 1: LER A PLANILHA E CRIAR LISTA ÚNICA
+        # ==========================================
+        try:
+            xl = pd.ExcelFile(arquivo)
+            abas_turmas = [a for a in xl.sheet_names if "EM45" in a] # Pega só as abas de turma
+            
+            if not abas_turmas:
+                st.warning("⚠️ Nenhuma aba com 'EM45' no nome foi encontrada.")
+                return
 
-                                dados_upsert.append({
-                                    "nome": nome_limpo,
-                                    "turma": turma_formatada,
-                                    "data_nascimento": dt_nasc,
-                                    "sexo": sexo
-                                })
-                            
-                            # 4. Envia para o banco usando UPSERT
-                            if dados_upsert:
-                                supabase.table("alunos").upsert(dados_upsert, on_conflict="nome").execute()
-                                sucesso_total += len(dados_upsert)
-                                
-                            barra.progress((i + 1) / len(abas_turmas))
-                            
-                        st.success(f"🎉 Sincronização concluída! {sucesso_total} registros processados (inseridos ou atualizados).")
+            st.subheader("📊 1. Resumo da Leitura das Abas")
+            
+            dados_excel = []
+            resumo_leitura = []
+
+            for nome_aba in abas_turmas:
+                # Extrai a turma do nome da aba (Ex: EM45-1IA -> 1º A)
+                sigla = nome_aba.split('-')[-1].strip()
+                turma_format = f"{sigla[0]}º {sigla[-1]}" if len(sigla) >= 2 else nome_aba
+                
+                # Lê a aba sabendo que a primeira linha é o cabeçalho (header=0)
+                df = pd.read_excel(xl, sheet_name=nome_aba, header=0)
+                
+                # Remove linhas sem nome
+                if 'Nome' in df.columns:
+                    df = df.dropna(subset=['Nome'])
+                else:
+                    st.error(f"Coluna 'Nome' não encontrada na aba {nome_aba}.")
+                    continue
+                
+                qtd_aba = 0
+                for _, linha in df.iterrows():
+                    nome_limpo = str(linha['Nome']).upper().strip()
+                    if not nome_limpo or nome_limpo == "NAN":
+                        continue
+                        
+                    # Tratamento de Matrícula
+                    matricula = str(linha.get('Matrícula', '')).strip()
+                    if matricula == "nan" or matricula == "None": matricula = None
+                    
+                    # Tratamento de Data
+                    dt_nasc = None
+                    try:
+                        dt = pd.to_datetime(linha.get('Data de nascimento'), dayfirst=True)
+                        if not pd.isna(dt):
+                            dt_nasc = dt.strftime('%Y-%m-%d')
+                    except: pass
+                    
+                    # Tratamento de Sexo
+                    sexo = str(linha.get('Sexo', '')).upper().strip()
+                    sexo = sexo[0] if sexo in ['M', 'F', 'MASCULINO', 'FEMININO'] else None
+
+                    dados_excel.append({
+                        "nome": nome_limpo,
+                        "turma": turma_format,
+                        "matricula": matricula,
+                        "data_nascimento": dt_nasc,
+                        "sexo": sexo
+                    })
+                    qtd_aba += 1
+                
+                resumo_leitura.append({"Aba Original": nome_aba, "Turma Identificada": turma_format, "Alunos Lidos": qtd_aba})
+
+            # Exibe o resumo do que foi lido do Excel
+            st.table(pd.DataFrame(resumo_leitura))
+            
+            df_global_excel = pd.DataFrame(dados_excel)
+            # Proteção contra aluno duplicado na própria planilha da secretaria (mantém o último)
+            df_global_excel = df_global_excel.drop_duplicates(subset=['nome'], keep='last')
+            
+            st.success(f"Total de alunos únicos lidos na planilha: **{len(df_global_excel)}**")
+
+        except Exception as e:
+            st.error(f"Erro ao ler a planilha: {e}")
+            return
+
+        # ==========================================
+        # PASSO 2: CONFRONTO COM O SUPABASE
+        # ==========================================
+        st.divider()
+        st.subheader("🔍 2. Conferência (O que vai mudar?)")
+        
+        with st.spinner("Buscando dados no Supabase..."):
+            res_banco = supabase.table("alunos").select("*").execute()
+            df_banco = pd.DataFrame(res_banco.data) if res_banco.data else pd.DataFrame(columns=["nome", "turma", "matricula", "data_nascimento", "sexo"])
+
+        # Identificando as chaves (Nomes)
+        nomes_excel = set(df_global_excel['nome'])
+        nomes_banco = set(df_banco['nome']) if not df_banco.empty else set()
+
+        # 1. NOVOS (Estão no Excel, não estão no Banco)
+        nomes_novos = nomes_excel - nomes_banco
+        df_novos = df_global_excel[df_global_excel['nome'].isin(nomes_novos)]
+
+        # 2. REMOVIDOS (Estão no Banco, não estão no Excel)
+        nomes_removidos = nomes_banco - nomes_excel
+        df_removidos = df_banco[df_banco['nome'].isin(nomes_removidos)]
+
+        # 3. ALTERADOS (Estão nos dois, mas algum dado mudou)
+        nomes_comuns = nomes_excel & nomes_banco
+        lista_alterados = []
+        lista_upsert_final = df_novos.to_dict('records') # Já preparamos a lista de envio com os novos
+
+        for nome in nomes_comuns:
+            dado_excel = df_global_excel[df_global_excel['nome'] == nome].iloc[0]
+            dado_banco = df_banco[df_banco['nome'] == nome].iloc[0]
+            
+            mudou = False
+            alteracoes = []
+            
+            # Compara Turma, Matrícula, Data e Sexo
+            if dado_excel['turma'] != dado_banco.get('turma'):
+                mudou = True
+                alteracoes.append(f"Turma: {dado_banco.get('turma')} ➔ {dado_excel['turma']}")
+            
+            if pd.notna(dado_excel['matricula']) and dado_excel['matricula'] != str(dado_banco.get('matricula', 'None')):
+                mudou = True
+                alteracoes.append("Matrícula atualizada")
+                
+            if pd.notna(dado_excel['data_nascimento']) and dado_excel['data_nascimento'] != dado_banco.get('data_nascimento'):
+                mudou = True
+                alteracoes.append("Data Nasc. atualizada")
+                
+            if mudou:
+                lista_alterados.append({"Nome": nome, "O que mudou": " | ".join(alteracoes)})
+            
+            # Adiciona todos os alunos comuns na lista final (pois o upsert garante que fiquem idênticos ao Excel)
+            lista_upsert_final.append(dado_excel.to_dict())
+
+        df_alterados = pd.DataFrame(lista_alterados)
+
+        # Exibindo os Resultados para o Usuário
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Novos Alunos", len(nomes_novos))
+        col2.metric("Alunos Transferidos (Excluir)", len(nomes_removidos))
+        col3.metric("Alunos com Alterações", len(df_alterados))
+
+        with st.expander("🆕 Ver Novos Alunos (Serão Inseridos)"):
+            if not df_novos.empty: st.dataframe(df_novos[['nome', 'turma']], hide_index=True)
+            else: st.info("Nenhum aluno novo.")
+
+        with st.expander("🗑️ Ver Transferidos/Desistentes (Serão Removidos)"):
+            if not df_removidos.empty: st.dataframe(df_removidos[['nome', 'turma']], hide_index=True)
+            else: st.info("Nenhum aluno foi transferido.")
+
+        with st.expander("🔄 Ver Alunos Alterados (Mudança de Turma, Matrícula, etc)"):
+            if not df_alterados.empty: st.dataframe(df_alterados, hide_index=True)
+            else: st.info("Nenhum dado divergente.")
+
+        # ==========================================
+        # PASSO 3: BOTÃO DE EXECUÇÃO FINAL
+        # ==========================================
+        st.divider()
+        if len(nomes_novos) > 0 or len(nomes_removidos) > 0 or len(df_alterados) > 0:
+            st.warning("⚠️ **Atenção:** A operação abaixo é irreversível. Revise os dados nas abas acima antes de prosseguir.")
+            
+            if st.button("🚨 APROVAR E SINCRONIZAR COM O BANCO DE DADOS", type="primary", use_container_width=True):
+                with st.spinner("Sincronizando dados..."):
+                    try:
+                        # 1. EXCLUSÕES
+                        if nomes_removidos:
+                            for nome_remover in nomes_removidos:
+                                supabase.table("alunos").delete().eq("nome", nome_remover).execute()
+                        
+                        # 2. INSERÇÕES E ATUALIZAÇÕES (Upsert)
+                        # O upsert atualiza o aluno se o nome já existir, ou insere se não existir.
+                        # Para isso funcionar perfeitamente, a coluna 'nome' precisa ser a chave primária ou única no Supabase.
+                        if lista_upsert_final:
+                            # Quebramos em lotes de 500 para não estourar limite da API
+                            tamanho_lote = 500
+                            for i in range(0, len(lista_upsert_final), tamanho_lote):
+                                lote = lista_upsert_final[i:i + tamanho_lote]
+                                supabase.table("alunos").upsert(lote, on_conflict="nome").execute()
+
+                        st.success("✅ **Sincronização concluída com sucesso!** O banco agora é o espelho da planilha.")
                         st.balloons()
                         
-                except Exception as e:
-                    st.error(f"❌ Ocorreu um erro ao processar o arquivo: {e}")
-
-    # ==========================================
-    # ABA 2: COLAR NOMES COM PRÉVIA (MANTIDA IGUAL AO SEU CÓDIGO)
-    # ==========================================
-    with aba_texto:
-        st.subheader("Adicionar Novatos em Lote")
-        st.write("Cole os nomes dos alunos (um por linha), escolha a turma e o sistema fará o filtro automático. (⚠️ Não insere data/sexo).")
-        
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            texto_nomes = st.text_area("Lista de Nomes (Cole aqui):", height=200)
-        with col2:
-            opcoes_turmas = ["1º A", "1º B", "1º C", "1º D", "1º E", "2º A", "2º B", "2º C", "2º D", "3º A", "3º B", "3º C", "3º D"]
-            turma_selecionada = st.selectbox("Selecione a Turma:", opcoes_turmas)
-        
-        if st.button("🔍 Verificar Nomes"):
-            if not texto_nomes.strip():
-                st.warning("⚠️ Cole pelo menos um nome na caixa de texto.")
-            else:
-                lista_digitada = [n.upper().strip() for n in texto_nomes.split('\n') if n.strip()]
-                res = supabase.table("alunos").select("nome").execute()
-                nomes_no_banco = {str(item['nome']).upper().strip() for item in res.data}
-                
-                novatos = [{"nome": n, "turma": turma_selecionada} for n in lista_digitada if n not in nomes_no_banco]
-                
-                st.session_state['lista_novatos'] = novatos
-                st.session_state['total_digitado'] = len(lista_digitada)
-
-        if 'lista_novatos' in st.session_state:
-            novatos = st.session_state['lista_novatos']
-            total = st.session_state['total_digitado']
-            
-            st.divider()
-            
-            if novatos:
-                st.success(f"✅ Dos {total} nomes colados, encontramos **{len(novatos)} novatos** para a turma {turma_selecionada}.")
-                with st.expander("👀 Ver Lista", expanded=True):
-                    st.dataframe(pd.DataFrame(novatos), use_container_width=True)
-                
-                if st.button("💾 Salvar Novatos no Banco", type="primary"):
-                    try:
-                        supabase.table("alunos").insert(novatos).execute()
-                        st.success("🎉 Alunos salvos com sucesso!")
-                        del st.session_state['lista_novatos']
                     except Exception as e:
-                        st.error(f"❌ Erro ao salvar: {e}")
-            else:
-                st.info(f"ℹ️ Todos os {total} nomes já estão cadastrados. Nenhum aluno novo.")
+                        st.error(f"❌ Erro crítico ao tentar gravar no banco: {e}")
+        else:
+            st.success("🎉 Seu banco de dados já está 100% igual à planilha! Nenhuma ação necessária.")
