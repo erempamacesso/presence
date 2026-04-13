@@ -288,26 +288,29 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     # INÍCIO - ABA 4: GERENCIAR / CANCELAR
     # =========================================================
     with aba_cancelar:
-        st.subheader("Cancelar Reserva")
+        st.subheader("Cancelar Reserva Específica")
         
-        # Blindagem: Busca APENAS as reservas ATIVAS para evitar confusão de deletar o que já foi cancelado
-        res_todas = supabase.table("reservas").select("*").eq("status", "Ativa").execute()
-        df_cancel = pd.DataFrame(res_todas.data)
+        # 1. Filtro de Data (Como você pediu)
+        data_alvo = st.date_input("1. Selecione a data da reserva que deseja cancelar:", value=datetime.date.today(), format="DD/MM/YYYY", key="aba4_data")
+        
+        # Busca APENAS as reservas ATIVAS daquela data específica
+        res_dia = supabase.table("reservas").select("*").eq("data_reserva", str(data_alvo)).eq("status", "Ativa").execute()
+        df_cancel = pd.DataFrame(res_dia.data)
 
         if not df_cancel.empty:
-            # Organiza por data para facilitar a visualização
-            df_cancel = df_cancel.sort_values(by="data_reserva", ascending=False)
-            
-            prof_sel = st.selectbox("Selecione seu nome para ver suas reservas ativas:", ["-- Selecione --"] + sorted(df_cancel['professor'].unique().tolist()))
+            # 2. Filtro de Professor (Mostra apenas quem tem reserva no dia escolhido)
+            professores_do_dia = sorted(df_cancel['professor'].unique().tolist())
+            prof_sel = st.selectbox("2. Selecione seu nome:", ["-- Selecione --"] + professores_do_dia, key="aba4_prof")
             
             if prof_sel != "-- Selecione --":
                 minhas_reservas = df_cancel[df_cancel['professor'] == prof_sel]
                 
+                st.write(f"**Suas reservas ativas para {data_alvo.strftime('%d/%m/%Y')}:**")
+                
                 for _, row in minhas_reservas.iterrows():
                     col1, col2 = st.columns([3, 1])
                     
-                    # CORREÇÃO KEYERROR: Usando 'periodo' e 'data_reserva'
-                    col1.write(f"📍 {row['espaco']} | ⏰ {row['periodo']} | 📅 {row['data_reserva']}")
+                    col1.write(f"📍 **{row['espaco']}** | ⏰ Aula: {row['periodo']}")
                     
                     # BLINDAGEM DO BOTÃO FANTASMA: Usando expander
                     with col2.expander("❌ Excluir", expanded=False):
@@ -319,9 +322,9 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                                 res_senha = supabase.table("professores_matriculas").select("matricula").eq("professor", prof_sel.strip()).execute()
                                 senha_correta = res_senha.data[0]['matricula'] if res_senha.data else None
                                 
-                                # Verifica a senha (se ele não tem senha cadastrada, barra a ação)
-                                if senha_correta and (str(senha_input) == str(senha_correta)):
-                                    # Blindagem: Atualiza para Cancelada (mantém histórico) ao invés de deletar
+                                # Verifica a senha (ou libera se for GESTOR)
+                                if prof_sel in GESTORES or (senha_correta and str(senha_input) == str(senha_correta)):
+                                    # Atualiza para Cancelada (mantém histórico)
                                     supabase.table("reservas").update({"status": "Cancelada", "cancelado_por": prof_sel}).eq("id", row['id']).execute()
                                     st.success("Reserva cancelada com sucesso!")
                                     time.sleep(1.5)
@@ -331,8 +334,8 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                             except Exception as e:
                                 st.error(f"Erro ao processar exclusão: {e}")
         else:
-            st.info(" Nenhuma reserva ativa encontrada no sistema no momento.")
-
+            st.info(f"📅 Nenhuma reserva ativa encontrada no sistema para o dia {data_alvo.strftime('%d/%m/%Y')}.")
+            
     # =========================================================
     # INÍCIO - ABA 5: ASSINATURA
     # =========================================================
