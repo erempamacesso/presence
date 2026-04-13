@@ -172,7 +172,6 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
             except Exception as e:
                 st.error(f"Erro ao processar calendário: {e}")
 
-
     # =========================================================
     # ABA 2: LISTA DIÁRIA
     # =========================================================
