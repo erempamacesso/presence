@@ -37,79 +37,109 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
         "🗓️ Calendário", "📋 Lista Diária", "👩‍🏫 Minhas Reservas", "✍️ Nova Reserva", "❌ Gerenciar", "🔑 Assinatura"
     ])
 
-    
+
 # =========================================================
     # ABA 1: CALENDÁRIO (MULTI-DISPOSITIVO: PC & CELULAR)
     # =========================================================
     with aba_cal:
         st.subheader("Visão Geral do Mês")
         
-        # --- SELETOR DE DISPOSITIVO ---
-        col_view1, col_view2 = st.columns([1, 2])
-        with col_view1:
-            modo_tela = st.radio(
-                "Visualização:",
-                ["🖥️ Computador", "📱 Celular"],
-                horizontal=True,
-                help="O modo celular mostra as reservas em formato de lista, ideal para telas pequenas."
-            )
+        # --- 1. SELETOR DE MODO (O segredo para o Celular) ---
+        modo_tela = st.radio(
+            "Otimizar visualização para:",
+            ["🖥️ Computador (Grade)", "📱 Celular (Lista)"],
+            horizontal=True,
+            key="modo_visualizacao_calendar"
+        )
+        
+        # Define a visão técnica baseada na escolha
+        visao_tecnica = "listMonth" if "Celular" in modo_tela else "dayGridMonth"
 
-        with st.spinner("Carregando reservas..."):
+        with st.spinner("Carregando todas as reservas do calendário..."):
             try:
-                # 1. BUSCA DE DADOS (Lógica de paginação mantida)
+                # 2. BURLANDO O LIMITE DE 1000 LINHAS DO SUPABASE (Mantido)
                 todas_reservas_ativas = []
                 inicio = 0
                 tamanho_pagina = 1000
+                
                 while True:
                     res_pagina = supabase.table("reservas").select("*").eq("status", "Ativa").range(inicio, inicio + tamanho_pagina - 1).execute()
-                    if not res_pagina.data: break
+                    if not res_pagina.data:
+                        break
                     todas_reservas_ativas.extend(res_pagina.data)
-                    if len(res_pagina.data) < tamanho_pagina: break
+                    if len(res_pagina.data) < tamanho_pagina:
+                        break
                     inicio += tamanho_pagina
 
                 if todas_reservas_ativas:
-                    # 2. PROCESSAMENTO (Lógica de títulos mantida)
-                    eventos = []
+                    # 3. AGRUPAMENTO INTELIGENTE
                     reservas_agrupadas = {}
+                    
                     for r in todas_reservas_ativas:
                         prof = r.get('professor', 'Prof').strip()
                         espaco = r.get('espaco', 'Espaço')
                         aula = r.get('periodo', r.get('horario', r.get('aula', '')))
-                        equip = r.get('equipamentos', '')
+                        equipamentos = r.get('equipamentos', '')
                         raw_data = r.get('data_reserva') or r.get('data') or ""
+                        
+                        if not raw_data: continue
                         
                         # Parser de Data Blindado
                         data_str = str(raw_data).strip()
+                        data_valida = None
                         try:
                             dt_obj = pd.to_datetime(data_str, format="%Y-%m-%d")
-                        except:
-                            try: dt_obj = pd.to_datetime(data_str, dayfirst=True)
-                            except: continue
-                        
-                        data_valida = dt_obj.strftime("%Y-%m-%d")
-                        chave = (data_valida, prof)
-                        if chave not in reservas_agrupadas: reservas_agrupadas[chave] = []
-                        reservas_agrupadas[chave].append({"espaco": espaco, "aula": aula, "equip": equip})
+                            data_valida = dt_obj.strftime("%Y-%m-%d")
+                        except ValueError:
+                            try:
+                                dt_obj = pd.to_datetime(data_str, format="%d/%m/%Y")
+                                data_valida = dt_obj.strftime("%Y-%m-%d")
+                            except ValueError:
+                                try:
+                                    dt_obj = pd.to_datetime(data_str, dayfirst=True)
+                                    data_valida = dt_obj.strftime("%Y-%m-%d")
+                                except: pass
+                                    
+                        if not data_valida: continue 
 
-                    # 3. CRIAÇÃO DOS EVENTOS
+                        chave = (data_valida, prof)
+                        if chave not in reservas_agrupadas:
+                            reservas_agrupadas[chave] = []
+                        
+                        reservas_agrupadas[chave].append({
+                            "espaco": espaco,
+                            "aula": aula,
+                            "equip": equipamentos
+                        })
+
+                    # 4. PREPARAÇÃO DOS EVENTOS (Títulos Descritivos)
+                    eventos = []
                     todos_profs = sorted(list(set(p for d, p in reservas_agrupadas.keys())))
                     mapa_cores = {prof: CORES_PROFESSORES[i % len(CORES_PROFESSORES)] for i, prof in enumerate(todos_profs)}
                     
                     for (data_fmt, prof), lista_detalhes in reservas_agrupadas.items():
                         resumo_espacos = {}
                         todos_equipamentos = set()
+                        
                         for det in lista_detalhes:
                             esp = det["espaco"]
                             if esp not in resumo_espacos: resumo_espacos[esp] = []
+                            
                             aula_curta = str(det["aula"]).replace(" Aula", "").strip()
                             if aula_curta: resumo_espacos[esp].append(aula_curta)
+                                
                             eq_raw = str(det["equip"]).strip()
                             if eq_raw and eq_raw != "-":
                                 for e in eq_raw.split(","): todos_equipamentos.add(e.strip())
 
-                        texto_espacos = " + ".join([f"{esp} [{', '.join(sorted(set(aulas)))}]" for esp, aulas in resumo_espacos.items()])
-                        titulo_completo = f"{prof} | {texto_espacos}"
-                        if todos_equipamentos: titulo_completo += f" 🔌 {', '.join(sorted(todos_equipamentos))}"
+                        partes_texto = []
+                        for esp, aulas in resumo_espacos.items():
+                            aulas_ordenadas = ", ".join(sorted(set(aulas)))
+                            partes_texto.append(f"{esp} [{aulas_ordenadas}]" if aulas_ordenadas else f"{esp}")
+                                
+                        titulo_completo = f"{prof} | {' + '.join(partes_texto)}"
+                        if todos_equipamentos:
+                            titulo_completo += f" 🔌 {', '.join(sorted(todos_equipamentos))}"
                         
                         eventos.append({
                             "title": titulo_completo,
@@ -118,27 +148,30 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                             "borderColor": mapa_cores.get(prof, "#1f77b4"),
                             "allDay": True,
                         })
-
-                    # 4. CONFIGURAÇÃO DINÂMICA (AQUI ESTÁ O SEGREDO)
-                    visao_padrao = "dayGridMonth" if modo_tela == "🖥️ Computador" else "listMonth"
                     
+                    # --- 5. RENDERIZAÇÃO COM KEY DINÂMICA ---
                     calendar_options = {
                         "locale": "pt-br",
-                        "initialView": visao_padrao,
+                        "initialView": visao_tecnica, # Usa a visão do botão
                         "weekends": False,
                         "dayMaxEvents": True,
                         "headerToolbar": {
                             "left": "prev,next today",
                             "center": "title",
-                            "right": "dayGridMonth,listMonth" # Permite trocar manualmente também
+                            "right": "dayGridMonth,listMonth"
                         },
+                        "editable": False,
+                        "selectable": True,
                     }
                     
-                    calendar(events=eventos, options=calendar_options)
+                    # A key dinâmica força o componente a recarregar o layout
+                    calendar(events=eventos, options=calendar_options, key=f"calendar_view_{visao_tecnica}")
                 else:
-                    st.info("Nenhuma reserva ativa.")
+                    st.info("Nenhuma reserva ativa para exibir no calendário.")
+                    
             except Exception as e:
-                st.error(f"Erro: {e}")
+                st.error(f"Erro ao processar calendário: {e}")
+
 
     # =========================================================
     # ABA 2: LISTA DIÁRIA
