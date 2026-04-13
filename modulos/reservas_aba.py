@@ -39,14 +39,15 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
 
 
 # =========================================================
-    # ABA 1: CALENDÁRIO (VISUAL PROFISSIONAL + ALTURA ESTICADA)
+    # ABA 1: CALENDÁRIO (MODO LISTA MENSAL CLEAN - FOCADO EM MOBILE)
     # =========================================================
     with aba_cal:
-        st.subheader("Visão Geral do Mês")
         
-        with st.spinner("Carregando todas as reservas do calendário..."):
+        # Apagamos o st.subheader("Visão Geral do Mês") para poupar espaço precioso na tela do celular
+        
+        with st.spinner("Carregando agenda mensal..."):
             try:
-                # 1. BURLANDO O LIMITE DE 1000 LINHAS DO SUPABASE
+                # 1. BURLANDO O LIMITE DO SUPABASE
                 todas_reservas_ativas = []
                 inicio = 0
                 tamanho_pagina = 1000
@@ -100,7 +101,7 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                             "equip": equipamentos
                         })
 
-                    # 3. PREPARAÇÃO DOS EVENTOS
+                    # 3. PREPARAÇÃO DOS EVENTOS (Com Títulos Compactos)
                     eventos = []
                     todos_profs = sorted(list(set(p for d, p in reservas_agrupadas.keys())))
                     mapa_cores = {prof: CORES_PROFESSORES[i % len(CORES_PROFESSORES)] for i, prof in enumerate(todos_profs)}
@@ -137,35 +138,52 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                             "allDay": True,
                         })
                     
-                    # --- 4. RENDERIZAÇÃO PROFISSIONAL (Sem botão gambiarra) ---
+                    # 4. CONFIGURAÇÃO CLEAN E DIRETA
                     calendar_options = {
                         "locale": "pt-br",
-                        "initialView": "dayGridMonth", # Sempre abre a grade padrão
-                        "height": 700, # <-- ESTICA O FRAME PARA CABER A LISTA
-                        "contentHeight": "auto", 
-                        "weekends": False,
-                        "dayMaxEvents": True,
-                        "allDayText": "🔹", # <-- ADEUS "all-day" FEIO, SUBSTITUIDO POR UM ÍCONE
+                        "initialView": "listMonth", # FIXADO EM LISTA MENSAL
+                        "height": 650, # Altura boa para celular
                         "headerToolbar": {
-                            "left": "prev,next today",
-                            "center": "title",
-                            "right": "dayGridMonth,listMonth" # O usuário troca direto aqui
+                            "left": "prev,next", # Apenas setinhas
+                            "center": "title",   # Título (ex: abril de 2026) centralizado
+                            "right": "today"     # Botão pequeno "Hoje"
                         },
                         "buttonText": {
                             "today": "Hoje",
-                            "dayGridMonth": "Mês",
-                            "listMonth": "Agenda" # Traduzido de forma profissional
                         },
-                        "editable": False,
-                        "selectable": True,
+                        # Esconde a data alternativa redundante na lista para limpar a tela
+                        "listDayAltFormat": False,
                     }
                     
-                    calendar(events=eventos, options=calendar_options)
+                    # 5. MÁGICA CSS PARA DIMINUIR A FONTE NO CELULAR
+                    custom_css = """
+                    .fc-toolbar-title {
+                        font-size: 1.1rem !important; 
+                        text-transform: capitalize;
+                        color: #333;
+                    }
+                    .fc-button {
+                        padding: 0.2rem 0.5rem !important;
+                        font-size: 0.85rem !important;
+                    }
+                    .fc-list-day-text {
+                        font-size: 0.95rem !important;
+                        font-weight: bold !important;
+                    }
+                    .fc-list-event-title {
+                        font-size: 0.85rem !important;
+                    }
+                    .fc-list-event-time {
+                        display: none !important; /* Esconde qualquer resquício do "all-day" */
+                    }
+                    """
+                    
+                    calendar(events=eventos, options=calendar_options, custom_css=custom_css)
                 else:
-                    st.info("Nenhuma reserva ativa para exibir no calendário.")
+                    st.info("Nenhuma reserva ativa para exibir na agenda.")
                     
             except Exception as e:
-                st.error(f"Erro ao processar calendário: {e}")
+                st.error(f"Erro ao processar agenda: {e}")
 
     # =========================================================
     # ABA 2: LISTA DIÁRIA
