@@ -33,6 +33,36 @@ URL_A = st.secrets["SUPABASE_URL_ALUNOS"]
 KEY_A = st.secrets["SUPABASE_KEY_ALUNOS"]
 supabase_alunos = create_client(URL_A, KEY_A)
 
+# --- FUNÇÃO DE SINCRONIZAÇÃO DE NOTAS ---
+def sincronizar_atividades_online(turma_sel, unidade_sel, atividade_id_origem):
+    """
+    Busca notas na tabela 'resultados' e salva na 'notas_atividades' coluna AT1
+    """
+    try:
+        # 1. Busca os resultados da atividade online
+        res = supabase.table("resultados").select("aluno_id, nota").eq("atividade_id", atividade_id_origem).execute()
+        
+        if not res.data:
+            st.warning(f"Nenhum resultado encontrado para a atividade {atividade_id_origem}")
+            return
+
+        # 2. Prepara os dados para o Upsert na nova tabela
+        dados_upsert = []
+        for r in res.data:
+            dados_upsert.append({
+                "aluno_id": r["aluno_id"],
+                "turma": turma_sel,
+                "unidade": unidade_sel,
+                "at1": float(r["nota"])
+            })
+        
+        # 3. Faz o Upsert (Se o aluno já tiver linha lá, ele só atualiza a AT1)
+        supabase.table("notas_atividades").upsert(dados_upsert, on_conflict="aluno_id, unidade").execute()
+        st.success(f"✅ {len(dados_upsert)} notas sincronizadas com sucesso para AT1!")
+        
+    except Exception as e:
+        st.error(f"Erro na sincronização: {e}")
+
 # --- 3. SISTEMA DE LOGIN (ESTADO) ---
 if 'autenticado' not in st.session_state:
     st.session_state.autenticado = True # Mudar para False se desejar tela de login real
@@ -632,11 +662,9 @@ elif menu == "Diagnósticos IA":
     else:
         st.warning("Nenhuma prova encontrada. Crie uma prova primeiro na aba 'Gerar Modelo de Prova'.")
 
-# BLOCO DAS NOTAS TRIMESTRE #
-
 elif menu == "Boletim Final SIEPE":
     st.title("🏫 Consolidação de Notas SIEPE")
-    st.write("Importe provas para colunas específicas para travá-las, ou digite manualmente as notas de projetos.")
+    st.write("Resgate atividades online, importe provas para colunas específicas, ou digite manualmente.")
 
     try:
         # 1. Busca todos os alunos
@@ -653,24 +681,68 @@ elif menu == "Boletim Final SIEPE":
                 
                 if turma_sel:
                     # =====================================================================
-                    # 🧠 GESTÃO DE ESTADO E TRAVAMENTO
+                    # 📥 1. RESGATE DE ATIVIDADES ONLINE (Para AT1)
+                    # =====================================================================
+                    st.divider()
+                    st.write("#### 🔄 Resgatar Atividade Online")
+                    col_r1, col_r2 = st.columns([1, 2])
+                    with col_r1:
+                        id_ativ = st.text_input("ID da Ativ. Online (Ex: 10)")
+                    with col_r2:
+                        st.write("") # Espaçamento para alinhar com o input
+                        if st.button("🔄 Resgatar p/ AT1", use_container_width=True):
+                            if id_ativ:
+                                sincronizar_atividades_online(turma_sel, "1º Bimestre", id_ativ)
+                                # Limpa o estado da tabela para forçar ela a puxar a nova nota do banco
+                                if f"tabela_notas_{turma_sel}" in st.session_state:
+                                    del st.session_state[f"tabela_notas_{turma_sel}"] 
+                                st.rerun()
+                            else:
+                                st.error("Digite o ID da atividade.")
+
+                    # =====================================================================
+                    # 🧠 2. GESTÃO DE ESTADO E INTEGRAÇÃO COM BANCO
                     # =====================================================================
                     state_key = f"tabela_notas_{turma_sel}"
                     locked_key = f"colunas_travadas_{turma_sel}"
                     editor_key = f"editor_notas_{turma_sel}"
                     
-                    # Inicializa a tabela se não existir
-                    if state_key not in st.session_state:
-                        df_base = pd.DataFrame()
-                        df_base['nome'] = df_todos[df_todos[col_t] == turma_sel].sort_values(by=col_n)[col_n].values
-                        for col in ['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N1', 'N2', 'Média Final']:
-                            df_base[col] = 0.0
-                        st.session_state[state_key] = df_base
-                    
                     # Inicializa lista de colunas travadas (vazia no início)
                     if locked_key not in st.session_state:
                         st.session_state[locked_key] = []
 
+                    # Inicializa a tabela puxando do Supabase
+                    if state_key not in st.session_state:
+                        # 1. Pega alunos
+                        df_turma = df_todos[df_todos[col_t] == turma_sel].copy()
+                        df_turma = df_turma.rename(columns={"id": "aluno_id"}) # Prepara pro merge
+                        
+                        # 2. Pega notas salvas
+                        res_notas = supabase.table("notas_atividades").select("*").eq("turma", turma_sel).eq("unidade", "1º Bimestre").execute()
+                        df_notas = pd.DataFrame(res_notas.data)
+                        
+                        # 3. Faz o Casamento (Merge)
+                        if not df_notas.empty:
+                            df_base = pd.merge(df_turma[['aluno_id', col_n]], df_notas, on="aluno_id", how="left")
+                            df_base = df_base.fillna(0.0) # Troca NaN por 0.0
+                        else:
+                            df_base = df_turma[['aluno_id', col_n]].copy()
+                            for c in ['at1', 'at2', 'at3', 'at4', 'prova', 'rec']: 
+                                df_base[c] = 0.0
+                            
+                        # Renomeia colunas para o padrão da sua tela (Maiúsculas)
+                        df_base = df_base.rename(columns={col_n: 'nome', 'at1': 'AT1', 'at2': 'AT2', 'at3': 'AT3', 'at4': 'AT4', 'prova': 'N2'})
+                        
+                        # Garante que todas as colunas visuais existam
+                        if 'AT5' not in df_base.columns: df_base['AT5'] = 0.0
+                        if 'N1' not in df_base.columns: df_base['N1'] = 0.0
+                        if 'Média Final' not in df_base.columns: df_base['Média Final'] = 0.0
+                            
+                        st.session_state[state_key] = df_base.sort_values('nome').reset_index(drop=True)
+
+                    # =====================================================================
+                    # ✍️ 3. CAPTURA EDIÇÃO MANUAL E CÁLCULOS
+                    # =====================================================================
                     # Sincroniza edições manuais
                     if editor_key in st.session_state:
                         edicoes = st.session_state[editor_key].get("edited_rows", {})
@@ -683,10 +755,10 @@ elif menu == "Boletim Final SIEPE":
                     st.session_state[state_key]['Média Final'] = ((st.session_state[state_key]['N1'] + st.session_state[state_key]['N2']) / 2).round(1)
 
                     # =====================================================================
-                    # 📥 IMPORTAÇÃO E TRAVAMENTO DINÂMICO
+                    # 📥 4. IMPORTAÇÃO DE PROVAS (E TRAVAMENTO)
                     # =====================================================================
                     st.divider()
-                    with st.expander("📥 Importar Prova e Travar Coluna", expanded=False):
+                    with st.expander("📥 Importar Prova Oficial e Travar Coluna", expanded=False):
                         res_p = supabase.table("modelos_prova").select("id, titulo, valor_questao").order("id", desc=True).execute()
                         
                         if res_p.data:
@@ -722,12 +794,18 @@ elif menu == "Boletim Final SIEPE":
                                     st.rerun()
 
                     # =====================================================================
-                    # 📝 EDITOR DE NOTAS (COM TRAVAMENTO DINÂMICO)
+                    # 📝 5. EDITOR DE NOTAS (COM TRAVAMENTO DINÂMICO)
                     # =====================================================================
-                    st.subheader(f"Notas: {turma_sel}")
+                    st.subheader(f"Planilha de Notas: {turma_sel}")
                     
                     # Construção dinâmica das configurações de colunas
                     config_colunas = {
+                        "aluno_id": None, # Esconde a coluna técnica do visual
+                        "id": None,
+                        "unidade": None,
+                        "turma": None,
+                        "data_atualizacao": None,
+                        "rec": None,
                         "nome": st.column_config.TextColumn("Estudante", disabled=True, width="medium"),
                         "N1": st.column_config.NumberColumn("N1 (Soma)", disabled=True, width="small"),
                         "Média Final": st.column_config.NumberColumn("Média", disabled=True, width="small"),
@@ -757,25 +835,57 @@ elif menu == "Boletim Final SIEPE":
                         height=(len(st.session_state[state_key]) + 1) * 35 + 40
                     )
                     
-                    if st.button("🔓 Resetar Travas desta Turma", type="secondary"):
-                        st.session_state[locked_key] = []
-                        st.rerun()
-
                     # =====================================================================
-                    # 📥 EXPORTAÇÃO
+                    # 💾 6. BOTÕES DE AÇÃO (SALVAR NO BANCO E BAIXAR)
                     # =====================================================================
-                    st.divider()
-                    output = io.BytesIO()
-                    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                        st.session_state[state_key].to_excel(writer, sheet_name="SIEPE", index=False)
+                    col_b1, col_b2, col_b3 = st.columns([2, 2, 1])
                     
-                    st.download_button(
-                        label="📥 Baixar Planilha para o SIEPE",
-                        data=output.getvalue(),
-                        file_name=f"SIEPE_{turma_sel}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        type="primary"
-                    )
+                    with col_b1:
+                        if st.button("💾 Salvar Planilha no Banco de Dados", type="primary", use_container_width=True):
+                            with st.spinner("Salvando notas..."):
+                                df_salvar = st.session_state[state_key].copy()
+                                # Prepara os nomes das colunas de volta para o padrão do Supabase (minúsculas)
+                                df_salvar = df_salvar.rename(columns={'AT1': 'at1', 'AT2': 'at2', 'AT3': 'at3', 'AT4': 'at4', 'N2': 'prova'})
+                                
+                                dados_upsert = []
+                                for _, row in df_salvar.iterrows():
+                                    dados_upsert.append({
+                                        "aluno_id": row['aluno_id'],
+                                        "turma": turma_sel,
+                                        "unidade": "1º Bimestre",
+                                        "at1": row.get('at1', 0.0), 
+                                        "at2": row.get('at2', 0.0), 
+                                        "at3": row.get('at3', 0.0), 
+                                        "at4": row.get('at4', 0.0), 
+                                        "prova": row.get('prova', 0.0)
+                                    })
+                                
+                                try:
+                                    supabase.table("notas_atividades").upsert(dados_upsert, on_conflict="aluno_id, unidade").execute()
+                                    st.success("✅ Notas salvas permanentemente!")
+                                except Exception as e:
+                                    st.error(f"Erro ao salvar: {e}")
+
+                    with col_b2:
+                        output = io.BytesIO()
+                        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                            # Limpa colunas técnicas antes de exportar
+                            df_export = st.session_state[state_key].drop(columns=['aluno_id', 'id', 'unidade', 'turma', 'data_atualizacao', 'rec'], errors='ignore')
+                            df_export.to_excel(writer, sheet_name="SIEPE", index=False)
+                        
+                        st.download_button(
+                            label="📥 Baixar Planilha para o SIEPE",
+                            data=output.getvalue(),
+                            file_name=f"SIEPE_{turma_sel}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            type="secondary",
+                            use_container_width=True
+                        )
+                        
+                    with col_b3:
+                        if st.button("🔓 Resetar Travas", type="secondary", use_container_width=True):
+                            st.session_state[locked_key] = []
+                            st.rerun()
 
             else:
                 st.error("Colunas de 'turma' ou 'nome' não encontradas.")
