@@ -64,7 +64,7 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                 }
                 calendar(events=eventos, options=calendar_options)
             else:
-                st.info("Nenhuma reserva encontrada.")
+                st.info("Nenhuma reserva ativa encontrada neste mês.")
         except Exception as e:
             st.error(f"Erro ao carregar calendário: {e}")
 
@@ -229,11 +229,12 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                 aulas_com_duplicata_prof = []
                 
                 equipamentos_texto = ", ".join(equipamentos_selecionados)
+                prof_limpo = professor.strip() # Blindagem de espaços
                 
                 for aula in aulas_selecionadas:
                     pode_salvar = True
                     
-                    duplicata = supabase.table("reservas").select("id").eq("data_reserva", str(data_res)).eq("periodo", aula).eq("professor", professor).eq("status", "Ativa").execute()
+                    duplicata = supabase.table("reservas").select("id").eq("data_reserva", str(data_res)).eq("periodo", aula).eq("professor", prof_limpo).eq("status", "Ativa").execute()
                     if duplicata.data:
                         aulas_com_duplicata_prof.append(aula)
                         pode_salvar = False
@@ -252,7 +253,7 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                                 "data_reserva": str(data_res),
                                 "periodo": aula,
                                 "espaco": espaco,
-                                "professor": professor,
+                                "professor": prof_limpo,
                                 "equipamentos": equipamentos_texto,
                                 "observacoes": obs,
                                 "status": "Ativa"
@@ -263,7 +264,7 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                             sucesso_total = False
                 
                 if aulas_com_duplicata_prof:
-                    st.error(f"🛡️ **Bloqueio de Duplicata:** {professor}, você já possui uma reserva ativa para a {', '.join(aulas_com_duplicata_prof)} neste dia.")
+                    st.error(f"🛡️ **Bloqueio de Duplicata:** {prof_limpo}, você já possui uma reserva ativa para a {', '.join(aulas_com_duplicata_prof)} neste dia.")
                 
                 if aulas_com_conflito_espaco:
                     st.error(f"❌ O espaço '{espaco}' já está reservado por outra pessoa nestas aulas: {', '.join(aulas_com_conflito_espaco)}.")
@@ -281,57 +282,65 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                             del st.session_state[chave]
                             
                     time.sleep(1.5) 
-                    
                     st.rerun()
     
     # =========================================================
     # INÍCIO - ABA 4: GERENCIAR / CANCELAR
     # =========================================================
-    # --- Dentro da aba_cancelar ---
     with aba_cancelar:
         st.subheader("Cancelar Reserva")
-    
-    # Busca todas as reservas para mostrar na lista de exclusão
-    res_todas = supabase.table("reservas").select("*").execute()
-    df_cancel = pd.DataFrame(res_todas.data)
-
-    if not df_cancel.empty:
-        # Filtro para facilitar achar a reserva
-        prof_sel = st.selectbox("Selecione seu nome para ver suas reservas:", ["-- Selecione --"] + sorted(df_cancel['professor'].unique().tolist()))
         
-        if prof_sel != "-- Selecione --":
-            minhas_reservas = df_cancel[df_cancel['professor'] == prof_sel]
+        # Blindagem: Busca APENAS as reservas ATIVAS para evitar confusão de deletar o que já foi cancelado
+        res_todas = supabase.table("reservas").select("*").eq("status", "Ativa").execute()
+        df_cancel = pd.DataFrame(res_todas.data)
+
+        if not df_cancel.empty:
+            # Organiza por data para facilitar a visualização
+            df_cancel = df_cancel.sort_values(by="data_reserva", ascending=False)
             
-            for _, row in minhas_reservas.iterrows():
-                col1, col2 = st.columns([3, 1])
-                col1.write(f"📍 {row['espaco']} | ⏰ {row['horario']} | 📅 {row['data']}")
+            prof_sel = st.selectbox("Selecione seu nome para ver suas reservas ativas:", ["-- Selecione --"] + sorted(df_cancel['professor'].unique().tolist()))
+            
+            if prof_sel != "-- Selecione --":
+                minhas_reservas = df_cancel[df_cancel['professor'] == prof_sel]
                 
-                if col2.button("❌ Excluir", key=f"del_{row['id']}"):
-                    senha_input = st.text_input("Confirme sua Matrícula (Senha):", type="password", key=f"pw_{row['id']}")
+                for _, row in minhas_reservas.iterrows():
+                    col1, col2 = st.columns([3, 1])
                     
-                    if st.button("Confirmar Exclusão", key=f"conf_{row['id']}"):
-                        # 🔍 O SEGREDO: Busca a senha ignorando espaços
-                        res_senha = supabase.table("professores_matriculas").select("matricula").eq("professor", prof_sel.strip()).execute()
+                    # CORREÇÃO KEYERROR: Usando 'periodo' e 'data_reserva'
+                    col1.write(f"📍 {row['espaco']} | ⏰ {row['periodo']} | 📅 {row['data_reserva']}")
+                    
+                    # BLINDAGEM DO BOTÃO FANTASMA: Usando expander
+                    with col2.expander("❌ Excluir", expanded=False):
+                        senha_input = st.text_input("Sua Matrícula/Senha:", type="password", key=f"pw_{row['id']}")
                         
-                        senha_correta = res_senha.data[0]['matricula'] if res_senha.data else None
-                        
-                        # Se for GESTOR ou a senha bater
-                        if prof_sel in GESTORES or str(senha_input) == str(senha_correta):
-                            supabase.table("reservas").delete().eq("id", row['id']).execute()
-                            st.success("Reserva excluída!")
-                            st.rerun()
-                        else:
-                            st.error("⚠️ Senha incorreta ou sem permissão.")
+                        if st.button("Confirmar", key=f"conf_{row['id']}", type="primary"):
+                            try:
+                                # Busca a senha ignorando espaços no nome
+                                res_senha = supabase.table("professores_matriculas").select("matricula").eq("professor", prof_sel.strip()).execute()
+                                senha_correta = res_senha.data[0]['matricula'] if res_senha.data else None
+                                
+                                # Verifica a senha (se ele não tem senha cadastrada, barra a ação)
+                                if senha_correta and (str(senha_input) == str(senha_correta)):
+                                    # Blindagem: Atualiza para Cancelada (mantém histórico) ao invés de deletar
+                                    supabase.table("reservas").update({"status": "Cancelada", "cancelado_por": prof_sel}).eq("id", row['id']).execute()
+                                    st.success("Reserva cancelada com sucesso!")
+                                    time.sleep(1.5)
+                                    st.rerun()
+                                else:
+                                    st.error("⚠️ Senha incorreta ou assinatura não cadastrada.")
+                            except Exception as e:
+                                st.error(f"Erro ao processar exclusão: {e}")
+        else:
+            st.info(" Nenhuma reserva ativa encontrada no sistema no momento.")
 
     # =========================================================
     # INÍCIO - ABA 5: ASSINATURA
     # =========================================================
-    # --- Dentro da aba_assinatura ---
-        with aba_assinatura:
-            st.subheader("Cadastro de Assinatura Eletrônica")
+    with aba_assinatura:
+        st.subheader("Cadastro de Assinatura Eletrônica")
         st.info("Escolha seu nome na lista oficial da escola para criar sua senha.")
         
-        # IMPORTANTE: Use a lista_professores_antiga aqui, para permitir novos cadastros!
+        # IMPORTANTE: Use a lista_professores_antiga aqui, para permitir novos cadastros
         nome_prof = st.selectbox("Seu Nome:", ["-- Selecione --"] + lista_professores_antiga, key="aba5_nome")
         matricula_prof = st.text_input("Defina sua Matrícula (Senha):", type="password", key="aba5_matricula")
         
@@ -340,19 +349,18 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                 st.error("⚠️ Preencha todos os campos.")
             else:
                 try:
-                    # Limpa o nome para evitar erros de espaço
+                    # BLINDAGEM: Limpa o nome para evitar erros de espaço na hora de cancelar
                     nome_limpo = nome_prof.strip()
                     
-                    # Verifica se já existe para decidir entre UPDATE ou INSERT
                     verif = supabase.table("professores_matriculas").select("*").eq("professor", nome_limpo).execute()
                     
                     if verif.data:
-                        supabase.table("professores_matriculas").update({"matricula": matricula_prof}).eq("professor", nome_limpo).execute()
+                        supabase.table("professores_matriculas").update({"matricula": str(matricula_prof)}).eq("professor", nome_limpo).execute()
                     else:
-                        supabase.table("professores_matriculas").insert({"professor": nome_limpo, "matricula": matricula_prof}).execute()
+                        supabase.table("professores_matriculas").insert({"professor": nome_limpo, "matricula": str(matricula_prof)}).execute()
                     
                     st.success(f"✅ Assinatura de {nome_limpo} salva com sucesso!")
-                    time.sleep(1)
+                    time.sleep(1.5)
                     st.rerun()
                 except Exception as e:
                     st.error(f"Erro ao salvar: {e}")
