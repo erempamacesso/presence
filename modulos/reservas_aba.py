@@ -16,7 +16,8 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     # ---------------------------------------------------------
     lista_pessoas = []
     try:
-        res_prof = supabase.table("professores_matriculas").select("professor").execute()
+        # BUSCANDO DA TABELA CORRETA
+        res_prof = supabase.table("professores_assinaturas").select("professor").execute()
         if res_prof.data:
             lista_pessoas = sorted(list(set([p['professor'] for p in res_prof.data])))
     except Exception as e:
@@ -229,7 +230,7 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                 aulas_com_duplicata_prof = []
                 
                 equipamentos_texto = ", ".join(equipamentos_selecionados)
-                prof_limpo = professor.strip() # Blindagem de espaços
+                prof_limpo = professor.strip()
                 
                 for aula in aulas_selecionadas:
                     pode_salvar = True
@@ -290,7 +291,7 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     with aba_cancelar:
         st.subheader("Cancelar Reserva Específica")
         
-        # 1. Filtro de Data (Como você pediu)
+        # Filtro de Data
         data_alvo = st.date_input("1. Selecione a data da reserva que deseja cancelar:", value=datetime.date.today(), format="DD/MM/YYYY", key="aba4_data")
         
         # Busca APENAS as reservas ATIVAS daquela data específica
@@ -298,7 +299,7 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
         df_cancel = pd.DataFrame(res_dia.data)
 
         if not df_cancel.empty:
-            # 2. Filtro de Professor (Mostra apenas quem tem reserva no dia escolhido)
+            # Filtro de Professor (Mostra apenas quem tem reserva no dia escolhido)
             professores_do_dia = sorted(df_cancel['professor'].unique().tolist())
             prof_sel = st.selectbox("2. Selecione seu nome:", ["-- Selecione --"] + professores_do_dia, key="aba4_prof")
             
@@ -312,19 +313,17 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                     
                     col1.write(f"📍 **{row['espaco']}** | ⏰ Aula: {row['periodo']}")
                     
-                    # BLINDAGEM DO BOTÃO FANTASMA: Usando expander
                     with col2.expander("❌ Excluir", expanded=False):
                         senha_input = st.text_input("Sua Matrícula/Senha:", type="password", key=f"pw_{row['id']}")
                         
                         if st.button("Confirmar", key=f"conf_{row['id']}", type="primary"):
                             try:
-                                # Busca a senha ignorando espaços no nome
-                                res_senha = supabase.table("professores_matriculas").select("matricula").eq("professor", prof_sel.strip()).execute()
+                                # LENDO DA TABELA CORRETA (professores_assinaturas)
+                                res_senha = supabase.table("professores_assinaturas").select("matricula").eq("professor", prof_sel.strip()).execute()
                                 senha_correta = res_senha.data[0]['matricula'] if res_senha.data else None
                                 
                                 # Verifica a senha (ou libera se for GESTOR)
                                 if prof_sel in GESTORES or (senha_correta and str(senha_input) == str(senha_correta)):
-                                    # Atualiza para Cancelada (mantém histórico)
                                     supabase.table("reservas").update({"status": "Cancelada", "cancelado_por": prof_sel}).eq("id", row['id']).execute()
                                     st.success("Reserva cancelada com sucesso!")
                                     time.sleep(1.5)
@@ -335,7 +334,7 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                                 st.error(f"Erro ao processar exclusão: {e}")
         else:
             st.info(f"📅 Nenhuma reserva ativa encontrada no sistema para o dia {data_alvo.strftime('%d/%m/%Y')}.")
-            
+
     # =========================================================
     # INÍCIO - ABA 5: ASSINATURA
     # =========================================================
@@ -343,7 +342,6 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
         st.subheader("Cadastro de Assinatura Eletrônica")
         st.info("Escolha seu nome na lista oficial da escola para criar sua senha.")
         
-        # IMPORTANTE: Use a lista_professores_antiga aqui, para permitir novos cadastros
         nome_prof = st.selectbox("Seu Nome:", ["-- Selecione --"] + lista_professores_antiga, key="aba5_nome")
         matricula_prof = st.text_input("Defina sua Matrícula (Senha):", type="password", key="aba5_matricula")
         
@@ -352,15 +350,15 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                 st.error("⚠️ Preencha todos os campos.")
             else:
                 try:
-                    # BLINDAGEM: Limpa o nome para evitar erros de espaço na hora de cancelar
                     nome_limpo = nome_prof.strip()
                     
-                    verif = supabase.table("professores_matriculas").select("*").eq("professor", nome_limpo).execute()
+                    # GRAVANDO NA TABELA CORRETA (professores_assinaturas)
+                    verif = supabase.table("professores_assinaturas").select("*").eq("professor", nome_limpo).execute()
                     
                     if verif.data:
-                        supabase.table("professores_matriculas").update({"matricula": str(matricula_prof)}).eq("professor", nome_limpo).execute()
+                        supabase.table("professores_assinaturas").update({"matricula": str(matricula_prof)}).eq("professor", nome_limpo).execute()
                     else:
-                        supabase.table("professores_matriculas").insert({"professor": nome_limpo, "matricula": str(matricula_prof)}).execute()
+                        supabase.table("professores_assinaturas").insert({"professor": nome_limpo, "matricula": str(matricula_prof)}).execute()
                     
                     st.success(f"✅ Assinatura de {nome_limpo} salva com sucesso!")
                     time.sleep(1.5)
