@@ -180,6 +180,7 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
         col1, col2 = st.columns(2)
         
         with col1:
+            # Puxa os nomes oficiais vindos do banco de dados (Variável opcoes_professores)
             professor = st.selectbox("Professor:", opcoes_professores, key="aba3_prof")
             usar_na_sala = st.checkbox("Usarei na sala de aula (Apenas Equipamentos)", key="aba3_usar_sala")
             
@@ -221,7 +222,7 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                 tipos_selecionados.append(tipo)
                 
             if not aulas_selecionadas:
-                st.warning("⚠️ Selecione pelo menos uma aula clicando nos botões azuis.")
+                st.warning("⚠️ Selecione pelo menos uma aula clicando nos botões acima.")
             elif professor == "-- Selecione --":
                 st.warning("⚠️ Selecione o professor.")
             elif espaco == "-- Selecione --" and not usar_na_sala:
@@ -236,17 +237,19 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                 aulas_com_duplicata_prof = []
                 
                 equipamentos_texto = ", ".join(equipamentos_selecionados)
-                prof_limpo = professor.strip()
+                prof_limpo = professor.strip() # Limpa espaços em branco no final do nome
                 
                 for aula in aulas_selecionadas:
                     pode_salvar = True
                     
+                    # Checa se o professor já reservou algo nessa mesma aula/data
                     duplicata = supabase.table("reservas").select("id").eq("data_reserva", str(data_res)).eq("periodo", aula).eq("professor", prof_limpo).eq("status", "Ativa").execute()
                     if duplicata.data:
                         aulas_com_duplicata_prof.append(aula)
                         pode_salvar = False
                         sucesso_total = False
 
+                    # Checa se o espaço já está ocupado nessa mesma aula/data (ignora se for "Sala de Aula")
                     if pode_salvar and espaco != "Sala de Aula":
                         conflito_espaco = supabase.table("reservas").select("id").eq("data_reserva", str(data_res)).eq("periodo", aula).eq("espaco", espaco).eq("status", "Ativa").execute()
                         if conflito_espaco.data:
@@ -279,11 +282,11 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                 if sucesso_total:
                     st.success("✅ Reserva(s) realizada(s) com sucesso!")
                     
+                    # Limpa o formulário após sucesso
                     chaves_para_limpar = [
                         "aba3_aulas", "aba3_usar_sala", "aba3_espaco", 
                         "aba3_equipamentos", "aba3_obs"
                     ]
-                    
                     for chave in chaves_para_limpar:
                         if chave in st.session_state:
                             del st.session_state[chave]
@@ -291,7 +294,8 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                     time.sleep(1.5) 
                     st.rerun()
     
-    # =========================================================
+    
+# =========================================================
     # INÍCIO - ABA 4: GERENCIAR / CANCELAR
     # =========================================================
     with aba_cancelar:
@@ -300,17 +304,21 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
         # 1. SELECIONAR A DATA
         data_alvo = st.date_input("1. Selecione a data da reserva que deseja cancelar:", value=datetime.date.today(), format="DD/MM/YYYY", key="aba4_data")
         
+        # Busca todas as reservas ativas
         res_dia = supabase.table("reservas").select("*").eq("status", "Ativa").execute()
         
         dados_filtrados = []
         if res_dia.data:
             for r in res_dia.data:
-                if str(r.get("data_reserva", r.get("data", ""))) == str(data_alvo):
+                # Filtra pela data selecionada (considerando os dois nomes de coluna possíveis no banco)
+                data_r = r.get("data_reserva", r.get("data", ""))
+                if str(data_r) == str(data_alvo):
                     dados_filtrados.append(r)
 
         df_cancel = pd.DataFrame(dados_filtrados)
 
         if not df_cancel.empty and 'professor' in df_cancel.columns:
+            # Lista apenas os professores que têm reserva naquele dia específico
             professores_do_dia = sorted(df_cancel['professor'].dropna().unique().tolist())
             prof_sel = st.selectbox("Selecione seu nome:", ["-- Selecione --"] + professores_do_dia, key="aba4_prof")
             
@@ -319,10 +327,10 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                 
                 st.write(f"**2. Selecione as reservas que deseja cancelar ({data_alvo.strftime('%d/%m/%Y')}):**")
                 
-                # Cria uma lista vazia para guardar os IDs das reservas que ele marcar
+                # Lista para guardar os IDs das reservas marcadas para exclusão
                 ids_para_cancelar = []
                 
-                # Mostra cada reserva como um Checkbox
+                # Exibe cada reserva como um Checkbox para cancelamento múltiplo
                 for _, row in minhas_reservas.iterrows():
                     espaco_val = row.get('espaco', 'Sem Espaço')
                     periodo_val = row.get('periodo', row.get('horario', row.get('aula', 'Sem Horário')))
@@ -330,31 +338,37 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                     
                     texto_exibicao = f"📍 {espaco_val} | ⏰ Aula: {periodo_val}"
                     
-                    # Se o professor marcar a caixinha, o ID entra na lista de exclusão
                     if st.checkbox(texto_exibicao, key=f"chk_{id_val}"):
                         ids_para_cancelar.append(id_val)
                 
-                # Se ele marcou pelo menos 1 reserva, mostra o campo de senha
+                # Só mostra o campo de senha se houver algo marcado
                 if ids_para_cancelar:
-                    st.divider() # Linha de separação visual
+                    st.divider() 
                     
-                    # 3. INSERIR A SENHA APENAS UMA VEZ
+                    # 3. INSERIR A SENHA PARA VALIDAR O LOTE
                     senha_input = st.text_input("3. Insira sua Matrícula (Senha) para confirmar:", type="password", key="pw_cancel_multi")
                     
                     if st.button("❌ Confirmar Cancelamentos", type="primary"):
                         try:
-                            # Busca a senha no banco
-                            res_senha = supabase.table("professores_matriculas").select("matricula").eq("professor", prof_sel.strip()).execute()
-                            senha_correta = res_senha.data[0].get('matricula') if res_senha.data and len(res_senha.data) > 0 else None
+                            # BUSCA FLEXÍVEL: Resolve o problema de "PATRICIA" vs "PATRICIA FRANÇA"
+                            # O ilike com % busca qualquer nome que comece com o que foi selecionado
+                            res_senha = supabase.table("professores_matriculas")\
+                                .select("matricula")\
+                                .ilike("professor", f"{prof_sel.strip()}%")\
+                                .execute()
                             
-                            # Verifica se é Gestor ou se a senha bate
+                            senha_correta = res_senha.data[0].get('matricula') if res_senha.data else None
+                            
+                            # Validação: Gestor ou Senha Correta
                             if prof_sel in GESTORES or (senha_correta and str(senha_input).strip() == str(senha_correta).strip()):
                                 
-                                # Processa o cancelamento para TODOS os IDs marcados
+                                # Loop para cancelar todos os itens selecionados
                                 for id_cancel in ids_para_cancelar:
-                                    supabase.table("reservas").update({"status": "Cancelada", "cancelado_por": prof_sel}).eq("id", id_cancel).execute()
+                                    supabase.table("reservas").update({
+                                        "status": "Cancelada", 
+                                        "cancelado_por": prof_sel
+                                    }).eq("id", id_cancel).execute()
                                 
-                                # Mensagem flexível (singular ou plural)
                                 if len(ids_para_cancelar) > 1:
                                     st.success(f"✅ {len(ids_para_cancelar)} reservas canceladas com sucesso!")
                                 else:
@@ -363,13 +377,12 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                                 time.sleep(1.5)
                                 st.rerun()
                             else:
-                                st.error("⚠️ Senha incorreta ou assinatura não cadastrada.")
+                                st.error("⚠️ Senha incorreta ou assinatura não encontrada para este nome.")
                         except Exception as e:
-                            st.error(f"Erro ao processar exclusão em lote: {e}")
+                            st.error(f"Erro ao processar exclusão: {e}")
         else:
             st.info(f"📅 Nenhuma reserva ativa encontrada no sistema para o dia {data_alvo.strftime('%d/%m/%Y')}.")
 
-    # =========================================================
     # INÍCIO - ABA 5: ASSINATURA
     # =========================================================
     with aba_assinatura:
