@@ -8,6 +8,13 @@ from streamlit_calendar import calendar
 # --- GESTORES COM PRIVILÉGIO TOTAL ---
 GESTORES = ["Lilian Jordão", "Jackson Carvalho", "Lylian Cabral"]
 
+# Paleta de cores para diferenciar professores no calendário
+CORES_PROFESSORES = [
+    "#1f77b4", "#d62728", "#2ca02c", "#ff7f0e", "#9467bd",
+    "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
+    "#aec7e8", "#ffbb78", "#98df8a", "#ff9896", "#c5b0d5"
+]
+
 def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, arg1=None, arg2=None, arg3=None):
     st.title("📅 Sistema de Reservas")
     
@@ -16,7 +23,6 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     # ---------------------------------------------------------
     lista_pessoas = []
     try:
-        # Busca na tabela correta: professores_matriculas
         res_prof = supabase.table("professores_matriculas").select("professor").execute()
         if res_prof.data:
             lista_pessoas = sorted(list(set([p.get('professor', '') for p in res_prof.data if p.get('professor')])))
@@ -40,31 +46,84 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
             res_cal = supabase.table("reservas").select("*").eq("status", "Ativa").execute()
             if res_cal.data:
                 eventos = []
+                
+                # Mapa de cores por professor (gerado dinamicamente)
+                todos_profs = sorted(set(r.get('professor', '') for r in res_cal.data if r.get('professor')))
+                mapa_cores = {prof: CORES_PROFESSORES[i % len(CORES_PROFESSORES)] for i, prof in enumerate(todos_profs)}
+                
                 for r in res_cal.data:
                     prof = r.get('professor', 'Prof. Sem Nome')
                     espaco = r.get('espaco', 'Sem Espaço')
                     equip = r.get('equipamentos', '')
-                    data_evento = r.get('data_reserva', r.get('data', ''))
+                    periodo = r.get('periodo', r.get('horario', r.get('aula', '')))
                     
-                    if data_evento:
-                        titulo_limpo = f"{prof} - {espaco}"
-                        if equip and str(equip).strip() not in ["", "None"]:
-                            titulo_limpo += f" ({equip})"
-                        
-                        eventos.append({
-                            "title": titulo_limpo,
-                            "start": data_evento,
-                            "end": data_evento,
-                            "backgroundColor": "#1f77b4"
-                        })
+                    # CORREÇÃO 2: Leitura robusta do campo de data
+                    data_evento = r.get('data_reserva') or r.get('data') or ''
+                    
+                    if not data_evento:
+                        # Se não há data, ignora este registro
+                        continue
+                    
+                    # Garante que a data está no formato correto YYYY-MM-DD
+                    try:
+                        data_fmt = str(pd.to_datetime(str(data_evento)).date())
+                    except Exception:
+                        continue
+                    
+                    titulo_limpo = f"{prof} - {espaco}"
+                    if periodo:
+                        titulo_limpo += f" | {periodo}"
+                    if equip and str(equip).strip() not in ["", "None", "nan"]:
+                        titulo_limpo += f" ({equip})"
+                    
+                    # CORREÇÃO 1: end deve ser dia SEGUINTE para eventos de dia inteiro aparecerem
+                    try:
+                        data_fim = str((pd.to_datetime(data_fmt) + pd.Timedelta(days=1)).date())
+                    except Exception:
+                        data_fim = data_fmt
+                    
+                    eventos.append({
+                        "title": titulo_limpo,
+                        "start": data_fmt,
+                        "end": data_fim,                      # ← CORREÇÃO: dia seguinte
+                        "backgroundColor": mapa_cores.get(prof, "#1f77b4"),
+                        "borderColor": mapa_cores.get(prof, "#1f77b4"),
+                        "allDay": True
+                    })
                 
-                calendar_options = {
-                    "locale": "pt-br",
-                    "headerToolbar": {"left": "today prev,next", "center": "title", "right": "dayGridMonth,timeGridWeek"},
-                    "initialView": "dayGridMonth",
-                    "buttonText": {"today": "Hoje", "month": "Mês", "week": "Semana"}
-                }
-                calendar(events=eventos, options=calendar_options)
+                if eventos:
+                    calendar_options = {
+                        "locale": "pt-br",
+                        "headerToolbar": {
+                            "left": "today prev,next",
+                            "center": "title",
+                            "right": "dayGridMonth,timeGridWeek,listWeek"
+                        },
+                        "initialView": "dayGridMonth",
+                        "buttonText": {
+                            "today": "Hoje",
+                            "month": "Mês",
+                            "week": "Semana",
+                            "list": "Lista"
+                        },
+                        "eventDisplay": "block",
+                        "dayMaxEvents": False       # Mostra TODOS os eventos, sem "Ver mais"
+                    }
+                    calendar(events=eventos, options=calendar_options)
+                    
+                    # Legenda de cores
+                    st.divider()
+                    st.caption("**Legenda de professores:**")
+                    cols_leg = st.columns(5)
+                    for i, (prof, cor) in enumerate(mapa_cores.items()):
+                        with cols_leg[i % 5]:
+                            st.markdown(
+                                f"<span style='background:{cor}; color:white; padding:2px 8px; "
+                                f"border-radius:4px; font-size:11px;'>{prof}</span>",
+                                unsafe_allow_html=True
+                            )
+                else:
+                    st.info("Nenhuma reserva ativa encontrada.")
             else:
                 st.info("Nenhuma reserva ativa encontrada.")
         except Exception as e:
@@ -82,8 +141,14 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
             if res_lista.data:
                 reservas_por_espaco = {}
                 for r in res_lista.data:
-                    data_r = r.get("data_reserva", r.get("data", ""))
-                    if str(data_r) == str(d_lista):
+                    # CORREÇÃO 2 aplicada também aqui
+                    data_r = r.get("data_reserva") or r.get("data") or ""
+                    try:
+                        data_r_fmt = str(pd.to_datetime(str(data_r)).date())
+                    except Exception:
+                        data_r_fmt = str(data_r)
+                    
+                    if data_r_fmt == str(d_lista):
                         esp = r.get("espaco", "Sem Espaço")
                         if esp not in reservas_por_espaco:
                             reservas_por_espaco[esp] = []
@@ -103,7 +168,11 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                                     "Situação": situacao_icone,
                                     "Cancelado Por": r.get("cancelado_por", "-") if status_bd != "Ativa" else "-"
                                 })
-                            st.dataframe(pd.DataFrame(dados_tabela).sort_values("Aula/Horário"), use_container_width=True, hide_index=True)
+                            st.dataframe(
+                                pd.DataFrame(dados_tabela).sort_values("Aula/Horário"),
+                                use_container_width=True,
+                                hide_index=True
+                            )
                 else:
                     st.info(f"📅 Nenhuma reserva encontrada para {d_lista.strftime('%d/%m/%Y')}.")
         except Exception as e:
@@ -138,19 +207,24 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                             uso_por_aula[p][item_norm] += int(qtd)
                 
                 disp_data -= max([uso_por_aula[a]["Datashow"] for a in aulas_selecionadas])
-                disp_som -= max([uso_por_aula[a]["Som"] for a in aulas_selecionadas])
-                disp_mic -= max([uso_por_aula[a]["Microfone"] for a in aulas_selecionadas])
+                disp_som  -= max([uso_por_aula[a]["Som"]      for a in aulas_selecionadas])
+                disp_mic  -= max([uso_por_aula[a]["Microfone"] for a in aulas_selecionadas])
 
         col1, col2 = st.columns(2)
         with col1:
             professor = st.selectbox("Professor:", opcoes_professores, key="aba3_prof")
             usar_na_sala = st.checkbox("Usarei na sala de aula", key="aba3_usar_sala")
         with col2:
-            espaco = "Sala de Aula" if usar_na_sala else st.selectbox("Espaço:", ["-- Selecione --", "Auditório", "Laboratório", "Biblioteca", "Quadra"], key="aba3_espaco")
+            espaco = "Sala de Aula" if usar_na_sala else st.selectbox(
+                "Espaço:", ["-- Selecione --", "Auditório", "Laboratório", "Biblioteca", "Quadra"],
+                key="aba3_espaco"
+            )
 
-        opcoes_eq = [f"{i}x Datashow" for i in range(1, disp_data + 1)] + \
-                    [f"{i}x Som" for i in range(1, disp_som + 1)] + \
-                    [f"{i}x Microfone" for i in range(1, disp_mic + 1)]
+        opcoes_eq = (
+            [f"{i}x Datashow"  for i in range(1, max(disp_data, 0) + 1)] +
+            [f"{i}x Som"       for i in range(1, max(disp_som,  0) + 1)] +
+            [f"{i}x Microfone" for i in range(1, max(disp_mic,  0) + 1)]
+        )
         
         st.caption(f"📦 Estoque disponível: {disp_data} Datashow | {disp_som} Som | {disp_mic} Mic")
         equipamentos_selecionados = st.multiselect("Equipamentos:", options=opcoes_eq, key="aba3_equipamentos")
@@ -162,38 +236,53 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
             else:
                 sucesso = True
                 for aula in aulas_selecionadas:
-                    # Validação de duplicidade
                     check = supabase.table("reservas").select("id").eq("data_reserva", str(data_res)).eq("periodo", aula).eq("professor", professor).eq("status", "Ativa").execute()
                     if check.data:
                         st.error(f"❌ Você já tem reserva na {aula}.")
-                        sucesso = False; break
+                        sucesso = False
+                        break
                     
                     if espaco != "Sala de Aula":
                         check_esp = supabase.table("reservas").select("id").eq("data_reserva", str(data_res)).eq("periodo", aula).eq("espaco", espaco).eq("status", "Ativa").execute()
                         if check_esp.data:
                             st.error(f"❌ O espaço {espaco} já está ocupado na {aula}.")
-                            sucesso = False; break
+                            sucesso = False
+                            break
                     
                     if sucesso:
                         supabase.table("reservas").insert({
-                            "data_reserva": str(data_res), "periodo": aula, "espaco": espaco,
-                            "professor": professor, "equipamentos": ", ".join(equipamentos_selecionados),
-                            "observacoes": obs, "status": "Ativa"
+                            "data_reserva": str(data_res),
+                            "periodo": aula,
+                            "espaco": espaco,
+                            "professor": professor,
+                            "equipamentos": ", ".join(equipamentos_selecionados),
+                            "observacoes": obs,
+                            "status": "Ativa"
                         }).execute()
                 
                 if sucesso:
                     st.success("✅ Reserva realizada!")
-                    time.sleep(1); st.rerun()
+                    time.sleep(1)
+                    st.rerun()
 
     # =========================================================
-    # ABA 4: GERENCIAR / CANCELAR (REVISADA)
+    # ABA 4: GERENCIAR / CANCELAR
     # =========================================================
     with aba_cancelar:
         st.subheader("Cancelar Reservas")
         data_alvo = st.date_input("1. Data da reserva:", value=datetime.date.today(), format="DD/MM/YYYY", key="aba4_data")
         
         res_dia = supabase.table("reservas").select("*").eq("status", "Ativa").execute()
-        dados_filtrados = [r for r in res_dia.data if str(r.get("data_reserva", r.get("data", ""))) == str(data_alvo)] if res_dia.data else []
+        dados_filtrados = []
+        if res_dia.data:
+            for r in res_dia.data:
+                data_r = r.get("data_reserva") or r.get("data") or ""
+                try:
+                    data_r_fmt = str(pd.to_datetime(str(data_r)).date())
+                except Exception:
+                    data_r_fmt = str(data_r)
+                if data_r_fmt == str(data_alvo):
+                    dados_filtrados.append(r)
 
         if dados_filtrados:
             df_cancel = pd.DataFrame(dados_filtrados)
@@ -212,21 +301,22 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                 if ids_para_cancelar:
                     senha_input = st.text_input("Sua Matrícula (Senha):", type="password", key="pw_cancel")
                     if st.button("❌ Confirmar Cancelamentos", type="primary"):
-                        # BUSCA FLEXÍVEL DE SENHA
                         res_senha = supabase.table("professores_matriculas").select("matricula").ilike("professor", f"{prof_sel.strip()}%").execute()
                         senha_correta = res_senha.data[0].get('matricula') if res_senha.data else None
                         
                         if prof_sel in GESTORES or (senha_correta and str(senha_input).strip() == str(senha_correta).strip()):
                             for id_c in ids_para_cancelar:
                                 supabase.table("reservas").update({"status": "Cancelada", "cancelado_por": prof_sel}).eq("id", id_c).execute()
-                            st.success("✅ Cancelado!"); time.sleep(1); st.rerun()
+                            st.success("✅ Cancelado!")
+                            time.sleep(1)
+                            st.rerun()
                         else:
                             st.error("⚠️ Senha incorreta.")
         else:
             st.info("Nenhuma reserva ativa para este dia.")
 
     # =========================================================
-    # ABA 5: ASSINATURA (REVISADA)
+    # ABA 5: ASSINATURA
     # =========================================================
     with aba_assinatura:
         st.subheader("Cadastro de Assinatura")
@@ -238,12 +328,13 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                 st.error("⚠️ Preencha os campos.")
             else:
                 try:
-                    # Upsert (Atualiza ou insere)
                     verif = supabase.table("professores_matriculas").select("id").eq("professor", nome_prof.strip()).execute()
                     if verif.data:
                         supabase.table("professores_matriculas").update({"matricula": matricula_prof.strip()}).eq("professor", nome_prof.strip()).execute()
                     else:
                         supabase.table("professores_matriculas").insert({"professor": nome_prof.strip(), "matricula": matricula_prof.strip()}).execute()
-                    st.success("✅ Salvo!"); time.sleep(1); st.rerun()
+                    st.success("✅ Salvo!")
+                    time.sleep(1)
+                    st.rerun()
                 except Exception as e:
                     st.error(f"Erro: {e}")
