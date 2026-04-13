@@ -151,40 +151,38 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
         except Exception as e:
             st.error(f"Erro ao carregar lista: {e}")
 
-    # =========================================================
-    # 🆕 ABA 3: MINHAS RESERVAS (A SOLUÇÃO DO SEU PROBLEMA)
+   # =========================================================
+    # ABA 3: MINHAS RESERVAS (ORDEM CRESCENTE E TABELA LONGA)
     # =========================================================
     with aba_minhas:
-        st.subheader("Histórico Completo do Professor")
-        st.info("Aqui você vê **todas** as suas reservas (Ativas, Canceladas e Passadas). Use isso como seu comprovante.")
+        st.subheader("👩‍🏫 Histórico Completo do Professor")
+        st.info("Visualização de todas as reservas vinculadas ao nome. Ordem: Da mais antiga para a mais futura.")
         
-        prof_busca = st.selectbox("Selecione seu nome:", opcoes_professores, key="aba_minhas_prof")
+        prof_busca = st.selectbox("Selecione o nome para conferir:", opcoes_professores, key="aba_minhas_prof")
         
         if prof_busca != "-- Selecione --":
             try:
-                # Busca flexível: encontra o professor independentemente do status da reserva
-                res_hist = supabase.table("reservas").select("*").ilike("professor", f"%{prof_busca.strip()}%").execute()
+                # Busca com limite alto (5000) para garantir que pegue o ano todo
+                res_hist = supabase.table("reservas").select("*").ilike("professor", f"%{prof_busca.strip()}%").limit(5000).execute()
                 
                 if res_hist.data:
                     dados_hist = []
                     for r in res_hist.data:
                         status_bd = r.get("status", "Ativa")
                         situacao_icone = "🟢 Ativa" if status_bd == "Ativa" else "❌ Cancelada"
-                        quem_cancelou = r.get("cancelado_por", "-") if status_bd != "Ativa" else "-"
                         
                         raw_data = r.get("data_reserva") or r.get("data") or ""
                         try:
-                            # Tenta deixar a data no padrão brasileiro
                             dt_obj = pd.to_datetime(str(raw_data), errors='coerce')
                             if pd.isnull(dt_obj):
                                 data_formatada = str(raw_data)
-                                data_ordenacao = pd.to_datetime("1900-01-01") 
+                                data_ordenacao = pd.to_datetime("2099-12-31") # Joga pro fim se der erro
                             else:
                                 data_formatada = dt_obj.strftime("%d/%m/%Y")
                                 data_ordenacao = dt_obj
                         except Exception:
                             data_formatada = str(raw_data)
-                            data_ordenacao = pd.to_datetime("1900-01-01")
+                            data_ordenacao = pd.to_datetime("2099-12-31")
                             
                         dados_hist.append({
                             "_data_sort": data_ordenacao,
@@ -193,19 +191,27 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                             "Espaço": r.get("espaco", ""),
                             "Equipamentos": r.get("equipamentos", "") or "-",
                             "Situação": situacao_icone,
-                            "Cancelado Por": quem_cancelou
+                            "Observações": r.get("observacoes", "") or "-"
                         })
-                        
-                    df_hist = pd.DataFrame(dados_hist).sort_values(by=["_data_sort", "Aula/Horário"], ascending=[False, True])
+                    
+                    # --- ORDENAÇÃO CRESCENTE (Data mais antiga -> Data mais futura) ---
+                    df_hist = pd.DataFrame(dados_hist).sort_values(by=["_data_sort", "Aula/Horário"], ascending=[True, True])
                     df_hist = df_hist.drop(columns=["_data_sort"])
                     
-                    st.success(f"✅ Encontradas {len(df_hist)} reservas vinculadas ao nome '{prof_busca}'.")
-                    st.dataframe(df_hist, use_container_width=True, hide_index=True)
+                    st.success(f"✅ Exibindo {len(df_hist)} registros para '{prof_busca}'.")
+                    
+                    # --- TABELA MAIS LONGA (Altura definida para 800 pixels) ---
+                    st.dataframe(
+                        df_hist, 
+                        use_container_width=True, 
+                        hide_index=True,
+                        height=800  # Aqui definimos a tabela mais longa visualmente
+                    )
                 else:
-                    st.warning(f"⚠️ Nenhuma reserva encontrada no banco de dados para '{prof_busca}'.")
+                    st.warning(f"⚠️ Nenhuma reserva encontrada no banco para '{prof_busca}'.")
             except Exception as e:
-                st.error(f"Erro ao buscar histórico: {e}")
-
+                st.error(f"Erro ao carregar histórico: {e}")
+                
     # =========================================================
     # ABA 4: NOVA RESERVA (COM REPETIÇÃO E ESTOQUE INTACTO)
     # =========================================================
