@@ -35,7 +35,6 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                             def buscar_nota_simulado(termo_simulado):
                                 mapa_notas = {}
                                 if ano_ref:
-                                    # Busca prova pelo título (Ex: "2º ano" + "1º Simulado")
                                     res_p = supabase.table("modelos_prova").select("id, valor_questao")\
                                         .ilike("titulo", f"%{ano_ref}%{termo_simulado}%").execute()
                                     
@@ -52,16 +51,13 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                                             mapa_notas = dict(zip(df_c['aluno_id'].astype(str), df_c['pts'] * v_q))
                                 return mapa_notas
 
-                            # Busca notas dos dois simulados possíveis
                             mapa_at1 = buscar_nota_simulado("1º Simulado")
                             mapa_at2 = buscar_nota_simulado("2º Simulado")
 
-                            # Monta o DataFrame
                             df_base = df_turma[['aluno_id', col_n]].copy().rename(columns={col_n: 'nome'})
                             df_base['AT1'] = df_base['aluno_id'].astype(str).map(mapa_at1).fillna(0.0)
                             df_base['AT2'] = df_base['aluno_id'].astype(str).map(mapa_at2).fillna(0.0)
                             
-                            # Colunas manuais começam em 0 ou podem ser puxadas do banco se já existirem
                             for c in ['AT3', 'AT4', 'AT5', 'N2']:
                                 df_base[c] = 0.0
                             
@@ -74,20 +70,18 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                             for col_name, valor in alteracoes.items():
                                 st.session_state[state_key].at[row_idx, col_name] = float(valor) if valor is not None else 0.0
 
-                    # Soma N1 (AT1 a AT5) e Média Final
                     st.session_state[state_key]['N1'] = st.session_state[state_key][['AT1', 'AT2', 'AT3', 'AT4', 'AT5']].sum(axis=1).round(1)
                     st.session_state[state_key]['Média Final'] = ((st.session_state[state_key]['N1'] + st.session_state[state_key]['N2']) / 2).round(1)
 
-                    # --- DATA EDITOR ---
+                    # --- DATA EDITOR COM ALTURA DINÂMICA ---
                     st.subheader(f"Planilha de Notas - {turma_sel}")
                     
                     config_cols = {
                         "aluno_id": None, "nome": st.column_config.TextColumn("Estudante", disabled=True, width="medium"),
-                        "N1": st.column_config.NumberColumn("Σ N1", disabled=True, width="small", help="Soma de AT1 a AT5"),
+                        "N1": st.column_config.NumberColumn("Σ N1", disabled=True, width="small"),
                         "Média Final": st.column_config.NumberColumn("Média", disabled=True, width="small"),
                     }
                     
-                    # Define quais colunas são editáveis ou travadas
                     for c in ['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N2']:
                         travada = (c in locked_cols)
                         config_cols[c] = st.column_config.NumberColumn(
@@ -96,13 +90,17 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                             disabled=travada, width="small"
                         )
 
+                    # --- O AJUSTE ESTÁ AQUI ---
+                    # Calculamos a altura: (nº de linhas + 1 do header) * 35 pixels + 3 de borda
+                    altura_dinamica = (len(st.session_state[state_key]) + 1) * 35 + 3
+
                     st.data_editor(
                         st.session_state[state_key],
                         key=editor_key,
                         hide_index=True,
                         column_config=config_cols,
                         use_container_width=True,
-                        height=500
+                        height=altura_dinamica  # <--- Aplicando a altura calculada
                     )
                     
                     # --- BOTÕES DE AÇÃO ---
@@ -117,7 +115,7 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                                     dados_upsert.append({
                                         "aluno_id": r['aluno_id'],
                                         "turma": turma_sel,
-                                        "unidade": "1º Bimestre", # Pode ser dinâmico depois
+                                        "unidade": "1º Bimestre",
                                         "at1": float(r['AT1']),
                                         "at2": float(r['AT2']),
                                         "at3": float(r['AT3']),
@@ -143,7 +141,5 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                             if state_key in st.session_state: del st.session_state[state_key]
                             st.rerun()
 
-            else:
-                st.error("Erro na estrutura da tabela de alunos.")
     except Exception as e:
         st.error(f"Ocorreu um erro: {e}")
