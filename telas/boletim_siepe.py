@@ -2,25 +2,12 @@ import streamlit as st
 import pandas as pd
 import io
 
-# Trazemos a função de sincronizar para cá também, para não sujar o Dashboard
-def sincronizar_atividades_online(supabase, turma_sel, unidade_sel, atividade_id_origem):
-    try:
-        res = supabase.table("resultados").select("aluno_id, nota").eq("atividade_id", atividade_id_origem).execute()
-        if not res.data:
-            st.warning(f"Nenhum resultado na atividade {atividade_id_origem}")
-            return
-        dados_upsert = [{"aluno_id": r["aluno_id"], "turma": turma_sel, "unidade": unidade_sel, "at1": float(r["nota"])} for r in res.data]
-        supabase.table("notas_atividades").upsert(dados_upsert, on_conflict="aluno_id, unidade").execute()
-        st.success("✅ Notas sincronizadas para AT1!")
-    except Exception as e:
-        st.error(f"Erro: {e}")
-
-# Transformamos o bloco inteiro em uma função que recebe as conexões do banco
 def mostrar_tela_boletim(supabase, supabase_alunos):
-    st.title("🏫 Consolidação de Notas SIEPE")
-    st.write("Resgate atividades online, importe provas para colunas específicas, ou digite manualmente.")
+    st.title("📝 Meu Registro Pessoal de Notas")
+    st.write("As notas do **Simulado** (AT1) são puxadas automaticamente. Use as outras colunas para registros manuais ou importação de provas.")
 
     try:
+        # 1. Busca todos os alunos
         res_a = supabase_alunos.table("alunos").select("*").execute()
         
         if res_a.data:
@@ -30,64 +17,66 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
             
             if col_t and col_n:
                 turmas_list = sorted(df_todos[col_t].dropna().unique())
-                turma_sel = st.selectbox("Selecione a Turma:", turmas_list)
+                turma_sel = st.selectbox("Selecione a Turma para Gerenciar:", turmas_list)
                 
                 if turma_sel:
-                    # =====================================================================
-                    # 📥 1. RESGATE DE ATIVIDADES ONLINE (Para AT1)
-                    # =====================================================================
-                    st.divider()
-                    st.write("#### 🔄 Resgatar Atividade Online")
-                    col_r1, col_r2 = st.columns([1, 2])
-                    with col_r1:
-                        id_ativ = st.text_input("ID da Ativ. Online (Ex: 10)")
-                    with col_r2:
-                        st.write("") 
-                        if st.button("🔄 Resgatar p/ AT1", use_container_width=True):
-                            if id_ativ:
-                                # Note que agora passamos o 'supabase' para a função
-                                sincronizar_atividades_online(supabase, turma_sel, "1º Bimestre", id_ativ)
-                                if f"tabela_notas_{turma_sel}" in st.session_state:
-                                    del st.session_state[f"tabela_notas_{turma_sel}"] 
-                                st.rerun()
-                            else:
-                                st.error("Digite o ID da atividade.")
-
-                    # =====================================================================
-                    # 🧠 2. GESTÃO DE ESTADO E INTEGRAÇÃO COM BANCO
-                    # =====================================================================
                     state_key = f"tabela_notas_{turma_sel}"
                     locked_key = f"colunas_travadas_{turma_sel}"
                     editor_key = f"editor_notas_{turma_sel}"
                     
                     if locked_key not in st.session_state:
-                        st.session_state[locked_key] = []
-
-                    if state_key not in st.session_state:
-                        df_turma = df_todos[df_todos[col_t] == turma_sel].copy()
-                        df_turma = df_turma.rename(columns={"id": "aluno_id"}) 
-                        
-                        res_notas = supabase.table("notas_atividades").select("*").eq("turma", turma_sel).eq("unidade", "1º Bimestre").execute()
-                        df_notas = pd.DataFrame(res_notas.data)
-                        
-                        if not df_notas.empty:
-                            df_base = pd.merge(df_turma[['aluno_id', col_n]], df_notas, on="aluno_id", how="left")
-                            df_base = df_base.fillna(0.0) 
-                        else:
-                            df_base = df_turma[['aluno_id', col_n]].copy()
-                            for c in ['at1', 'at2', 'at3', 'at4', 'prova', 'rec']: 
-                                df_base[c] = 0.0
-                            
-                        df_base = df_base.rename(columns={col_n: 'nome', 'at1': 'AT1', 'at2': 'AT2', 'at3': 'AT3', 'at4': 'AT4', 'prova': 'N2'})
-                        
-                        if 'AT5' not in df_base.columns: df_base['AT5'] = 0.0
-                        if 'N1' not in df_base.columns: df_base['N1'] = 0.0
-                        if 'Média Final' not in df_base.columns: df_base['Média Final'] = 0.0
-                            
-                        st.session_state[state_key] = df_base.sort_values('nome').reset_index(drop=True)
+                        st.session_state[locked_key] = ['AT1'] # AT1 já nasce travada
 
                     # =====================================================================
-                    # ✍️ 3. CAPTURA EDIÇÃO MANUAL E CÁLCULOS
+                    # 🤖 AUTOMAÇÃO DA AT1 (BUSCA SIMULADO DO ANO CORRESPONDENTE)
+                    # =====================================================================
+                    if state_key not in st.session_state:
+                        with st.spinner(f"Sincronizando Simulado para {turma_sel}..."):
+                            # Filtra alunos apenas desta turma
+                            df_turma = df_todos[df_todos[col_t] == turma_sel].copy()
+                            df_turma = df_turma.rename(columns={"id": "aluno_id"})
+
+                            # Descobre o ano (2º ou 3º) pela string da turma
+                            ano_ref = "2º ano" if "2º" in turma_sel else ("3º ano" if "3º" in turma_sel else "")
+                            
+                            nota_simulado_mapa = {}
+                            if ano_ref:
+                                # Busca o ID da prova que seja Simulado daquele ano
+                                res_prova_id = supabase.table("modelos_prova")\
+                                    .select("id, valor_questao")\
+                                    .ilike("titulo", f"%{ano_ref}%Simulado%")\
+                                    .execute()
+                                
+                                if res_prova_id.data:
+                                    p_info = res_prova_id.data[0]
+                                    # Busca os resultados dessa prova específica
+                                    res_simulado = supabase.table("resultados_provas")\
+                                        .select("aluno_id, acertou")\
+                                        .eq("prova_id", p_info['id'])\
+                                        .execute()
+                                    
+                                    if res_simulado.data:
+                                        df_res = pd.DataFrame(res_simulado.data)
+                                        df_res['pontos'] = df_res['acertou'].apply(lambda x: 1 if x is True else 0)
+                                        df_calc = df_res.groupby('aluno_id')['pontos'].sum().reset_index()
+                                        df_calc['nota_final'] = df_calc['pontos'] * float(p_info['valor_questao'])
+                                        nota_simulado_mapa = dict(zip(df_calc['aluno_id'].astype(str), df_calc['nota_final']))
+
+                            # Monta a tabela base
+                            df_base = df_turma[['aluno_id', col_n]].copy()
+                            df_base = df_base.rename(columns={col_n: 'nome'})
+                            
+                            # Preenche AT1 automaticamente com base no ID do aluno
+                            df_base['AT1'] = df_base['aluno_id'].astype(str).map(nota_simulado_mapa).fillna(0.0)
+                            
+                            # Inicializa demais colunas vazias
+                            for c in ['AT2', 'AT3', 'AT4', 'AT5', 'N2']:
+                                df_base[c] = 0.0
+                            
+                            st.session_state[state_key] = df_base.sort_values('nome').reset_index(drop=True)
+
+                    # =====================================================================
+                    # ✍️ CÁLCULOS E EDIÇÃO
                     # =====================================================================
                     if editor_key in st.session_state:
                         edicoes = st.session_state[editor_key].get("edited_rows", {})
@@ -95,133 +84,95 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                             for col_name, valor in alteracoes.items():
                                 st.session_state[state_key].at[row_idx, col_name] = float(valor) if valor is not None else 0.0
 
+                    # Soma N1 (AT1 até AT5) e Média
                     st.session_state[state_key]['N1'] = st.session_state[state_key][['AT1', 'AT2', 'AT3', 'AT4', 'AT5']].sum(axis=1).round(1)
                     st.session_state[state_key]['Média Final'] = ((st.session_state[state_key]['N1'] + st.session_state[state_key]['N2']) / 2).round(1)
 
                     # =====================================================================
-                    # 📥 4. IMPORTAÇÃO DE PROVAS (E TRAVAMENTO)
+                    # 📥 IMPORTAÇÃO DE OUTRAS PROVAS
                     # =====================================================================
-                    st.divider()
-                    with st.expander("📥 Importar Prova Oficial e Travar Coluna", expanded=False):
+                    with st.expander("📥 Importar Outra Prova (AT2, AT3...)", expanded=False):
                         res_p = supabase.table("modelos_prova").select("id, titulo, valor_questao").order("id", desc=True).execute()
-                        
                         if res_p.data:
                             provas_dict = {p['titulo']: p for p in res_p.data}
-                            col_i1, col_i2 = st.columns(2)
+                            c1, c2 = st.columns(2)
+                            prova_esc = c1.selectbox("Selecione a Prova:", list(provas_dict.keys()), key="sel_prova_manual")
+                            col_alvo = c2.selectbox("Destino:", ['AT2', 'AT3', 'AT4', 'AT5', 'N2'])
                             
-                            prova_escolhida = col_i1.selectbox("Selecione a Prova:", list(provas_dict.keys()))
-                            coluna_alvo = col_i2.selectbox("Destino (Travar coluna):", ['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N2'])
-                            
-                            if st.button(f"🔒 Importar e Travar {coluna_alvo}", use_container_width=True):
-                                p_obj = provas_dict[prova_escolhida]
-                                res_res = supabase.table("resultados_provas").select("*").eq("prova_id", p_obj['id']).execute()
-                                
+                            if st.button(f"🔒 Importar para {col_alvo}", use_container_width=True):
+                                p_obj = provas_dict[prova_esc]
+                                res_res = supabase.table("resultados_provas").select("aluno_id, acertou").eq("prova_id", p_obj['id']).execute()
                                 if res_res.data:
-                                    df_res = pd.DataFrame(res_res.data)
-                                    df_res['acertos'] = df_res['acertou'].apply(lambda x: 1 if x is True else 0)
-                                    df_calc = df_res.groupby('aluno_id')['acertos'].sum().reset_index()
-                                    df_calc['nota'] = df_calc['acertos'] * float(p_obj['valor_questao'])
+                                    df_r = pd.DataFrame(res_res.data)
+                                    df_r['pts'] = df_r['acertou'].apply(lambda x: 1 if x is True else 0)
+                                    df_c = df_r.groupby('aluno_id')['pts'].sum().reset_index()
+                                    v_q = float(p_obj['valor_questao'])
+                                    mapa_manual = dict(zip(df_c['aluno_id'].astype(str), df_c['pts'] * v_q))
                                     
-                                    res_n = supabase_alunos.table("alunos").select("id, nome").in_("id", df_calc['aluno_id'].astype(str).tolist()).execute()
-                                    mapa = {str(item['id']): item['nome'] for item in res_n.data}
-                                    df_calc['nome_aluno'] = df_calc['aluno_id'].astype(str).map(mapa)
-                                    mapa_notas = dict(zip(df_calc['nome_aluno'], df_calc['nota']))
-                                    
-                                    st.session_state[state_key][coluna_alvo] = st.session_state[state_key]['nome'].map(mapa_notas).fillna(0.0)
-                                    if coluna_alvo not in st.session_state[locked_key]:
-                                        st.session_state[locked_key].append(coluna_alvo)
-                                    
-                                    st.success(f"✅ Coluna {coluna_alvo} preenchida e bloqueada!")
+                                    st.session_state[state_key][col_alvo] = st.session_state[state_key]['aluno_id'].astype(str).map(mapa_manual).fillna(0.0)
+                                    if col_alvo not in st.session_state[locked_key]:
+                                        st.session_state[locked_key].append(col_alvo)
                                     st.rerun()
 
                     # =====================================================================
-                    # 📝 5. EDITOR DE NOTAS (COM TRAVAMENTO DINÂMICO)
+                    # 📝 DATA EDITOR
                     # =====================================================================
-                    st.subheader(f"Planilha de Notas: {turma_sel}")
+                    st.subheader(f"Tabela de Notas: {turma_sel}")
                     
-                    config_colunas = {
-                        "aluno_id": None, 
-                        "id": None,
-                        "unidade": None,
-                        "turma": None,
-                        "data_atualizacao": None,
-                        "rec": None,
+                    config_cols = {
+                        "aluno_id": None, "id": None, "unidade": None, "turma": None, "data_atualizacao": None, "rec": None,
                         "nome": st.column_config.TextColumn("Estudante", disabled=True, width="medium"),
                         "N1": st.column_config.NumberColumn("N1 (Soma)", disabled=True, width="small"),
                         "Média Final": st.column_config.NumberColumn("Média", disabled=True, width="small"),
                     }
                     
                     for c in ['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N2']:
-                        esta_travada = c in st.session_state[locked_key]
-                        label = f"{c} 🔒" if esta_travada else c
-                        config_colunas[c] = st.column_config.NumberColumn(
-                            label, min_value=0.0, max_value=10.0, format="%.1f", disabled=esta_travada, width="small"
+                        travada = c in st.session_state[locked_key]
+                        config_cols[c] = st.column_config.NumberColumn(
+                            f"{c} 🔒" if travada else c, 
+                            min_value=0.0, max_value=10.0, format="%.1f", 
+                            disabled=travada, width="small"
                         )
 
                     st.data_editor(
                         st.session_state[state_key],
                         key=editor_key,
                         hide_index=True,
-                        use_container_width=False,
-                        column_config=config_colunas,
-                        height=(len(st.session_state[state_key]) + 1) * 35 + 40
+                        column_config=config_cols,
+                        use_container_width=True,
+                        height=400
                     )
                     
                     # =====================================================================
-                    # 💾 6. BOTÕES DE AÇÃO (SALVAR NO BANCO E BAIXAR)
+                    # 💾 AÇÕES
                     # =====================================================================
-                    col_b1, col_b2, col_b3 = st.columns([2, 2, 1])
-                    
-                    with col_b1:
-                        if st.button("💾 Salvar Planilha no Banco de Dados", type="primary", use_container_width=True):
-                            with st.spinner("Salvando notas..."):
-                                df_salvar = st.session_state[state_key].copy()
-                                df_salvar = df_salvar.rename(columns={'AT1': 'at1', 'AT2': 'at2', 'AT3': 'at3', 'AT4': 'at4', 'N2': 'prova'})
-                                
-                                dados_upsert = []
-                                for _, row in df_salvar.iterrows():
-                                    dados_upsert.append({
-                                        "aluno_id": row['aluno_id'],
-                                        "turma": turma_sel,
-                                        "unidade": "1º Bimestre",
-                                        "at1": row.get('at1', 0.0), 
-                                        "at2": row.get('at2', 0.0), 
-                                        "at3": row.get('at3', 0.0), 
-                                        "at4": row.get('at4', 0.0), 
-                                        "prova": row.get('prova', 0.0)
-                                    })
-                                
-                                try:
-                                    supabase.table("notas_atividades").upsert(dados_upsert, on_conflict="aluno_id, unidade").execute()
-                                    st.success("✅ Notas salvas permanentemente!")
-                                except Exception as e:
-                                    st.error(f"Erro ao salvar: {e}")
+                    cb1, cb2, cb3 = st.columns([2, 2, 1])
+                    with cb1:
+                        if st.button("💾 Salvar Registros no Banco", type="primary", use_container_width=True):
+                            # (Lógica de Upsert idêntica ao anterior, convertendo nomes de colunas)
+                            df_save = st.session_state[state_key].copy().rename(columns={'AT1':'at1','AT2':'at2','AT3':'at3','AT4':'at4','N2':'prova'})
+                            dados = []
+                            for _, r in df_save.iterrows():
+                                dados.append({
+                                    "aluno_id": r['aluno_id'], "turma": turma_sel, "unidade": "1º Bimestre",
+                                    "at1": r.get('at1',0.0), "at2": r.get('at2',0.0), "at3": r.get('at3',0.0), 
+                                    "at4": r.get('at4',0.0), "prova": r.get('prova',0.0)
+                                })
+                            supabase.table("notas_atividades").upsert(dados, on_conflict="aluno_id, unidade").execute()
+                            st.success("Salvo com sucesso!")
 
-                    with col_b2:
+                    with cb2:
+                        # Botão de Excel (já configurado antes)
                         output = io.BytesIO()
                         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                            df_export = st.session_state[state_key].drop(columns=['aluno_id', 'id', 'unidade', 'turma', 'data_atualizacao', 'rec'], errors='ignore')
-                            df_export.to_excel(writer, sheet_name="SIEPE", index=False)
-                        
-                        st.download_button(
-                            label="📥 Baixar Planilha para o SIEPE",
-                            data=output.getvalue(),
-                            file_name=f"SIEPE_{turma_sel}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            type="secondary",
-                            use_container_width=True
-                        )
-                        
-                    with col_b3:
-                        if st.button("🔓 Resetar Travas", type="secondary", use_container_width=True):
-                            st.session_state[locked_key] = []
+                            df_exp = st.session_state[state_key].drop(columns=['aluno_id'], errors='ignore')
+                            df_exp.to_excel(writer, sheet_name="Notas", index=False)
+                        st.download_button("📥 Baixar Excel", output.getvalue(), f"Notas_{turma_sel}.xlsx", use_container_width=True)
+
+                    with cb3:
+                        if st.button("🔄 Recarregar", use_container_width=True):
+                            del st.session_state[state_key]
                             st.rerun()
 
-            else:
-                st.error("Colunas de 'turma' ou 'nome' não encontradas.")
-        else:
-            st.info("Nenhum aluno encontrado.")
-            
     except Exception as e:
-        st.error(f"Erro no Boletim: {e}")
-    
+        st.error(f"Erro no Registro: {e}")
