@@ -4,7 +4,7 @@ from supabase import create_client
 import base64
 import os
 
-# Import the modules we just created
+# Importando os módulos que criamos
 from telas_aluno.login import mostrar_tela_login
 from telas_aluno.dashboard_aluno import mostrar_tela_dashboard
 from telas_aluno.execucao_prova import render_instrucoes, render_prova
@@ -31,8 +31,10 @@ C_BORDER = "#E2E8F0"
 def get_base64_image(image_path):
     if os.path.exists(image_path):
         try:
-            with open(image_path, "rb") as img_file: return base64.b64encode(img_file.read()).decode()
-        except: pass
+            with open(image_path, "rb") as img_file: 
+                return base64.b64encode(img_file.read()).decode()
+        except: 
+            pass
     return ""
 
 logo_lardiao_b64 = get_base64_image("logo_lardiao.png")
@@ -52,19 +54,27 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. CONEXÃO SEGURA 
+# 2. CONEXÃO SEGURA COM BANCO DE DADOS
 # ==========================================
 @st.cache_resource
 def init_connections():
-    return create_client(st.secrets["SUPABASE_URL_ALUNOS"], st.secrets["SUPABASE_KEY_ALUNOS"]), create_client(st.secrets["SUPABASE_URL_PROVAS"], st.secrets["SUPABASE_KEY_PROVAS"])
+    db_a = create_client(st.secrets["SUPABASE_URL_ALUNOS"], st.secrets["SUPABASE_KEY_ALUNOS"])
+    db_p = create_client(st.secrets["SUPABASE_URL_PROVAS"], st.secrets["SUPABASE_KEY_PROVAS"])
+    return db_a, db_p
 
 db_alunos, db_provas = init_connections()
 
 # ==========================================
-# 3. ESTADO DA SESSÃO
+# 3. ESTADO DA SESSÃO (MEMÓRIA)
 # ==========================================
-for key in ['etapa', 'aluno', 'prova_config', 'tempo_final', 'questoes', 'respostas']:
-    if key not in st.session_state: st.session_state[key] = "login" if key == 'etapa' else ({} if key == 'respostas' else None)
+for key in ['etapa', 'aluno', 'prova_config', 'tempo_final', 'questoes', 'respostas', 'prova_resultado']:
+    if key not in st.session_state: 
+        if key == 'etapa':
+            st.session_state[key] = "login"
+        elif key == 'respostas':
+            st.session_state[key] = {}
+        else:
+            st.session_state[key] = None
 
 # ==========================================
 # 4. ROTEADOR DE TELAS
@@ -74,8 +84,9 @@ if st.session_state.etapa == "login":
 
 elif st.session_state.etapa == "ante_sala":
     if 'aluno' not in st.session_state or not st.session_state.aluno:
-        st.session_state.etapa = "login"; st.rerun()
-    # Pass db_provas so the dashboard can fetch the performance data!
+        st.session_state.etapa = "login"
+        st.rerun()
+    # Passamos db_provas para buscar as atividades e as notas no dashboard
     mostrar_tela_dashboard(db_provas, db_provas) 
 
 elif st.session_state.etapa == "instrucoes":
@@ -88,4 +99,5 @@ elif st.session_state.etapa == "resultado_final":
     render_suspense(C_PRIMARY, C_TEXT_MUTED, C_SECONDARY, C_TEXT)
 
 elif st.session_state.etapa == "ver_meu_resultado":
+    # Aqui estava o errinho! Agora passamos o db_provas para a função
     render_revisao(db_provas)
