@@ -32,13 +32,13 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
 
     opcoes_professores = ["-- Selecione --"] + lista_pessoas
 
-    # Definição das Abas (AGORA COM 6 ABAS)
-    aba_cal, aba_lista, aba_minhas, aba_nova, aba_cancelar, aba_assinatura = st.tabs([
+    # Definição das Abas (AGORA COM 5 ABAS)
+    aba_cal, aba_minhas, aba_nova, aba_cancelar, aba_assinatura = st.tabs([
         "🗓️ Calendário", "👩‍🏫 Minhas Reservas", "✍️ Nova Reserva", "❌ Gerenciar", "🔑 Assinatura"
     ])
 
 
-# =========================================================
+    # =========================================================
     # ABA 1: CALENDÁRIO (MODO LISTA MENSAL CLEAN - FOCADO EM MOBILE)
     # =========================================================
     with aba_cal:
