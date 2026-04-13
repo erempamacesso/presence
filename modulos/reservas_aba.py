@@ -16,10 +16,10 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     # ---------------------------------------------------------
     lista_pessoas = []
     try:
-        # BUSCANDO DA TABELA CORRETA
         res_prof = supabase.table("professores_assinaturas").select("professor").execute()
         if res_prof.data:
-            lista_pessoas = sorted(list(set([p['professor'] for p in res_prof.data])))
+            # BLINDAGEM: Usando .get() para evitar KeyError se a coluna vier vazia
+            lista_pessoas = sorted(list(set([p.get('professor', '') for p in res_prof.data if p.get('professor')])))
     except Exception as e:
         st.error(f"Erro ao buscar lista no banco: {e}")
         lista_pessoas = lista_professores_antiga
@@ -41,21 +41,26 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
             if res_cal.data:
                 eventos = []
                 for r in res_cal.data:
-                    prof = r.get('professor', '')
-                    espaco = r.get('espaco', '')
-                    equip = r.get('equipamentos')
+                    # BLINDAGEM: .get() nunca quebra o app, mesmo se a coluna mudar de nome
+                    prof = r.get('professor', 'Prof. Sem Nome')
+                    espaco = r.get('espaco', 'Sem Espaço')
+                    equip = r.get('equipamentos', '')
                     
-                    if equip and str(equip).strip() not in ["", "None"]:
-                        titulo_limpo = f"{prof} - {espaco} - {equip}"
-                    else:
-                        titulo_limpo = f"{prof} - {espaco}"
+                    # Procura 'data_reserva'. Se não achar, tenta 'data'. Se não achar, fica vazio.
+                    data_evento = r.get('data_reserva', r.get('data', ''))
                     
-                    eventos.append({
-                        "title": titulo_limpo,
-                        "start": r['data_reserva'],
-                        "end": r['data_reserva'],
-                        "backgroundColor": "#1f77b4"
-                    })
+                    if data_evento: # Só renderiza no calendário se a data existir
+                        if equip and str(equip).strip() not in ["", "None"]:
+                            titulo_limpo = f"{prof} - {espaco} - {equip}"
+                        else:
+                            titulo_limpo = f"{prof} - {espaco}"
+                        
+                        eventos.append({
+                            "title": titulo_limpo,
+                            "start": data_evento,
+                            "end": data_evento,
+                            "backgroundColor": "#1f77b4"
+                        })
                 
                 calendar_options = {
                     "locale": "pt-br",
@@ -78,42 +83,44 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
         d_lista = st.date_input("Ver detalhes do dia:", value=datetime.date.today(), format="DD/MM/YYYY", key="d_lista")
         
         try:
-            res_lista = supabase.table("reservas").select("*").eq("data_reserva", str(d_lista)).execute()
+            # Buscamos tudo e filtramos pelo Python para evitar erros direto no banco Supabase
+            res_lista = supabase.table("reservas").select("*").execute()
             
             if res_lista.data:
                 reservas_por_espaco = {}
                 for r in res_lista.data:
-                    esp = r.get("espaco", "Sem Espaço")
-                    if esp not in reservas_por_espaco:
-                        reservas_por_espaco[esp] = []
-                    reservas_por_espaco[esp].append(r)
+                    data_r = r.get("data_reserva", r.get("data", ""))
+                    
+                    if str(data_r) == str(d_lista):
+                        esp = r.get("espaco", "Sem Espaço")
+                        if esp not in reservas_por_espaco:
+                            reservas_por_espaco[esp] = []
+                        reservas_por_espaco[esp].append(r)
                 
-                for espaco, lista_res in reservas_por_espaco.items():
-                    with st.expander(f"📍 {espaco} ({len(lista_res)} reservas)", expanded=True):
-                        dados_tabela = []
-                        for r in lista_res:
-                            status_bd = r.get("status", "Ativa")
+                if reservas_por_espaco:
+                    for espaco, lista_res in reservas_por_espaco.items():
+                        with st.expander(f"📍 {espaco} ({len(lista_res)} reservas)", expanded=True):
+                            dados_tabela = []
+                            for r in lista_res:
+                                status_bd = r.get("status", "Ativa")
+                                situacao_icone = "🟢 Ativa" if status_bd == "Ativa" else "❌ Cancelada"
+                                quem_cancelou = "-" if status_bd == "Ativa" else r.get("cancelado_por", "Sistema")
+                                    
+                                dados_tabela.append({
+                                    # Puxa periodo. Se não achar, tenta horario. Se não achar, tenta aula.
+                                    "Aula/Horário": r.get("periodo", r.get("horario", r.get("aula", ""))),
+                                    "Professor": r.get("professor", ""),
+                                    "Equipamentos (Data Show/Som)": r.get("equipamentos", "") or "-",
+                                    "Situação": situacao_icone,
+                                    "Cancelado Por": quem_cancelou
+                                })
                             
-                            if status_bd == "Ativa":
-                                situacao_icone = "🟢 Ativa"
-                                quem_cancelou = "-"
-                            else:
-                                situacao_icone = "❌ Cancelada"
-                                quem_cancelou = r.get("cancelado_por", "Sistema")
-                                
-                            dados_tabela.append({
-                                "Aula/Horário": r.get("periodo", ""),
-                                "Professor": r.get("professor", ""),
-                                "Equipamentos (Data Show/Som)": r.get("equipamentos", "") or "-",
-                                "Situação": situacao_icone,
-                                "Cancelado Por": quem_cancelou
-                            })
-                        
-                        dados_tabela = sorted(dados_tabela, key=lambda x: x["Aula/Horário"])
-                        st.dataframe(dados_tabela, use_container_width=True, hide_index=True)
-                        
+                            dados_tabela = sorted(dados_tabela, key=lambda x: str(x.get("Aula/Horário", "")))
+                            st.dataframe(dados_tabela, use_container_width=True, hide_index=True)
+                else:
+                    st.info("📅 Nenhuma reserva encontrada para este dia.")
             else:
-                st.info("📅 Nenhuma reserva encontrada para este dia.")
+                st.info("📅 Nenhuma reserva encontrada no banco de dados.")
         except Exception as e:
             st.error(f"Erro ao carregar lista diária: {e}")
     
@@ -147,22 +154,26 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
         disp_mic = ESTOQUE["Microfone"]
         
         if aulas_selecionadas:
-            uso_dia = supabase.table("reservas").select("periodo, equipamentos").eq("data_reserva", str(data_res)).eq("status", "Ativa").in_("periodo", aulas_selecionadas).execute()
+            # Blindado para puxar todos os campos e evitar crash no Supabase
+            uso_dia = supabase.table("reservas").select("periodo, equipamentos, horario, aula, data, data_reserva").eq("status", "Ativa").execute()
             
             if uso_dia.data:
                 uso_por_aula = {a: {"Datashow": 0, "Som": 0, "Microfone": 0} for a in aulas_selecionadas}
                 for r in uso_dia.data:
-                    p = r["periodo"]
-                    eq_str = str(r.get("equipamentos", ""))
-                    if eq_str and p in uso_por_aula:
-                        matches = re.findall(r"(\d+)x\s*(Datashow|Som|Microfone)", eq_str, re.IGNORECASE)
-                        for qtd, item in matches:
-                            item_norm = "Som" if item.lower() == "som" else item.capitalize()
-                            uso_por_aula[p][item_norm] += int(qtd)
+                    data_r = r.get("data_reserva", r.get("data", ""))
+                    if str(data_r) == str(data_res):
+                        p = r.get("periodo", r.get("horario", r.get("aula", "")))
+                        eq_str = str(r.get("equipamentos", ""))
+                        
+                        if eq_str and p in uso_por_aula:
+                            matches = re.findall(r"(\d+)x\s*(Datashow|Som|Microfone)", eq_str, re.IGNORECASE)
+                            for qtd, item in matches:
+                                item_norm = "Som" if item.lower() == "som" else item.capitalize()
+                                uso_por_aula[p][item_norm] += int(qtd)
                 
-                max_uso_data = max([uso_por_aula[a]["Datashow"] for a in aulas_selecionadas])
-                max_uso_som = max([uso_por_aula[a]["Som"] for a in aulas_selecionadas])
-                max_uso_mic = max([uso_por_aula[a]["Microfone"] for a in aulas_selecionadas])
+                max_uso_data = max([uso_por_aula[a]["Datashow"] for a in aulas_selecionadas]) if aulas_selecionadas else 0
+                max_uso_som = max([uso_por_aula[a]["Som"] for a in aulas_selecionadas]) if aulas_selecionadas else 0
+                max_uso_mic = max([uso_por_aula[a]["Microfone"] for a in aulas_selecionadas]) if aulas_selecionadas else 0
                 
                 disp_data = max(0, ESTOQUE["Datashow"] - max_uso_data)
                 disp_som = max(0, ESTOQUE["Som"] - max_uso_som)
@@ -291,16 +302,23 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     with aba_cancelar:
         st.subheader("Cancelar Reserva Específica")
         
-        # Filtro de Data
         data_alvo = st.date_input("1. Selecione a data da reserva que deseja cancelar:", value=datetime.date.today(), format="DD/MM/YYYY", key="aba4_data")
         
-        # Busca APENAS as reservas ATIVAS daquela data específica
-        res_dia = supabase.table("reservas").select("*").eq("data_reserva", str(data_alvo)).eq("status", "Ativa").execute()
-        df_cancel = pd.DataFrame(res_dia.data)
+        # Filtra na memória para não depender do nome da coluna do Supabase
+        res_dia = supabase.table("reservas").select("*").eq("status", "Ativa").execute()
+        
+        dados_filtrados = []
+        if res_dia.data:
+            for r in res_dia.data:
+                # Blindagem flexível de data
+                if str(r.get("data_reserva", r.get("data", ""))) == str(data_alvo):
+                    dados_filtrados.append(r)
 
-        if not df_cancel.empty:
-            # Filtro de Professor (Mostra apenas quem tem reserva no dia escolhido)
-            professores_do_dia = sorted(df_cancel['professor'].unique().tolist())
+        df_cancel = pd.DataFrame(dados_filtrados)
+
+        # Blindagem contra a tabela não possuir a coluna "professor"
+        if not df_cancel.empty and 'professor' in df_cancel.columns:
+            professores_do_dia = sorted(df_cancel['professor'].dropna().unique().tolist())
             prof_sel = st.selectbox("2. Selecione seu nome:", ["-- Selecione --"] + professores_do_dia, key="aba4_prof")
             
             if prof_sel != "-- Selecione --":
@@ -311,20 +329,23 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                 for _, row in minhas_reservas.iterrows():
                     col1, col2 = st.columns([3, 1])
                     
-                    col1.write(f"📍 **{row['espaco']}** | ⏰ Aula: {row['periodo']}")
+                    # Mais blindagens flexíveis
+                    espaco_val = row.get('espaco', 'Sem Espaço')
+                    periodo_val = row.get('periodo', row.get('horario', row.get('aula', 'Sem Horário')))
+                    id_val = row.get('id')
+                    
+                    col1.write(f"📍 **{espaco_val}** | ⏰ Aula: {periodo_val}")
                     
                     with col2.expander("❌ Excluir", expanded=False):
-                        senha_input = st.text_input("Sua Matrícula/Senha:", type="password", key=f"pw_{row['id']}")
+                        senha_input = st.text_input("Sua Matrícula/Senha:", type="password", key=f"pw_{id_val}")
                         
-                        if st.button("Confirmar", key=f"conf_{row['id']}", type="primary"):
+                        if st.button("Confirmar", key=f"conf_{id_val}", type="primary"):
                             try:
-                                # LENDO DA TABELA CORRETA (professores_assinaturas)
                                 res_senha = supabase.table("professores_assinaturas").select("matricula").eq("professor", prof_sel.strip()).execute()
-                                senha_correta = res_senha.data[0]['matricula'] if res_senha.data else None
+                                senha_correta = res_senha.data[0].get('matricula') if res_senha.data and len(res_senha.data) > 0 else None
                                 
-                                # Verifica a senha (ou libera se for GESTOR)
                                 if prof_sel in GESTORES or (senha_correta and str(senha_input) == str(senha_correta)):
-                                    supabase.table("reservas").update({"status": "Cancelada", "cancelado_por": prof_sel}).eq("id", row['id']).execute()
+                                    supabase.table("reservas").update({"status": "Cancelada", "cancelado_por": prof_sel}).eq("id", id_val).execute()
                                     st.success("Reserva cancelada com sucesso!")
                                     time.sleep(1.5)
                                     st.rerun()
@@ -351,8 +372,6 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
             else:
                 try:
                     nome_limpo = nome_prof.strip()
-                    
-                    # GRAVANDO NA TABELA CORRETA (professores_assinaturas)
                     verif = supabase.table("professores_assinaturas").select("*").eq("professor", nome_limpo).execute()
                     
                     if verif.data:
