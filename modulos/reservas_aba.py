@@ -295,8 +295,9 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     # INÍCIO - ABA 4: GERENCIAR / CANCELAR
     # =========================================================
     with aba_cancelar:
-        st.subheader("Cancelar Reserva Específica")
+        st.subheader("Cancelar Reservas")
         
+        # 1. SELECIONAR A DATA
         data_alvo = st.date_input("1. Selecione a data da reserva que deseja cancelar:", value=datetime.date.today(), format="DD/MM/YYYY", key="aba4_data")
         
         res_dia = supabase.table("reservas").select("*").eq("status", "Ativa").execute()
@@ -311,40 +312,60 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
 
         if not df_cancel.empty and 'professor' in df_cancel.columns:
             professores_do_dia = sorted(df_cancel['professor'].dropna().unique().tolist())
-            prof_sel = st.selectbox("2. Selecione seu nome:", ["-- Selecione --"] + professores_do_dia, key="aba4_prof")
+            prof_sel = st.selectbox("Selecione seu nome:", ["-- Selecione --"] + professores_do_dia, key="aba4_prof")
             
             if prof_sel != "-- Selecione --":
                 minhas_reservas = df_cancel[df_cancel['professor'] == prof_sel]
                 
-                st.write(f"**Suas reservas ativas para {data_alvo.strftime('%d/%m/%Y')}:**")
+                st.write(f"**2. Selecione as reservas que deseja cancelar ({data_alvo.strftime('%d/%m/%Y')}):**")
                 
+                # Cria uma lista vazia para guardar os IDs das reservas que ele marcar
+                ids_para_cancelar = []
+                
+                # Mostra cada reserva como um Checkbox
                 for _, row in minhas_reservas.iterrows():
-                    col1, col2 = st.columns([3, 1])
-                    
                     espaco_val = row.get('espaco', 'Sem Espaço')
                     periodo_val = row.get('periodo', row.get('horario', row.get('aula', 'Sem Horário')))
                     id_val = row.get('id')
                     
-                    col1.write(f"📍 **{espaco_val}** | ⏰ Aula: {periodo_val}")
+                    texto_exibicao = f"📍 {espaco_val} | ⏰ Aula: {periodo_val}"
                     
-                    with col2.expander("❌ Excluir", expanded=False):
-                        senha_input = st.text_input("Sua Matrícula/Senha:", type="password", key=f"pw_{id_val}")
-                        
-                        if st.button("Confirmar", key=f"conf_{id_val}", type="primary"):
-                            try:
-                                # NOME DA TABELA CORRIGIDO AQUI
-                                res_senha = supabase.table("professores_matriculas").select("matricula").eq("professor", prof_sel.strip()).execute()
-                                senha_correta = res_senha.data[0].get('matricula') if res_senha.data and len(res_senha.data) > 0 else None
+                    # Se o professor marcar a caixinha, o ID entra na lista de exclusão
+                    if st.checkbox(texto_exibicao, key=f"chk_{id_val}"):
+                        ids_para_cancelar.append(id_val)
+                
+                # Se ele marcou pelo menos 1 reserva, mostra o campo de senha
+                if ids_para_cancelar:
+                    st.divider() # Linha de separação visual
+                    
+                    # 3. INSERIR A SENHA APENAS UMA VEZ
+                    senha_input = st.text_input("3. Insira sua Matrícula (Senha) para confirmar:", type="password", key="pw_cancel_multi")
+                    
+                    if st.button("❌ Confirmar Cancelamentos", type="primary"):
+                        try:
+                            # Busca a senha no banco
+                            res_senha = supabase.table("professores_matriculas").select("matricula").eq("professor", prof_sel.strip()).execute()
+                            senha_correta = res_senha.data[0].get('matricula') if res_senha.data and len(res_senha.data) > 0 else None
+                            
+                            # Verifica se é Gestor ou se a senha bate
+                            if prof_sel in GESTORES or (senha_correta and str(senha_input).strip() == str(senha_correta).strip()):
                                 
-                                if prof_sel in GESTORES or (senha_correta and str(senha_input) == str(senha_correta)):
-                                    supabase.table("reservas").update({"status": "Cancelada", "cancelado_por": prof_sel}).eq("id", id_val).execute()
-                                    st.success("Reserva cancelada com sucesso!")
-                                    time.sleep(1.5)
-                                    st.rerun()
+                                # Processa o cancelamento para TODOS os IDs marcados
+                                for id_cancel in ids_para_cancelar:
+                                    supabase.table("reservas").update({"status": "Cancelada", "cancelado_por": prof_sel}).eq("id", id_cancel).execute()
+                                
+                                # Mensagem flexível (singular ou plural)
+                                if len(ids_para_cancelar) > 1:
+                                    st.success(f"✅ {len(ids_para_cancelar)} reservas canceladas com sucesso!")
                                 else:
-                                    st.error("⚠️ Senha incorreta ou assinatura não cadastrada.")
-                            except Exception as e:
-                                st.error(f"Erro ao processar exclusão: {e}")
+                                    st.success("✅ Reserva cancelada com sucesso!")
+                                    
+                                time.sleep(1.5)
+                                st.rerun()
+                            else:
+                                st.error("⚠️ Senha incorreta ou assinatura não cadastrada.")
+                        except Exception as e:
+                            st.error(f"Erro ao processar exclusão em lote: {e}")
         else:
             st.info(f"📅 Nenhuma reserva ativa encontrada no sistema para o dia {data_alvo.strftime('%d/%m/%Y')}.")
 
