@@ -6,7 +6,7 @@ import os
 
 # Import the modules we just created
 from telas_aluno.login import mostrar_tela_login
-from telas_aluno.dashboard import mostrar_tela_dashboard
+from telas_aluno.dashboard_aluno import mostrar_tela_dashboard
 from telas_aluno.execucao_prova import render_instrucoes, render_prova
 from telas_aluno.resultados import render_suspense, render_revisao
 
