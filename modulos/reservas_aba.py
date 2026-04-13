@@ -162,6 +162,7 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                     calendar_options = {
                         "locale": "pt-br",
                         "initialView": "dayGridMonth",
+                        "weekends": False,  # <--- A MÁGICA AQUI: Oculta sábado e domingo
                         "dayMaxEvents": True, # Limita linhas exibidas com "Ver mais"
                         "headerToolbar": {
                             "left": "prev,next today",
