@@ -38,74 +38,78 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     ])
 
     # =========================================================
-    # ABA 1: CALENDÁRIO MENSAL
+    # ABA 1: CALENDÁRIO (VERSÃO CONDENSADA / AGRUPADA)
     # =========================================================
     with aba_cal:
         st.subheader("Visão Geral do Mês")
         try:
-            # Aumentando o limite para puxar as reservas futuras (ex: agosto)
+            # 1. Busca os dados (limite alto para não perder nada)
             res_cal = supabase.table("reservas").select("*").eq("status", "Ativa").limit(5000).execute()
+            
             if res_cal.data:
-                eventos = []
-                todos_profs = sorted(set(r.get('professor', '') for r in res_cal.data if r.get('professor')))
-                mapa_cores = {prof: CORES_PROFESSORES[i % len(CORES_PROFESSORES)] for i, prof in enumerate(todos_profs)}
+                # --- LÓGICA DE AGRUPAMENTO ---
+                # Criamos um dicionário onde a chave é (Data, Professor)
+                reservas_agrupadas = {}
                 
                 for r in res_cal.data:
-                    prof = r.get('professor', 'Prof. Sem Nome')
-                    espaco = r.get('espaco', 'Sem Espaço')
-                    equip = r.get('equipamentos', '')
-                    periodo = r.get('periodo', r.get('horario', r.get('aula', '')))
+                    prof = r.get('professor', 'Prof').strip()
+                    espaco = r.get('espaco', 'Espaço')
+                    data_evento = r.get('data_reserva') or r.get('data')
                     
-                    data_evento = r.get('data_reserva') or r.get('data') or ''
                     if not data_evento: continue
                     
-                    try:
-                        data_fmt = str(pd.to_datetime(str(data_evento), errors='coerce').date())
-                        if data_fmt == "NaT": continue
-                    except Exception:
-                        continue
+                    # Chave única por dia e por professor
+                    chave = (str(data_evento), prof)
                     
-                    titulo_limpo = f"{prof} - {espaco}"
-                    if periodo: titulo_limpo += f" | {periodo}"
-                    if equip and str(equip).strip() not in ["", "None", "nan"]: titulo_limpo += f" ({equip})"
+                    if chave not in reservas_agrupadas:
+                        reservas_agrupadas[chave] = []
+                    reservas_agrupadas[chave].append(espaco)
+
+                # 2. Transforma o agrupamento em eventos formatados
+                eventos = []
+                todos_profs = sorted(list(set(p for d, p in reservas_agrupadas.keys())))
+                mapa_cores = {prof: CORES_PROFESSORES[i % len(CORES_PROFESSORES)] for i, prof in enumerate(todos_profs)}
+                
+                for (data_fmt, prof), lista_espacos in reservas_agrupadas.items():
+                    qtd_aulas = len(lista_espacos)
+                    # Pegamos os espaços únicos (caso ele use mais de um no mesmo dia)
+                    espacos_desc = ", ".join(sorted(set(lista_espacos)))
                     
-                    try:
-                        data_fim = str((pd.to_datetime(data_fmt) + pd.Timedelta(days=1)).date())
-                    except Exception:
-                        data_fim = data_fmt
+                    # TÍTULO CONDENSADO: Nome + Espaços + Total de Aulas
+                    titulo_compacto = f"{prof}: {espacos_desc} ({qtd_aulas}ª)"
                     
                     eventos.append({
-                        "title": titulo_limpo,
+                        "title": titulo_compacto,
                         "start": data_fmt,
-                        "end": data_fim,
                         "backgroundColor": mapa_cores.get(prof, "#1f77b4"),
                         "borderColor": mapa_cores.get(prof, "#1f77b4"),
-                        "allDay": True
+                        "allDay": True,
+                        # Adicionamos uma descrição extra que aparece ao passar o mouse (dependendo da versão do componente)
+                        "extendedProps": {
+                            "detalhes": f"Professor: {prof}\nEspaços: {espacos_desc}\nTotal: {qtd_aulas} aulas"
+                        }
                     })
                 
-                if eventos:
-                    calendar_options = {
-                        "locale": "pt-br",
-                        "headerToolbar": {"left": "today prev,next", "center": "title", "right": "dayGridMonth,timeGridWeek,listWeek"},
-                        "initialView": "dayGridMonth",
-                        "buttonText": {"today": "Hoje", "month": "Mês", "week": "Semana", "list": "Lista"},
-                        "eventDisplay": "block",
-                        "dayMaxEvents": False
-                    }
-                    calendar(events=eventos, options=calendar_options)
-                    
-                    st.divider()
-                    st.caption("**Legenda de professores:**")
-                    cols_leg = st.columns(5)
-                    for i, (prof, cor) in enumerate(mapa_cores.items()):
-                        with cols_leg[i % 5]:
-                            st.markdown(f"<span style='background:{cor}; color:white; padding:2px 8px; border-radius:4px; font-size:11px;'>{prof}</span>", unsafe_allow_html=True)
-                else:
-                    st.info("Nenhuma reserva ativa encontrada.")
+                # 3. Configurações do Calendário para evitar "quebra" de layout
+                calendar_options = {
+                    "locale": "pt-br",
+                    "initialView": "dayGridMonth",
+                    "dayMaxEvents": True, # <--- ISSO AQUI: Se houver muitos professores diferentes, ele cria o link "+ mais"
+                    "headerToolbar": {
+                        "left": "prev,next today",
+                        "center": "title",
+                        "right": "dayGridMonth,dayGridWeek"
+                    },
+                    "editable": False,
+                    "selectable": True,
+                }
+                
+                calendar(events=eventos, options=calendar_options)
             else:
-                st.info("Nenhuma reserva ativa encontrada.")
+                st.info("Nenhuma reserva para exibir no calendário.")
+                
         except Exception as e:
-            st.error(f"Erro ao carregar calendário: {e}")
+            st.error(f"Erro ao processar calendário: {e}")
 
     # =========================================================
     # ABA 2: LISTA DIÁRIA
