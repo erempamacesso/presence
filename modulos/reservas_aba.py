@@ -288,97 +288,69 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     # INÍCIO - ABA 4: GERENCIAR / CANCELAR
     # =========================================================
     with aba_cancelar:
-        st.subheader("Gerenciar Reservas")
-        d_can = st.date_input("Data da reserva que deseja alterar:", value=datetime.date.today(), format="DD/MM/YYYY", key="aba4_data")
-        
-        try:
-            res_at = supabase.table("reservas").select("*").eq("data_reserva", str(d_can)).eq("status", "Ativa").execute()
-            
-            if res_at.data:
-                opcoes_res = {}
-                for r in res_at.data:
-                    eq_txt = f" | 🛠️ {r['equipamentos']}" if r.get('equipamentos') and str(r.get('equipamentos')).strip() else ""
-                    texto = f"{r.get('periodo', 'S/H')} - {r.get('espaco', '---')} ({r.get('professor', '---')}){eq_txt}"
-                    opcoes_res[texto] = r
+    st.subheader("Cancelar Reserva")
+    
+    # Busca todas as reservas para mostrar na lista de exclusão
+    res_todas = supabase.table("reservas").select("*").execute()
+    df_cancel = pd.DataFrame(res_todas.data)
 
-                st.write("**1. Selecione a(s) reserva(s) que deseja alterar:**")
-                reservas_selecionadas = st.multiselect(
-                    "Reservas encontradas:", 
-                    options=list(opcoes_res.keys()),
-                    placeholder="Clique aqui e escolha uma ou mais reservas...",
-                    key="aba4_multiselect"
-                )
+    if not df_cancel.empty:
+        # Filtro para facilitar achar a reserva
+        prof_sel = st.selectbox("Selecione seu nome para ver suas reservas:", ["-- Selecione --"] + sorted(df_cancel['professor'].unique().tolist()))
+        
+        if prof_sel != "-- Selecione --":
+            minhas_reservas = df_cancel[df_cancel['professor'] == prof_sel]
+            
+            for _, row in minhas_reservas.iterrows():
+                col1, col2 = st.columns([3, 1])
+                col1.write(f"📍 {row['espaco']} | ⏰ {row['horario']} | 📅 {row['data']}")
                 
-                if reservas_selecionadas:
-                    st.write("**2. O que deseja fazer?**")
-                    if len(reservas_selecionadas) == 1:
-                        acao = st.radio("Escolha a ação:", ["❌ Cancelar a Reserva (Liberar Espaço e Equipamentos)", "✏️ Editar/Remover apenas Equipamentos"], label_visibility="collapsed", key="aba4_acao")
-                        res_unica = opcoes_res[reservas_selecionadas[0]]
-                        equip_atual = res_unica.get('equipamentos', '') or ""
-                        novo_equip = equip_atual
-                        if "Editar" in acao:
-                            novo_equip = st.text_input("Equipamentos desta reserva:", value=str(equip_atual), key="aba4_equip")
-                    else:
-                        acao = st.radio("Ação em Lote:", ["❌ Cancelar Todas as Selecionadas", "🧹 Limpar Equipamentos de Todas"], label_visibility="collapsed", key="aba4_acao")
+                if col2.button("❌ Excluir", key=f"del_{row['id']}"):
+                    senha_input = st.text_input("Confirme sua Matrícula (Senha):", type="password", key=f"pw_{row['id']}")
                     
-                    st.divider()
-                    st.write("**3. Assinatura Eletrônica**")
-                    st.warning("🔒 **AVISO DE PRIVACIDADE E SEGURANÇA:** Sua Matrícula funciona como a sua senha pessoal.")
-                    senha = st.text_input("Sua Matrícula (Senha):", type="password", key="aba4_senha")
-                    
-                    if st.button("💾 Confirmar Ação", type="primary"):
-                        if not senha:
-                            st.warning("⚠️ Digite sua matrícula para confirmar.")
+                    if st.button("Confirmar Exclusão", key=f"conf_{row['id']}"):
+                        # 🔍 O SEGREDO: Busca a senha ignorando espaços
+                        res_senha = supabase.table("professores_matriculas").select("matricula").eq("professor", prof_sel.strip()).execute()
+                        
+                        senha_correta = res_senha.data[0]['matricula'] if res_senha.data else None
+                        
+                        # Se for GESTOR ou a senha bater
+                        if prof_sel in GESTORES or str(senha_input) == str(senha_correta):
+                            supabase.table("reservas").delete().eq("id", row['id']).execute()
+                            st.success("Reserva excluída!")
+                            st.rerun()
                         else:
-                            verif = supabase.table("professores_matriculas").select("professor").eq("matricula", senha).execute()
-                            if verif.data:
-                                user_nome = verif.data[0]['professor']
-                                sem_permissao = []
-                                for sel in reservas_selecionadas:
-                                    res_dados = opcoes_res[sel]
-                                    if user_nome not in GESTORES and user_nome != res_dados['professor']:
-                                        sem_permissao.append(res_dados.get('periodo', 'Aula Indefinida'))
-                                
-                                if sem_permissao:
-                                    st.error(f"⛔ Sem permissão para alterar reservas de outro professor: {', '.join(sem_permissao)}")
-                                else:
-                                    for sel in reservas_selecionadas:
-                                        id_r = opcoes_res[sel]['id']
-                                        if "Cancelar" in acao:
-                                            supabase.table("reservas").update({"status": "Cancelada", "cancelado_por": user_nome}).eq("id", id_r).execute()
-                                        elif "Editar" in acao:
-                                            supabase.table("reservas").update({"equipamentos": novo_equip}).eq("id", id_r).execute()
-                                        elif "Limpar" in acao:
-                                            supabase.table("reservas").update({"equipamentos": ""}).eq("id", id_r).execute()
-                                    st.success(f"✅ Operação realizada por {user_nome}!")
-                                    st.rerun()
-                            else:
-                                st.error("❌ Matrícula incorreta.")
-            else:
-                st.info("Nenhuma reserva ativa encontrada para esta data.")
-        except Exception as e:
-            st.error(f"Erro ao carregar reservas: {e}")
+                            st.error("⚠️ Senha incorreta ou sem permissão.")
 
     # =========================================================
     # INÍCIO - ABA 5: ASSINATURA
     # =========================================================
     with aba_assinatura:
-        st.subheader("Cadastro de Assinatura Eletrônica")
-        st.warning("🔒 **AVISO DE PRIVACIDADE E SEGURANÇA:** Sua Matrícula funciona como senha.")
-        nome_prof = st.selectbox("Seu Nome:", opcoes_professores, key="aba5_nome")
-        matricula_prof = st.text_input("Sua Matrícula (Senha):", type="password", key="aba5_matricula")
-        
-        if st.button("💾 Salvar Assinatura", type="primary"):
-            if nome_prof == "-- Selecione --" or not matricula_prof:
-                st.error("⚠️ Preencha todos os campos.")
-            else:
-                try:
-                    verif = supabase.table("professores_matriculas").select("*").eq("professor", nome_prof).execute()
-                    if verif.data:
-                        supabase.table("professores_matriculas").update({"matricula": matricula_prof}).eq("professor", nome_prof).execute()
-                    else:
-                        supabase.table("professores_matriculas").insert({"professor": nome_prof, "matricula": matricula_prof}).execute()
-                    st.success(f"✅ Assinatura de {nome_prof} cadastrada!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erro ao salvar assinatura: {e}")
+    st.subheader("Cadastro de Assinatura Eletrônica")
+    st.info("Escolha seu nome na lista oficial da escola para criar sua senha.")
+    
+    # IMPORTANTE: Use a lista_professores_antiga aqui, para permitir novos cadastros!
+    nome_prof = st.selectbox("Seu Nome:", ["-- Selecione --"] + lista_professores_antiga, key="aba5_nome")
+    matricula_prof = st.text_input("Defina sua Matrícula (Senha):", type="password", key="aba5_matricula")
+    
+    if st.button("💾 Salvar Assinatura", type="primary"):
+        if nome_prof == "-- Selecione --" or not matricula_prof:
+            st.error("⚠️ Preencha todos os campos.")
+        else:
+            try:
+                # Limpa o nome para evitar erros de espaço
+                nome_limpo = nome_prof.strip()
+                
+                # Verifica se já existe para decidir entre UPDATE ou INSERT
+                verif = supabase.table("professores_matriculas").select("*").eq("professor", nome_limpo).execute()
+                
+                if verif.data:
+                    supabase.table("professores_matriculas").update({"matricula": matricula_prof}).eq("professor", nome_limpo).execute()
+                else:
+                    supabase.table("professores_matriculas").insert({"professor": nome_limpo, "matricula": matricula_prof}).execute()
+                
+                st.success(f"✅ Assinatura de {nome_limpo} salva com sucesso!")
+                time.sleep(1)
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao salvar: {e}")
