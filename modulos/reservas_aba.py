@@ -230,66 +230,160 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
             st.error(f"Erro ao carregar lista: {e}")
 
    # =========================================================
-    # ABA 3: MINHAS RESERVAS (ORDEM CRESCENTE E TABELA LONGA)
+    # ABA 3: MINHAS RESERVAS (INTERFACE LISTA CLEAN & MOBILE)
     # =========================================================
     with aba_minhas:
-        st.subheader("👩‍🏫 Histórico Completo do Professor")
-        st.info("Visualização de todas as reservas vinculadas ao nome. Ordem: Da mais antiga para a mais futura.")
+        st.info("Consulte sua agenda pessoal. As reservas canceladas aparecerão em vermelho.")
         
-        prof_busca = st.selectbox("Selecione o nome para conferir:", opcoes_professores, key="aba_minhas_prof")
+        prof_busca = st.selectbox("Selecione seu nome para ver sua agenda:", opcoes_professores, key="aba_minhas_prof")
         
         if prof_busca != "-- Selecione --":
-            try:
-                # Busca com limite alto (5000) para garantir que pegue o ano todo
-                res_hist = supabase.table("reservas").select("*").ilike("professor", f"%{prof_busca.strip()}%").limit(5000).execute()
-                
-                if res_hist.data:
-                    dados_hist = []
-                    for r in res_hist.data:
-                        status_bd = r.get("status", "Ativa")
-                        situacao_icone = "🟢 Ativa" if status_bd == "Ativa" else "❌ Cancelada"
-                        
-                        raw_data = r.get("data_reserva") or r.get("data") or ""
-                        try:
-                            dt_obj = pd.to_datetime(str(raw_data), errors='coerce')
-                            if pd.isnull(dt_obj):
-                                data_formatada = str(raw_data)
-                                data_ordenacao = pd.to_datetime("2099-12-31") # Joga pro fim se der erro
-                            else:
-                                data_formatada = dt_obj.strftime("%d/%m/%Y")
-                                data_ordenacao = dt_obj
-                        except Exception:
-                            data_formatada = str(raw_data)
-                            data_ordenacao = pd.to_datetime("2099-12-31")
-                            
-                        dados_hist.append({
-                            "_data_sort": data_ordenacao,
-                            "Data": data_formatada,
-                            "Aula/Horário": r.get("periodo", r.get("horario", r.get("aula", ""))),
-                            "Espaço": r.get("espaco", ""),
-                            "Equipamentos": r.get("equipamentos", "") or "-",
-                            "Situação": situacao_icone,
-                            "Observações": r.get("observacoes", "") or "-"
-                        })
+            with st.spinner("Buscando sua agenda completa..."):
+                try:
+                    # 1. BURLANDO O LIMITE DO SUPABASE (Paginação)
+                    todas_reservas_prof = []
+                    inicio = 0
+                    tamanho_pagina = 1000
                     
-                    # --- ORDENAÇÃO CRESCENTE (Data mais antiga -> Data mais futura) ---
-                    df_hist = pd.DataFrame(dados_hist).sort_values(by=["_data_sort", "Aula/Horário"], ascending=[True, True])
-                    df_hist = df_hist.drop(columns=["_data_sort"])
-                    
-                    st.success(f"✅ Exibindo {len(df_hist)} registros para '{prof_busca}'.")
-                    
-                    # --- TABELA MAIS LONGA (Altura definida para 800 pixels) ---
-                    st.dataframe(
-                        df_hist, 
-                        use_container_width=True, 
-                        hide_index=True,
-                        height=800  # Aqui definimos a tabela mais longa visualmente
-                    )
-                else:
-                    st.warning(f"⚠️ Nenhuma reserva encontrada no banco para '{prof_busca}'.")
-            except Exception as e:
-                st.error(f"Erro ao carregar histórico: {e}")
+                    while True:
+                        # Busca TUDO do professor (Ativas e Canceladas)
+                        res_pagina = supabase.table("reservas").select("*").ilike("professor", f"%{prof_busca.strip()}%").range(inicio, inicio + tamanho_pagina - 1).execute()
+                        if not res_pagina.data:
+                            break
+                        todas_reservas_prof.extend(res_pagina.data)
+                        if len(res_pagina.data) < tamanho_pagina:
+                            break
+                        inicio += tamanho_pagina
 
+                    if todas_reservas_prof:
+                        # 2. AGRUPAMENTO POR DATA E STATUS
+                        agrupamento_prof = {}
+                        
+                        for r in todas_reservas_prof:
+                            status_bd = r.get("status", "Ativa")
+                            espaco = r.get("espaco", "")
+                            aula = r.get("periodo", r.get("horario", r.get("aula", "")))
+                            equip = r.get("equipamentos", "")
+                            raw_data = r.get("data_reserva") or r.get("data") or ""
+                            
+                            # Parser de data
+                            data_str = str(raw_data).strip()
+                            data_valida = None
+                            try:
+                                dt_obj = pd.to_datetime(data_str, format="%Y-%m-%d")
+                                data_valida = dt_obj.strftime("%Y-%m-%d")
+                            except ValueError:
+                                try:
+                                    dt_obj = pd.to_datetime(data_str, format="%d/%m/%Y")
+                                    data_valida = dt_obj.strftime("%Y-%m-%d")
+                                except ValueError:
+                                    try:
+                                        dt_obj = pd.to_datetime(data_str, dayfirst=True)
+                                        data_valida = dt_obj.strftime("%Y-%m-%d")
+                                    except: pass
+                                        
+                            if not data_valida: continue
+                            
+                            # Agrupa por Data e por Status (Ativa/Cancelada)
+                            chave = (data_valida, status_bd)
+                            if chave not in agrupamento_prof:
+                                agrupamento_prof[chave] = []
+                                
+                            agrupamento_prof[chave].append({
+                                "espaco": espaco,
+                                "aula": aula,
+                                "equip": equip
+                            })
+                            
+                        # 3. CONSTRUINDO OS EVENTOS DA AGENDA
+                        eventos_prof = []
+                        
+                        for (data_fmt, status), lista_detalhes in agrupamento_prof.items():
+                            resumo_espacos = {}
+                            todos_equipamentos = set()
+                            
+                            for det in lista_detalhes:
+                                esp = det["espaco"]
+                                if esp not in resumo_espacos: resumo_espacos[esp] = []
+                                
+                                aula_curta = str(det["aula"]).replace(" Aula", "").strip()
+                                if aula_curta: resumo_espacos[esp].append(aula_curta)
+                                    
+                                eq_raw = str(det["equip"]).strip()
+                                if eq_raw and eq_raw != "-":
+                                    for e in eq_raw.split(","): todos_equipamentos.add(e.strip())
+
+                            partes_texto = []
+                            for esp, aulas in resumo_espacos.items():
+                                aulas_ordenadas = ", ".join(sorted(set(aulas)))
+                                partes_texto.append(f"{esp} [{aulas_ordenadas}]" if aulas_ordenadas else f"{esp}")
+                                    
+                            titulo_completo = " + ".join(partes_texto)
+                            if todos_equipamentos:
+                                titulo_completo += f" 🔌 {', '.join(sorted(todos_equipamentos))}"
+                                
+                            # Lógica Visual: Canceladas ficam vermelhas, Ativas ficam azuis
+                            if status != "Ativa":
+                                titulo_completo = f"❌ CANCELADA | {titulo_completo}"
+                                cor = "#e53935" # Vermelho forte
+                            else:
+                                cor = "#1f77b4" # Azul padrão limpo
+                                
+                            eventos_prof.append({
+                                "title": titulo_completo,
+                                "start": data_fmt,
+                                "backgroundColor": cor,
+                                "borderColor": cor,
+                                "allDay": True,
+                            })
+
+                        # 4. CONFIGURAÇÃO CLEAN DO CALENDÁRIO
+                        calendar_options = {
+                            "locale": "pt-br",
+                            "initialView": "listMonth", 
+                            "height": 650,
+                            "headerToolbar": {
+                                "left": "prev,next",
+                                "center": "title",
+                                "right": "today,listMonth,listYear" # <--- NOVIDADE AQUI
+                            },
+                            "buttonText": {
+                                "today": "Hoje",
+                                "listMonth": "Mês",
+                                "listYear": "Ano" # Permite ver o ano todo de uma vez!
+                            },
+                            "listDayAltFormat": False,
+                        }
+                        
+                        # 5. O MESMO CSS MÁGICO PARA CELULAR
+                        custom_css = """
+                        .fc-toolbar-title {
+                            font-size: 1.1rem !important; 
+                            text-transform: capitalize;
+                            color: #333;
+                        }
+                        .fc-button {
+                            padding: 0.2rem 0.5rem !important;
+                            font-size: 0.85rem !important;
+                        }
+                        .fc-list-day-text {
+                            font-size: 0.95rem !important;
+                            font-weight: bold !important;
+                        }
+                        .fc-list-event-title {
+                            font-size: 0.85rem !important;
+                        }
+                        .fc-list-event-time {
+                            display: none !important;
+                        }
+                        """
+                        
+                        # A key precisa ser dinâmica para recarregar se mudar o professor
+                        calendar(events=eventos_prof, options=calendar_options, custom_css=custom_css, key=f"cal_prof_{prof_busca}")
+                    else:
+                        st.warning(f"⚠️ Nenhuma reserva encontrada no banco para '{prof_busca}'.")
+                except Exception as e:
+                    st.error(f"Erro ao carregar histórico: {e}")
     
 # =========================================================
     # ABA 4: NOVA RESERVA (SISTEMA ANTI-FANTASMA)
