@@ -39,25 +39,14 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
 
 
 # =========================================================
-    # ABA 1: CALENDÁRIO (MULTI-DISPOSITIVO: PC & CELULAR)
+    # ABA 1: CALENDÁRIO (VISUAL PROFISSIONAL + ALTURA ESTICADA)
     # =========================================================
     with aba_cal:
         st.subheader("Visão Geral do Mês")
         
-        # --- 1. SELETOR DE MODO (O segredo para o Celular) ---
-        modo_tela = st.radio(
-            "Otimizar visualização para:",
-            ["🖥️ Computador (Grade)", "📱 Celular (Lista)"],
-            horizontal=True,
-            key="modo_visualizacao_calendar"
-        )
-        
-        # Define a visão técnica baseada na escolha
-        visao_tecnica = "listMonth" if "Celular" in modo_tela else "dayGridMonth"
-
         with st.spinner("Carregando todas as reservas do calendário..."):
             try:
-                # 2. BURLANDO O LIMITE DE 1000 LINHAS DO SUPABASE (Mantido)
+                # 1. BURLANDO O LIMITE DE 1000 LINHAS DO SUPABASE
                 todas_reservas_ativas = []
                 inicio = 0
                 tamanho_pagina = 1000
@@ -72,7 +61,7 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                     inicio += tamanho_pagina
 
                 if todas_reservas_ativas:
-                    # 3. AGRUPAMENTO INTELIGENTE
+                    # 2. AGRUPAMENTO INTELIGENTE
                     reservas_agrupadas = {}
                     
                     for r in todas_reservas_ativas:
@@ -84,7 +73,6 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                         
                         if not raw_data: continue
                         
-                        # Parser de Data Blindado
                         data_str = str(raw_data).strip()
                         data_valida = None
                         try:
@@ -112,7 +100,7 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                             "equip": equipamentos
                         })
 
-                    # 4. PREPARAÇÃO DOS EVENTOS (Títulos Descritivos)
+                    # 3. PREPARAÇÃO DOS EVENTOS
                     eventos = []
                     todos_profs = sorted(list(set(p for d, p in reservas_agrupadas.keys())))
                     mapa_cores = {prof: CORES_PROFESSORES[i % len(CORES_PROFESSORES)] for i, prof in enumerate(todos_profs)}
@@ -149,23 +137,30 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                             "allDay": True,
                         })
                     
-                    # --- 5. RENDERIZAÇÃO COM KEY DINÂMICA ---
+                    # --- 4. RENDERIZAÇÃO PROFISSIONAL (Sem botão gambiarra) ---
                     calendar_options = {
                         "locale": "pt-br",
-                        "initialView": visao_tecnica, # Usa a visão do botão
+                        "initialView": "dayGridMonth", # Sempre abre a grade padrão
+                        "height": 700, # <-- ESTICA O FRAME PARA CABER A LISTA
+                        "contentHeight": "auto", 
                         "weekends": False,
                         "dayMaxEvents": True,
+                        "allDayText": "🔹", # <-- ADEUS "all-day" FEIO, SUBSTITUIDO POR UM ÍCONE
                         "headerToolbar": {
                             "left": "prev,next today",
                             "center": "title",
-                            "right": "dayGridMonth,listMonth"
+                            "right": "dayGridMonth,listMonth" # O usuário troca direto aqui
+                        },
+                        "buttonText": {
+                            "today": "Hoje",
+                            "dayGridMonth": "Mês",
+                            "listMonth": "Agenda" # Traduzido de forma profissional
                         },
                         "editable": False,
                         "selectable": True,
                     }
                     
-                    # A key dinâmica força o componente a recarregar o layout
-                    calendar(events=eventos, options=calendar_options, key=f"calendar_view_{visao_tecnica}")
+                    calendar(events=eventos, options=calendar_options)
                 else:
                     st.info("Nenhuma reserva ativa para exibir no calendário.")
                     
