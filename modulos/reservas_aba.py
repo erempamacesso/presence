@@ -211,121 +211,115 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                     st.warning(f"⚠️ Nenhuma reserva encontrada no banco para '{prof_busca}'.")
             except Exception as e:
                 st.error(f"Erro ao carregar histórico: {e}")
-                
-    # =========================================================
-    # ABA 4: NOVA RESERVA (COM REPETIÇÃO E ESTOQUE INTACTO)
+
+    
+# =========================================================
+    # ABA 4: NOVA RESERVA (SISTEMA ANTI-FANTASMA)
     # =========================================================
     with aba_nova:
         st.subheader("Agendar Espaço / Equipamento")
         ESTOQUE = {"Datashow": 5, "Som": 3, "Microfone": 2}
         
-        # Adicionado os controles de data inicial e final
         col_data1, col_data2 = st.columns(2)
         with col_data1:
-            data_res = st.date_input("Data da Reserva (Início):", value=datetime.date.today(), format="DD/MM/YYYY", key="aba3_data")
+            data_res = st.date_input("Data da Reserva (Início):", value=datetime.date.today(), format="DD/MM/YYYY", key="n_data_ini")
         with col_data2:
-            recorrente = st.checkbox("🔄 Repetir semanalmente", help="Ex: Marque para reservar todas as segundas até agosto")
+            recorrente = st.checkbox("🔄 Repetir semanalmente", key="n_recorrente")
             if recorrente:
-                data_fim = st.date_input("Repetir até o dia:", value=data_res + datetime.timedelta(weeks=4), format="DD/MM/YYYY", key="aba3_data_fim")
+                data_fim = st.date_input("Repetir até o dia:", value=data_res + datetime.timedelta(weeks=4), format="DD/MM/YYYY", key="n_data_fim")
             else:
                 data_fim = data_res
 
         lista_9_aulas = ["1ª Aula", "2ª Aula", "3ª Aula", "4ª Aula", "5ª Aula", "6ª Aula", "7ª Aula", "8ª Aula", "9ª Aula"]
-        
         st.write("**Selecione a(s) Aula(s):**")
-        aulas_selecionadas = st.segmented_control("Aulas:", options=lista_9_aulas, selection_mode="multi", key="aba3_aulas")
+        aulas_selecionadas = st.segmented_control("Aulas:", options=lista_9_aulas, selection_mode="multi", key="n_aulas")
         
-        # Sua lógica de estoque intacta (Baseada na data de início)
-        disp_data, disp_som, disp_mic = ESTOQUE["Datashow"], ESTOQUE["Som"], ESTOQUE["Microfone"]
+        # --- BUSCA DE PROFESSOR LIMPA ---
+        professor_raw = st.selectbox("Professor:", opcoes_professores, key="n_prof_select")
+        professor = professor_raw.strip() if professor_raw != "-- Selecione --" else "-- Selecione --"
         
-        if aulas_selecionadas:
-            uso_dia = supabase.table("reservas").select("*").eq("status", "Ativa").eq("data_reserva", str(data_res)).execute()
-            if uso_dia.data:
-                uso_por_aula = {a: {"Datashow": 0, "Som": 0, "Microfone": 0} for a in aulas_selecionadas}
-                for r in uso_dia.data:
-                    p = r.get("periodo", r.get("horario", r.get("aula", "")))
-                    if p in uso_por_aula:
-                        eq_str = str(r.get("equipamentos", ""))
-                        matches = re.findall(r"(\d+)x\s*(Datashow|Som|Microfone)", eq_str, re.IGNORECASE)
-                        for qtd, item in matches:
-                            item_norm = "Som" if item.lower() == "som" else item.capitalize()
-                            uso_por_aula[p][item_norm] += int(qtd)
-                
-                disp_data -= max([uso_por_aula[a]["Datashow"] for a in aulas_selecionadas])
-                disp_som  -= max([uso_por_aula[a]["Som"]      for a in aulas_selecionadas])
-                disp_mic  -= max([uso_por_aula[a]["Microfone"] for a in aulas_selecionadas])
-
-        col1, col2 = st.columns(2)
-        with col1:
-            professor = st.selectbox("Professor:", opcoes_professores, key="aba3_prof")
-            usar_na_sala = st.checkbox("Usarei na sala de aula", key="aba3_usar_sala")
-        with col2:
+        col_sala1, col_sala2 = st.columns(2)
+        with col_sala1:
+            usar_na_sala = st.checkbox("Usarei na sala de aula", key="n_sala_check")
+        with col_sala2:
             espaco = "Sala de Aula" if usar_na_sala else st.selectbox(
                 "Espaço:", ["-- Selecione --", "Auditório", "Laboratório", "Biblioteca", "Quadra"],
-                key="aba3_espaco"
+                key="n_espaco_select"
             )
 
-        opcoes_eq = (
-            [f"{i}x Datashow"  for i in range(1, max(disp_data, 0) + 1)] +
-            [f"{i}x Som"       for i in range(1, max(disp_som,  0) + 1)] +
-            [f"{i}x Microfone" for i in range(1, max(disp_mic,  0) + 1)]
-        )
-        
-        st.caption(f"📦 Estoque disponível na data de início: {max(disp_data,0)} Datashow | {max(disp_som,0)} Som | {max(disp_mic,0)} Mic")
-        equipamentos_selecionados = st.multiselect("Equipamentos:", options=opcoes_eq, key="aba3_equipamentos")
-        obs = st.text_input("Observações:", key="aba3_obs")
+        equipamentos_selecionados = st.multiselect("Equipamentos:", ["1x Datashow", "2x Datashow", "1x Som", "1x Microfone"], key="n_eq")
+        obs = st.text_input("Observações:", key="n_obs")
 
         if st.button("💾 Confirmar Reserva", type="primary"):
             if not aulas_selecionadas or professor == "-- Selecione --" or (espaco == "-- Selecione --" and not usar_na_sala):
                 st.warning("⚠️ Preencha os campos obrigatórios.")
             elif data_fim < data_res:
-                st.error("⚠️ A data final não pode ser antes da data inicial.")
+                st.error("⚠️ Data final inválida.")
             else:
-                # Gera as datas de semana em semana
+                # 1. Gerar lista de datas
                 datas_para_reservar = []
-                data_atual = data_res
-                while data_atual <= data_fim:
-                    datas_para_reservar.append(data_atual)
-                    data_atual += datetime.timedelta(days=7)
+                temp_data = data_res
+                while temp_data <= data_fim:
+                    datas_para_reservar.append(temp_data)
+                    if not recorrente: break
+                    temp_data += datetime.timedelta(days=7)
                 
                 sucessos = 0
-                erros = 0
                 
-                with st.spinner("Processando reservas..."):
+                with st.spinner("Validando disponibilidades..."):
                     for d in datas_para_reservar:
+                        data_str = str(d)
                         for aula in aulas_selecionadas:
-                            # Checagem de conflitos para cada semana
-                            check = supabase.table("reservas").select("id").eq("data_reserva", str(d)).eq("periodo", aula).eq("professor", professor).eq("status", "Ativa").execute()
-                            if check.data:
-                                st.error(f"❌ O professor já tem reserva no dia {d.strftime('%d/%m/%Y')} na {aula}.")
-                                erros += 1
+                            # --- VERIFICAÇÃO ULTRA-RIGOROSA (Anti-Fantasma) ---
+                            # Usamos .ilike para ignorar espaços extras e maiúsculas/minúsculas
+                            
+                            # A. Verificando se o Professor já está ocupado
+                            check_prof = supabase.table("reservas").select("id, espaco")\
+                                .eq("data_reserva", data_str)\
+                                .eq("periodo", aula)\
+                                .ilike("professor", f"%{professor}%")\
+                                .eq("status", "Ativa")\
+                                .execute()
+                            
+                            if check_prof.data:
+                                item = check_prof.data[0]
+                                st.error(f"❌ Conflito: {professor} já tem reserva no dia {d.strftime('%d/%m/%Y')} na {aula} (Espaço: {item['espaco']}).")
+                                st.info(f"💡 Dica: Procure no Supabase pelo ID: {item['id']} para resolver.")
                                 continue
-                            
+
+                            # B. Verificando se o Espaço já está ocupado (exceto sala de aula)
                             if espaco != "Sala de Aula":
-                                check_esp = supabase.table("reservas").select("id").eq("data_reserva", str(d)).eq("periodo", aula).eq("espaco", espaco).eq("status", "Ativa").execute()
+                                check_esp = supabase.table("reservas").select("id, professor")\
+                                    .eq("data_reserva", data_str)\
+                                    .eq("periodo", aula)\
+                                    .eq("espaco", espaco)\
+                                    .eq("status", "Ativa")\
+                                    .execute()
+                                
                                 if check_esp.data:
-                                    st.error(f"❌ O espaço {espaco} já está ocupado dia {d.strftime('%d/%m/%Y')} na {aula}.")
-                                    erros += 1
+                                    item_e = check_esp.data[0]
+                                    st.error(f"❌ O espaço {espaco} já está reservado por {item_e['professor']} no dia {d.strftime('%d/%m/%Y')} na {aula}.")
                                     continue
-                            
-                            # Se passou, salva no banco
-                            supabase.table("reservas").insert({
-                                "data_reserva": str(d),
-                                "periodo": aula,
-                                "espaco": espaco,
-                                "professor": professor,
-                                "equipamentos": ", ".join(equipamentos_selecionados),
-                                "observacoes": obs,
-                                "status": "Ativa"
-                            }).execute()
-                            sucessos += 1
-                
+
+                            # Se passou nas validações, insere
+                            try:
+                                supabase.table("reservas").insert({
+                                    "data_reserva": data_str,
+                                    "periodo": aula,
+                                    "espaco": espaco,
+                                    "professor": professor,
+                                    "equipamentos": ", ".join(equipamentos_selecionados),
+                                    "observacoes": obs,
+                                    "status": "Ativa"
+                                }).execute()
+                                sucessos += 1
+                            except Exception as e:
+                                st.error(f"Erro ao inserir no banco: {e}")
+
                 if sucessos > 0:
-                    st.success(f"✅ {sucessos} reserva(s) realizada(s) com sucesso!")
-                    time.sleep(2)
+                    st.success(f"✅ {sucessos} reserva(s) criada(s)!")
+                    time.sleep(1.5)
                     st.rerun()
-                elif erros > 0 and sucessos == 0:
-                    st.warning("⚠️ Nenhuma reserva realizada devido a conflitos.")
 
     # =========================================================
     # ABA 5: GERENCIAR / CANCELAR
