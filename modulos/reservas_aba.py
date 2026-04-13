@@ -353,9 +353,12 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     # =========================================================
     with aba_assinatura:
         st.subheader("Cadastro de Assinatura Eletrônica")
-        st.info("Escolha seu nome na lista oficial da escola para criar sua senha.")
+        st.info("Escolha seu nome para criar ou atualizar sua senha (matrícula).")
         
-        nome_prof = st.selectbox("Seu Nome:", ["-- Selecione --"] + lista_professores_antiga, key="aba5_nome")
+        # AJUSTE AQUI: Mudamos de lista_professores_antiga para opcoes_professores
+        # Isso garante que ele use os nomes que acabaram de ser lidos do Banco na Parte 0
+        nome_prof = st.selectbox("Seu Nome:", opcoes_professores, key="aba5_nome")
+        
         matricula_prof = st.text_input("Defina sua Matrícula (Senha):", type="password", key="aba5_matricula")
         
         if st.button("💾 Salvar Assinatura", type="primary"):
@@ -364,18 +367,20 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
             else:
                 try:
                     nome_limpo = nome_prof.strip()
-                    # NOME DA TABELA CORRIGIDO AQUI
+                    senha_limpa = str(matricula_prof).strip()
+                    
+                    # Busca para ver se o professor já existe na tabela
                     verif = supabase.table("professores_matriculas").select("*").eq("professor", nome_limpo).execute()
                     
                     if verif.data:
-                        # NOME DA TABELA CORRIGIDO AQUI
-                        supabase.table("professores_matriculas").update({"matricula": str(matricula_prof)}).eq("professor", nome_limpo).execute()
+                        # Se já existe, atualiza a senha (matricula)
+                        supabase.table("professores_matriculas").update({"matricula": senha_limpa}).eq("professor", nome_limpo).execute()
                     else:
-                        # NOME DA TABELA CORRIGIDO AQUI
-                        supabase.table("professores_matriculas").insert({"professor": nome_limpo, "matricula": str(matricula_prof)}).execute()
+                        # Se não existe, cria o registro novo
+                        supabase.table("professores_matriculas").insert({"professor": nome_limpo, "matricula": senha_limpa}).execute()
                     
                     st.success(f"✅ Assinatura de {nome_limpo} salva com sucesso!")
                     time.sleep(1.5)
-                    st.rerun()
+                    st.rerun() # Recarrega para atualizar as listas em todas as abas
                 except Exception as e:
                     st.error(f"Erro ao salvar: {e}")
