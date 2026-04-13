@@ -38,78 +38,107 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     ])
 
     # =========================================================
-    # ABA 1: CALENDÁRIO (VERSÃO CONDENSADA / AGRUPADA)
+    # ABA 1: CALENDÁRIO (AGORA COM PAGINAÇÃO E PARSER DE DATAS)
     # =========================================================
     with aba_cal:
         st.subheader("Visão Geral do Mês")
-        try:
-            # 1. Busca os dados (limite alto para não perder nada)
-            res_cal = supabase.table("reservas").select("*").eq("status", "Ativa").limit(5000).execute()
-            
-            if res_cal.data:
-                # --- LÓGICA DE AGRUPAMENTO ---
-                # Criamos um dicionário onde a chave é (Data, Professor)
-                reservas_agrupadas = {}
+        with st.spinner("Carregando todas as reservas do calendário..."):
+            try:
+                # 1. BURLANDO O LIMITE DE 1000 LINHAS DO SUPABASE (Paginação)
+                todas_reservas_ativas = []
+                inicio = 0
+                tamanho_pagina = 1000
                 
-                for r in res_cal.data:
-                    prof = r.get('professor', 'Prof').strip()
-                    espaco = r.get('espaco', 'Espaço')
-                    data_evento = r.get('data_reserva') or r.get('data')
-                    
-                    if not data_evento: continue
-                    
-                    # Chave única por dia e por professor
-                    chave = (str(data_evento), prof)
-                    
-                    if chave not in reservas_agrupadas:
-                        reservas_agrupadas[chave] = []
-                    reservas_agrupadas[chave].append(espaco)
+                while True:
+                    res_pagina = supabase.table("reservas").select("*").eq("status", "Ativa").range(inicio, inicio + tamanho_pagina - 1).execute()
+                    if not res_pagina.data:
+                        break
+                    todas_reservas_ativas.extend(res_pagina.data)
+                    if len(res_pagina.data) < tamanho_pagina:
+                        break
+                    inicio += tamanho_pagina
 
-                # 2. Transforma o agrupamento em eventos formatados
-                eventos = []
-                todos_profs = sorted(list(set(p for d, p in reservas_agrupadas.keys())))
-                mapa_cores = {prof: CORES_PROFESSORES[i % len(CORES_PROFESSORES)] for i, prof in enumerate(todos_profs)}
-                
-                for (data_fmt, prof), lista_espacos in reservas_agrupadas.items():
-                    qtd_aulas = len(lista_espacos)
-                    # Pegamos os espaços únicos (caso ele use mais de um no mesmo dia)
-                    espacos_desc = ", ".join(sorted(set(lista_espacos)))
+                if todas_reservas_ativas:
+                    # 2. AGRUPAMENTO E TRATAMENTO DE DATAS BLINDADO
+                    reservas_agrupadas = {}
                     
-                    # TÍTULO CONDENSADO: Nome + Espaços + Total de Aulas
-                    titulo_compacto = f"{prof}: {espacos_desc} ({qtd_aulas}ª)"
+                    for r in todas_reservas_ativas:
+                        prof = r.get('professor', 'Prof').strip()
+                        espaco = r.get('espaco', 'Espaço')
+                        raw_data = r.get('data_reserva') or r.get('data') or ""
+                        
+                        if not raw_data: continue
+                        
+                        # PARSER DE DATA: Garante que "04/05/2026" ou "2026-05-04" 
+                        # virem obrigatoriamente "YYYY-MM-DD" para o calendário não bugar
+                        data_str = str(raw_data).strip()
+                        data_valida = None
+                        
+                        try:
+                            dt_obj = pd.to_datetime(data_str, format="%Y-%m-%d")
+                            data_valida = dt_obj.strftime("%Y-%m-%d")
+                        except ValueError:
+                            try:
+                                dt_obj = pd.to_datetime(data_str, format="%d/%m/%Y")
+                                data_valida = dt_obj.strftime("%Y-%m-%d")
+                            except ValueError:
+                                try:
+                                    dt_obj = pd.to_datetime(data_str, dayfirst=True)
+                                    data_valida = dt_obj.strftime("%Y-%m-%d")
+                                except:
+                                    pass
+                                    
+                        if not data_valida:
+                            continue # Se não for uma data legível, ignora
+
+                        # Agrupa as aulas no mesmo dia para o mesmo professor
+                        chave = (data_valida, prof)
+                        if chave not in reservas_agrupadas:
+                            reservas_agrupadas[chave] = []
+                        reservas_agrupadas[chave].append(espaco)
+
+                    # 3. PREPARAÇÃO DOS EVENTOS DO CALENDÁRIO
+                    eventos = []
+                    todos_profs = sorted(list(set(p for d, p in reservas_agrupadas.keys())))
+                    mapa_cores = {prof: CORES_PROFESSORES[i % len(CORES_PROFESSORES)] for i, prof in enumerate(todos_profs)}
                     
-                    eventos.append({
-                        "title": titulo_compacto,
-                        "start": data_fmt,
-                        "backgroundColor": mapa_cores.get(prof, "#1f77b4"),
-                        "borderColor": mapa_cores.get(prof, "#1f77b4"),
-                        "allDay": True,
-                        # Adicionamos uma descrição extra que aparece ao passar o mouse (dependendo da versão do componente)
-                        "extendedProps": {
-                            "detalhes": f"Professor: {prof}\nEspaços: {espacos_desc}\nTotal: {qtd_aulas} aulas"
-                        }
-                    })
-                
-                # 3. Configurações do Calendário para evitar "quebra" de layout
-                calendar_options = {
-                    "locale": "pt-br",
-                    "initialView": "dayGridMonth",
-                    "dayMaxEvents": True, # <--- ISSO AQUI: Se houver muitos professores diferentes, ele cria o link "+ mais"
-                    "headerToolbar": {
-                        "left": "prev,next today",
-                        "center": "title",
-                        "right": "dayGridMonth,dayGridWeek"
-                    },
-                    "editable": False,
-                    "selectable": True,
-                }
-                
-                calendar(events=eventos, options=calendar_options)
-            else:
-                st.info("Nenhuma reserva para exibir no calendário.")
-                
-        except Exception as e:
-            st.error(f"Erro ao processar calendário: {e}")
+                    for (data_fmt, prof), lista_espacos in reservas_agrupadas.items():
+                        qtd_aulas = len(lista_espacos)
+                        espacos_desc = ", ".join(sorted(set(lista_espacos)))
+                        
+                        # Mostra condensado para não estourar a tela
+                        titulo_compacto = f"{prof}: {espacos_desc} ({qtd_aulas}ª)"
+                        
+                        eventos.append({
+                            "title": titulo_compacto,
+                            "start": data_fmt,
+                            "backgroundColor": mapa_cores.get(prof, "#1f77b4"),
+                            "borderColor": mapa_cores.get(prof, "#1f77b4"),
+                            "allDay": True,
+                            "extendedProps": {
+                                "detalhes": f"Professor: {prof}\nEspaços: {espacos_desc}\nTotal: {qtd_aulas} aulas"
+                            }
+                        })
+                    
+                    calendar_options = {
+                        "locale": "pt-br",
+                        "initialView": "dayGridMonth",
+                        "dayMaxEvents": True, # Limita linhas exibidas com "Ver mais"
+                        "headerToolbar": {
+                            "left": "prev,next today",
+                            "center": "title",
+                            "right": "dayGridMonth,dayGridWeek"
+                        },
+                        "editable": False,
+                        "selectable": True,
+                    }
+                    
+                    calendar(events=eventos, options=calendar_options)
+                else:
+                    st.info("Nenhuma reserva ativa para exibir no calendário.")
+                    
+            except Exception as e:
+                st.error(f"Erro ao processar calendário: {e}")
 
     # =========================================================
     # ABA 2: LISTA DIÁRIA
