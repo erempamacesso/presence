@@ -37,14 +37,15 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
         "🗓️ Calendário", "📋 Lista Diária", "👩‍🏫 Minhas Reservas", "✍️ Nova Reserva", "❌ Gerenciar", "🔑 Assinatura"
     ])
 
-    # =========================================================
-    # ABA 1: CALENDÁRIO (AGORA COM PAGINAÇÃO E PARSER DE DATAS)
+    
+# =========================================================
+    # ABA 1: CALENDÁRIO (PAGINAÇÃO + TÍTULOS SUPER DESCRITIVOS)
     # =========================================================
     with aba_cal:
         st.subheader("Visão Geral do Mês")
         with st.spinner("Carregando todas as reservas do calendário..."):
             try:
-                # 1. BURLANDO O LIMITE DE 1000 LINHAS DO SUPABASE (Paginação)
+                # 1. BURLANDO O LIMITE DE 1000 LINHAS DO SUPABASE (Mantido intacto)
                 todas_reservas_ativas = []
                 inicio = 0
                 tamanho_pagina = 1000
@@ -59,18 +60,19 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                     inicio += tamanho_pagina
 
                 if todas_reservas_ativas:
-                    # 2. AGRUPAMENTO E TRATAMENTO DE DATAS BLINDADO
+                    # 2. AGRUPAMENTO INTELIGENTE (Por Data e Professor)
                     reservas_agrupadas = {}
                     
                     for r in todas_reservas_ativas:
                         prof = r.get('professor', 'Prof').strip()
                         espaco = r.get('espaco', 'Espaço')
+                        aula = r.get('periodo', r.get('horario', r.get('aula', '')))
+                        equipamentos = r.get('equipamentos', '')
                         raw_data = r.get('data_reserva') or r.get('data') or ""
                         
                         if not raw_data: continue
                         
-                        # PARSER DE DATA: Garante que "04/05/2026" ou "2026-05-04" 
-                        # virem obrigatoriamente "YYYY-MM-DD" para o calendário não bugar
+                        # PARSER DE DATA (Mantido intacto)
                         data_str = str(raw_data).strip()
                         data_valida = None
                         
@@ -89,35 +91,72 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                                     pass
                                     
                         if not data_valida:
-                            continue # Se não for uma data legível, ignora
+                            continue 
 
                         # Agrupa as aulas no mesmo dia para o mesmo professor
                         chave = (data_valida, prof)
                         if chave not in reservas_agrupadas:
                             reservas_agrupadas[chave] = []
-                        reservas_agrupadas[chave].append(espaco)
+                        
+                        # Guardamos todos os detalhes em vez de só o espaço
+                        reservas_agrupadas[chave].append({
+                            "espaco": espaco,
+                            "aula": aula,
+                            "equip": equipamentos
+                        })
 
-                    # 3. PREPARAÇÃO DOS EVENTOS DO CALENDÁRIO
+                    # 3. PREPARAÇÃO DOS EVENTOS (Criando Títulos Descritivos)
                     eventos = []
                     todos_profs = sorted(list(set(p for d, p in reservas_agrupadas.keys())))
                     mapa_cores = {prof: CORES_PROFESSORES[i % len(CORES_PROFESSORES)] for i, prof in enumerate(todos_profs)}
                     
-                    for (data_fmt, prof), lista_espacos in reservas_agrupadas.items():
-                        qtd_aulas = len(lista_espacos)
-                        espacos_desc = ", ".join(sorted(set(lista_espacos)))
+                    for (data_fmt, prof), lista_detalhes in reservas_agrupadas.items():
                         
-                        # Mostra condensado para não estourar a tela
-                        titulo_compacto = f"{prof}: {espacos_desc} ({qtd_aulas}ª)"
+                        # Agrupa por espaço para organizar a leitura
+                        resumo_espacos = {}
+                        todos_equipamentos = set()
+                        
+                        for det in lista_detalhes:
+                            esp = det["espaco"]
+                            if esp not in resumo_espacos:
+                                resumo_espacos[esp] = []
+                            
+                            # Limpa " Aula" para ficar só "1ª", "2ª" e caber no bloco
+                            aula_curta = str(det["aula"]).replace(" Aula", "").strip()
+                            if aula_curta:
+                                resumo_espacos[esp].append(aula_curta)
+                                
+                            # Coleta equipamentos, ignorando vazios ou hífens
+                            eq_raw = str(det["equip"]).strip()
+                            if eq_raw and eq_raw != "-":
+                                for e in eq_raw.split(","):
+                                    todos_equipamentos.add(e.strip())
+
+                        # Constrói o texto por espaço. Ex: Auditório [1ª, 2ª]
+                        partes_texto = []
+                        for esp, aulas in resumo_espacos.items():
+                            aulas_ordenadas = ", ".join(sorted(set(aulas)))
+                            if aulas_ordenadas:
+                                partes_texto.append(f"{esp} [{aulas_ordenadas}]")
+                            else:
+                                partes_texto.append(f"{esp}")
+                                
+                        texto_espacos = " + ".join(partes_texto)
+                        
+                        # Monta o Título Final
+                        titulo_completo = f"{prof} | {texto_espacos}"
+                        
+                        # Adiciona os equipamentos no final com um ícone, se houver
+                        if todos_equipamentos:
+                            eq_str = ", ".join(sorted(todos_equipamentos))
+                            titulo_completo += f" 🔌 {eq_str}"
                         
                         eventos.append({
-                            "title": titulo_compacto,
+                            "title": titulo_completo,
                             "start": data_fmt,
                             "backgroundColor": mapa_cores.get(prof, "#1f77b4"),
                             "borderColor": mapa_cores.get(prof, "#1f77b4"),
                             "allDay": True,
-                            "extendedProps": {
-                                "detalhes": f"Professor: {prof}\nEspaços: {espacos_desc}\nTotal: {qtd_aulas} aulas"
-                            }
                         })
                     
                     calendar_options = {
