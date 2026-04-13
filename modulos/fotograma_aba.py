@@ -85,10 +85,9 @@ def abrir_popup_busca_ativa(aluno_id, nome, supabase):
     
     try:
         res = supabase.table("historico_busca_ativa").select("*").eq("aluno_id", aluno_id).order("data_registro", desc=True).execute()
-        dados = res.data if hasattr(res, 'data') and res.data else []
         
-        if dados:
-            df = pd.DataFrame(dados)
+        if res.data:
+            df = pd.DataFrame(res.data)
             df['data'] = pd.to_datetime(df['data_registro']).dt.strftime('%d/%m/%Y às %H:%M')
             
             for _, row in df.iterrows():
@@ -110,10 +109,9 @@ def abrir_popup_ocorrencia(aluno_id, nome, supabase):
     
     try:
         res = supabase.table("ocorrencias_disciplinares").select("*").eq("aluno_id", aluno_id).order("created_at", desc=True).execute()
-        dados = res.data if hasattr(res, 'data') and res.data else []
         
-        if dados:
-            for row in dados:
+        if res.data:
+            for row in res.data:
                 with st.container(border=True):
                     data_fmt = pd.to_datetime(row['created_at']).strftime('%d/%m/%Y')
                     st.caption(f"📅 Registrado em: {data_fmt} por {row.get('quem_registrou', 'Sistema')}")
@@ -133,7 +131,7 @@ def abrir_popup_foto(nome, url_img):
     st.image(url_img, use_container_width=True)
 
 # ==========================================
-# 🛠️ FUNÇÕES DE TRATAMENTO E CACHE
+# 🛠️ FUNÇÕES DE TRATAMENTO E CACHE (OTIMIZADAS PARA GITHUB)
 # ==========================================
 def limpar_texto(texto):
     if not texto: return ""
@@ -152,32 +150,27 @@ def calcular_idade_completa(data_nascimento):
         return f"{int(idade)} anos"
     except: return ""
 
+# 👇 NOVA FUNÇÃO: Busca direto do GitHub (COM AVISO DE ERROS)
 @st.cache_data(ttl=3600)
 def listar_fotos_github():
     try:
-        # Acesso seguro aos secrets (evita KeyError que quebra o app inteiro)
-        token = st.secrets.get("GITHUB_TOKEN") if hasattr(st, "secrets") else None
-        
-        if not token:
+        # 1. Verifica se a senha foi configurada
+        if "GITHUB_TOKEN" not in st.secrets:
+            st.error("🚨 ERRO: 'GITHUB_TOKEN' não configurado nos secrets do Streamlit local!")
             return {}
             
         from github import Github, Auth
-        auth = Auth.Token(token)
+        auth = Auth.Token(st.secrets["GITHUB_TOKEN"])
         g = Github(auth=auth)
         repo = g.get_repo("erempamacesso/presence")
         contents = repo.get_contents("alunos_fotos")
-        
-        # Garante que contents seja sempre uma lista interável
-        if not isinstance(contents, list):
-            contents = [contents]
-            
-        return {limpar_texto(arq.name): arq.download_url for arq in contents if arq.download_url}
+        return {limpar_texto(arq.name): arq.download_url for arq in contents}
         
     except ImportError:
-        st.error("🚨 ERRO: A biblioteca 'PyGithub' não está instalada!")
+        st.error("🚨 ERRO: A biblioteca 'PyGithub' não está instalada! Rode 'pip install PyGithub' no terminal.")
         return {}
     except Exception as e:
-        # Retorna dicionário vazio silenciosamente para não quebrar a tela de fotos
+        st.error(f"🚨 ERRO na conexão com GitHub: {e}")
         return {}
 
 # ==========================================
@@ -194,7 +187,7 @@ def gerar_pdf_pendencias(turma, alunos_pendentes):
     pdf.cell(50, 10, "Status", 1, ln=True, align='C')
     pdf.set_font("Arial", "", 10)
     for a in alunos_pendentes:
-        pdf.cell(140, 10, str(a.get('nome', ''))[:50], 1)
+        pdf.cell(140, 10, str(a['nome'])[:50], 1)
         pdf.cell(50, 10, "[ ] Foto Coletada", 1, ln=True, align='C')
     return pdf.output(dest='S').encode('latin-1')
 
@@ -235,27 +228,22 @@ def exibir_fotograma(supabase):
     st.title("📸 Fotograma (Mapa de Sala)")
     
     try:
-        # Busca Segura de Turmas
         res_turmas = supabase.table("alunos").select("turma").execute()
-        dados_turmas = res_turmas.data if hasattr(res_turmas, 'data') and res_turmas.data else []
-        lista_turmas = sorted(list(set([r['turma'] for r in dados_turmas if r.get('turma')])))
+        lista_turmas = sorted(list(set([r['turma'] for r in res_turmas.data if r.get('turma')])))
         
+        # 👇 Chama a função nova do GitHub
         mapa_fotos = listar_fotos_github()
-        if not mapa_fotos:
-            st.warning("⚠️ Imagens do GitHub temporariamente indisponíveis ou Token ausente.")
 
         # Buscando alunos em Busca Ativa
         res_busca = supabase.table("historico_busca_ativa").select("aluno_id").in_("status_atual", ["Em acompanhamento", "Alerta"]).execute()
-        alunos_em_busca = {r['aluno_id'] for r in res_busca.data} if hasattr(res_busca, 'data') and res_busca.data else set()
+        alunos_em_busca = {r['aluno_id'] for r in res_busca.data} if res_busca.data else set()
 
         # Buscando alunos com ocorrência disciplinar ativa
         res_ocorrencias = supabase.table("ocorrencias_disciplinares").select("aluno_id").eq("status", "Ativa").execute()
-        alunos_com_ocorrencia = {r['aluno_id'] for r in res_ocorrencias.data} if hasattr(res_ocorrencias, 'data') and res_ocorrencias.data else set()
+        alunos_com_ocorrencia = {r['aluno_id'] for r in res_ocorrencias.data} if res_ocorrencias.data else set()
 
-        # Contagem Global
         res_todos_alunos = supabase.table("alunos").select("nome").execute()
-        dados_todos_alunos = res_todos_alunos.data if hasattr(res_todos_alunos, 'data') and res_todos_alunos.data else []
-        total_sem_foto_escola = sum(1 for a in dados_todos_alunos if limpar_texto(a.get('nome')) not in mapa_fotos)
+        total_sem_foto_escola = sum(1 for a in res_todos_alunos.data if limpar_texto(a.get('nome')) not in mapa_fotos)
         
         if total_sem_foto_escola > 0:
             st.info(f"🏫 **Visão Geral:** Faltam **{total_sem_foto_escola}** fotos para completar 100% do mapa da escola.")
@@ -263,13 +251,10 @@ def exibir_fotograma(supabase):
             st.success("🏫 **Visão Geral:** Parabéns! 100% dos estudantes estão com foto cadastrada.")
 
         if lista_turmas:
-            # Substituído st.pills por st.selectbox para compatibilidade absoluta
-            turma_sel = st.selectbox("Selecione a Turma:", ["-- Escolha --"] + lista_turmas)
+            turma_sel = st.pills("Selecione a Turma:", options=lista_turmas)
             
-            if turma_sel and turma_sel != "-- Escolha --":
-                res_alunos = supabase.table("alunos").select("*").eq("turma", turma_sel).order("nome").execute()
-                alunos = res_alunos.data if hasattr(res_alunos, 'data') and res_alunos.data else []
-                
+            if turma_sel:
+                alunos = supabase.table("alunos").select("*").eq("turma", turma_sel).order("nome").execute().data
                 alunos_sem_foto = [a for a in alunos if limpar_texto(a.get('nome')) not in mapa_fotos]
                 
                 col_btn1, col_btn2 = st.columns(2)
@@ -281,13 +266,13 @@ def exibir_fotograma(supabase):
                     with col_btn2:
                         with st.popover(f"🚩 {len(alunos_sem_foto)} Fotos Pendentes nesta Turma", use_container_width=True):
                             st.write("Estes alunos precisam de foto atualizada:")
-                            st.dataframe(pd.DataFrame([{"Nome": a.get('nome', '')} for a in alunos_sem_foto]), hide_index=True)
+                            st.dataframe(pd.DataFrame([{"Nome": a['nome']} for a in alunos_sem_foto]), hide_index=True)
                             pdf_pend = gerar_pdf_pendencias(turma_sel, alunos_sem_foto)
                             st.download_button("📄 Baixar Lista de Busca", data=pdf_pend, file_name=f"Busca_Fotos_{turma_sel}.pdf", mime="application/pdf", use_container_width=True, type="primary")
 
                 st.divider()
                 
-                # --- GRID DE FOTOS ---
+                # --- GRID DE FOTOS COM LÓGICA DE MÚLTIPLAS CORES ---
                 num_cols = 4 
                 for i in range(0, len(alunos), num_cols):
                     linha_alunos = alunos[i : i + num_cols]
@@ -297,8 +282,8 @@ def exibir_fotograma(supabase):
                         with cols[j]:
                             status_aee = aluno.get('status_aee', 'Nenhum')
                             is_aee = status_aee != "Nenhum"
-                            is_busca = aluno.get('id') in alunos_em_busca
-                            is_ocorrencia = aluno.get('id') in alunos_com_ocorrencia
+                            is_busca = aluno['id'] in alunos_em_busca
+                            is_ocorrencia = aluno['id'] in alunos_com_ocorrencia
                             
                             cores_borda = []
                             if is_aee: 
@@ -319,6 +304,7 @@ def exibir_fotograma(supabase):
                             nome = aluno.get("nome", "Sem Nome")
                             chave = limpar_texto(nome)
                             
+                            # 👇 Pega a URL que já veio completinha do GitHub
                             url_img = mapa_fotos.get(chave)
                             
                             if url_img:
@@ -352,29 +338,29 @@ def exibir_fotograma(supabase):
                                 
                                 if tem_foto:
                                     with cols_btn[idx_btn]:
-                                        if st.button("🔍", help="Zoom", key=f"zoom_{aluno.get('id')}", use_container_width=True):
+                                        if st.button("🔍", help="Zoom", key=f"zoom_{aluno['id']}", use_container_width=True):
                                             abrir_popup_foto(nome, url_img)
                                     idx_btn += 1
                                 
                                 if is_aee:
                                     with cols_btn[idx_btn]:
-                                        if st.button("🧩", help="Ficha AEE", key=f"aee_{aluno.get('id')}", use_container_width=True):
+                                        if st.button("🧩", help="Ficha AEE", key=f"aee_{aluno['id']}", use_container_width=True):
                                             abrir_popup_aee(nome, status_aee, aluno.get('cid',''), aluno.get('relatorio_aee',''))
                                     idx_btn += 1
                                 
                                 if is_busca:
                                     with cols_btn[idx_btn]:
-                                        if st.button("🔎", help="Busca Ativa", key=f"ba_{aluno.get('id')}", type="primary", use_container_width=True):
-                                            abrir_popup_busca_ativa(aluno.get('id'), nome, supabase)
+                                        if st.button("🔎", help="Busca Ativa", key=f"ba_{aluno['id']}", type="primary", use_container_width=True):
+                                            abrir_popup_busca_ativa(aluno['id'], nome, supabase)
                                     idx_btn += 1
 
                                 if is_ocorrencia:
                                     with cols_btn[idx_btn]:
-                                        if st.button("🚨", help="Ocorrência Disciplinar", key=f"oc_{aluno.get('id')}", type="primary", use_container_width=True):
-                                            abrir_popup_ocorrencia(aluno.get('id'), nome, supabase)
+                                        if st.button("🚨", help="Ocorrência Disciplinar", key=f"oc_{aluno['id']}", type="primary", use_container_width=True):
+                                            abrir_popup_ocorrencia(aluno['id'], nome, supabase)
                                     idx_btn += 1
                             else:
                                 st.write("") 
 
     except Exception as e:
-        st.error(f"Erro inesperado ao carregar fotograma. Detalhe técnico: {e}")
+        st.error(f"Erro ao carregar fotograma: {e}")
