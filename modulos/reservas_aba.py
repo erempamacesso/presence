@@ -287,8 +287,9 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     # =========================================================
     # INÍCIO - ABA 4: GERENCIAR / CANCELAR
     # =========================================================
+    # --- Dentro da aba_cancelar ---
     with aba_cancelar:
-    st.subheader("Cancelar Reserva")
+        st.subheader("Cancelar Reserva")
     
     # Busca todas as reservas para mostrar na lista de exclusão
     res_todas = supabase.table("reservas").select("*").execute()
@@ -325,32 +326,33 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     # =========================================================
     # INÍCIO - ABA 5: ASSINATURA
     # =========================================================
-    with aba_assinatura:
-    st.subheader("Cadastro de Assinatura Eletrônica")
-    st.info("Escolha seu nome na lista oficial da escola para criar sua senha.")
-    
-    # IMPORTANTE: Use a lista_professores_antiga aqui, para permitir novos cadastros!
-    nome_prof = st.selectbox("Seu Nome:", ["-- Selecione --"] + lista_professores_antiga, key="aba5_nome")
-    matricula_prof = st.text_input("Defina sua Matrícula (Senha):", type="password", key="aba5_matricula")
-    
-    if st.button("💾 Salvar Assinatura", type="primary"):
-        if nome_prof == "-- Selecione --" or not matricula_prof:
-            st.error("⚠️ Preencha todos os campos.")
-        else:
-            try:
-                # Limpa o nome para evitar erros de espaço
-                nome_limpo = nome_prof.strip()
-                
-                # Verifica se já existe para decidir entre UPDATE ou INSERT
-                verif = supabase.table("professores_matriculas").select("*").eq("professor", nome_limpo).execute()
-                
-                if verif.data:
-                    supabase.table("professores_matriculas").update({"matricula": matricula_prof}).eq("professor", nome_limpo).execute()
-                else:
-                    supabase.table("professores_matriculas").insert({"professor": nome_limpo, "matricula": matricula_prof}).execute()
-                
-                st.success(f"✅ Assinatura de {nome_limpo} salva com sucesso!")
-                time.sleep(1)
-                st.rerun()
-            except Exception as e:
-                st.error(f"Erro ao salvar: {e}")
+    # --- Dentro da aba_assinatura ---
+        with aba_assinatura:
+            st.subheader("Cadastro de Assinatura Eletrônica")
+        st.info("Escolha seu nome na lista oficial da escola para criar sua senha.")
+        
+        # IMPORTANTE: Use a lista_professores_antiga aqui, para permitir novos cadastros!
+        nome_prof = st.selectbox("Seu Nome:", ["-- Selecione --"] + lista_professores_antiga, key="aba5_nome")
+        matricula_prof = st.text_input("Defina sua Matrícula (Senha):", type="password", key="aba5_matricula")
+        
+        if st.button("💾 Salvar Assinatura", type="primary"):
+            if nome_prof == "-- Selecione --" or not matricula_prof:
+                st.error("⚠️ Preencha todos os campos.")
+            else:
+                try:
+                    # Limpa o nome para evitar erros de espaço
+                    nome_limpo = nome_prof.strip()
+                    
+                    # Verifica se já existe para decidir entre UPDATE ou INSERT
+                    verif = supabase.table("professores_matriculas").select("*").eq("professor", nome_limpo).execute()
+                    
+                    if verif.data:
+                        supabase.table("professores_matriculas").update({"matricula": matricula_prof}).eq("professor", nome_limpo).execute()
+                    else:
+                        supabase.table("professores_matriculas").insert({"professor": nome_limpo, "matricula": matricula_prof}).execute()
+                    
+                    st.success(f"✅ Assinatura de {nome_limpo} salva com sucesso!")
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao salvar: {e}")
