@@ -8,7 +8,7 @@ def mostrar_tela_desempenho(supabase):
         # Busca as notas usando o ID do aluno logado
         res_notas = supabase.table("notas_atividades")\
             .select("*")\
-            .eq("aluno_id", st.session_state.aluno['id'])\
+            .eq("aluno_id", str(st.session_state.aluno['id']))\
             .eq("unidade", "1º Bimestre")\
             .execute()
 
