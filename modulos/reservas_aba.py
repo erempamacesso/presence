@@ -34,7 +34,7 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
 
     # Definição das Abas (AGORA COM 6 ABAS)
     aba_cal, aba_lista, aba_minhas, aba_nova, aba_cancelar, aba_assinatura = st.tabs([
-        "🗓️ Calendário", "📋 Lista Diária", "👩‍🏫 Minhas Reservas", "✍️ Nova Reserva", "❌ Gerenciar", "🔑 Assinatura"
+        "🗓️ Calendário", "👩‍🏫 Minhas Reservas", "✍️ Nova Reserva", "❌ Gerenciar", "🔑 Assinatura"
     ])
 
 
@@ -186,50 +186,6 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                 st.error(f"Erro ao processar agenda: {e}")
 
     # =========================================================
-    # ABA 2: LISTA DIÁRIA
-    # =========================================================
-    with aba_lista:
-        st.subheader("Visão Diária por Espaço")
-        d_lista = st.date_input("Ver detalhes do dia:", value=datetime.date.today(), format="DD/MM/YYYY", key="d_lista")
-        
-        try:
-            res_lista = supabase.table("reservas").select("*").execute()
-            if res_lista.data:
-                reservas_por_espaco = {}
-                for r in res_lista.data:
-                    data_r = r.get("data_reserva") or r.get("data") or ""
-                    try:
-                        data_r_fmt = str(pd.to_datetime(str(data_r), errors='coerce').date())
-                    except Exception:
-                        data_r_fmt = str(data_r)
-                    
-                    if data_r_fmt == str(d_lista):
-                        esp = r.get("espaco", "Sem Espaço")
-                        if esp not in reservas_por_espaco:
-                            reservas_por_espaco[esp] = []
-                        reservas_por_espaco[esp].append(r)
-                
-                if reservas_por_espaco:
-                    for espaco, lista_res in reservas_por_espaco.items():
-                        with st.expander(f"📍 {espaco} ({len(lista_res)} reservas)", expanded=True):
-                            dados_tabela = []
-                            for r in lista_res:
-                                status_bd = r.get("status", "Ativa")
-                                situacao_icone = "🟢 Ativa" if status_bd == "Ativa" else "❌ Cancelada"
-                                dados_tabela.append({
-                                    "Aula/Horário": r.get("periodo", r.get("horario", r.get("aula", ""))),
-                                    "Professor": r.get("professor", ""),
-                                    "Equipamentos": r.get("equipamentos", "") or "-",
-                                    "Situação": situacao_icone,
-                                    "Cancelado Por": r.get("cancelado_por", "-") if status_bd != "Ativa" else "-"
-                                })
-                            st.dataframe(pd.DataFrame(dados_tabela).sort_values("Aula/Horário"), use_container_width=True, hide_index=True)
-                else:
-                    st.info(f"📅 Nenhuma reserva encontrada para {d_lista.strftime('%d/%m/%Y')}.")
-        except Exception as e:
-            st.error(f"Erro ao carregar lista: {e}")
-
-   # =========================================================
     # ABA 3: MINHAS RESERVAS (INTERFACE LISTA CLEAN & MOBILE)
     # =========================================================
     with aba_minhas:
