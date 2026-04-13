@@ -13,7 +13,6 @@ def mostrar_tela_dashboard(db_provas, supabase_provas_for_desempenho):
         </div>
     """, unsafe_allow_html=True)
 
-    # Criação das 3 abas
     tab_atividades, tab_concluidas, tab_perfil = st.tabs(["📝 Novas Atividades", "✅ Concluídas", "📊 Meu Desempenho"])
 
     with st.spinner("Buscando atividades..."):
@@ -22,24 +21,34 @@ def mostrar_tela_dashboard(db_provas, supabase_provas_for_desempenho):
         if "2" in turma_bruta: serie_aluno = "2º Ano"
         elif "3" in turma_bruta: serie_aluno = "3º Ano"
 
-        # Busca provas ativas para a série do aluno
         res_p = db_provas.table("modelos_prova").select("*").eq("ativa", True).eq("serie", serie_aluno).execute()
         provas_ativas = res_p.data
         
-        # Verifica quais provas o aluno já fez
+        # --- BUSCA AVANÇADA DE RESULTADOS ---
+        # Agora buscamos também o campo "acertou" para calcular a nota!
         ja_fez_dict = {}
+        acertos_dict = {}
+        
         if provas_ativas:
             ids_ativas = [p['id'] for p in provas_ativas]
-            res_JF = db_provas.table("resultados_provas").select("prova_id").eq("aluno_id", str(aluno.get('id', ''))).in_("prova_id", ids_ativas).execute()
-            ja_fez_dict = {x['prova_id']: True for x in res_JF.data}
+            res_JF = db_provas.table("resultados_provas").select("prova_id, acertou").eq("aluno_id", str(aluno.get('id', ''))).in_("prova_id", ids_ativas).execute()
+            
+            for r in res_JF.data:
+                pid = r['prova_id']
+                ja_fez_dict[pid] = True
+                
+                # Conta os acertos do aluno naquela prova
+                if pid not in acertos_dict:
+                    acertos_dict[pid] = 0
+                if r.get('acertou') == True:
+                    acertos_dict[pid] += 1
 
     # --- ABA 1: PROVAS PENDENTES ---
     with tab_atividades:
         tem_nova = False
         if provas_ativas:
             for p in provas_ativas:
-                foi_feita = ja_fez_dict.get(p['id'], False)
-                if not foi_feita:
+                if not ja_fez_dict.get(p['id'], False):
                     tem_nova = True
                     with st.container(border=True):
                         col_t, col_b = st.columns([3, 1])
@@ -54,21 +63,33 @@ def mostrar_tela_dashboard(db_provas, supabase_provas_for_desempenho):
         if not tem_nova:
             st.info("🎉 Parabéns! Você não tem nenhuma atividade nova pendente.")
 
-    # --- ABA 2: PROVAS CONCLUÍDAS (A QUE FALTAVA!) ---
+    # --- ABA 2: PROVAS CONCLUÍDAS (AGORA COM NOTAS!) ---
     with tab_concluidas:
         tem_concluida = False
         if provas_ativas:
             for p in provas_ativas:
-                foi_feita = ja_fez_dict.get(p['id'], False)
-                if foi_feita:
+                pid = p['id']
+                if ja_fez_dict.get(pid, False):
                     tem_concluida = True
                     with st.container(border=True):
                         col_t, col_b = st.columns([3, 1])
                         col_t.markdown(f"### {p['titulo']}")
-                        col_t.caption("✅ Atividade já realizada")
                         
-                        # AQUI ESTÁ A MÁGICA! O botão que leva para o seu código de resultados
-                        if col_b.button(f"🔍 Ver Resultado", key=f"res_{p['id']}", use_container_width=True):
+                        # Verifica se o professor liberou a nota (cadeado aberto)
+                        notas_liberadas = p.get('notas_liberadas', False)
+                        
+                        if notas_liberadas:
+                            # Se o cadeado estiver aberto, calcula a nota e mostra!
+                            valor_cada = p.get('valor_questao', 1.0)
+                            acertos_aluno = acertos_dict.get(pid, 0)
+                            nota_final = acertos_aluno * valor_cada
+                            
+                            col_t.markdown(f"✅ **Concluída** &nbsp;|&nbsp; 🎯 **Sua Nota: {nota_final:.1f}**")
+                        else:
+                            # Se o cadeado estiver fechado, faz suspense
+                            col_t.markdown("✅ **Concluída** &nbsp;|&nbsp; 🔒 *Nota em avaliação pelo professor*")
+                        
+                        if col_b.button(f"🔍 Ver Resultado", key=f"res_{pid}", use_container_width=True):
                             st.session_state.prova_resultado = p
                             st.session_state.etapa = "ver_meu_resultado"
                             st.rerun()
