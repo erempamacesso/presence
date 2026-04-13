@@ -39,117 +39,77 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
 
     
 # =========================================================
-    # ABA 1: CALENDÁRIO (PAGINAÇÃO + TÍTULOS SUPER DESCRITIVOS)
+    # ABA 1: CALENDÁRIO (MULTI-DISPOSITIVO: PC & CELULAR)
     # =========================================================
     with aba_cal:
         st.subheader("Visão Geral do Mês")
-        with st.spinner("Carregando todas as reservas do calendário..."):
+        
+        # --- SELETOR DE DISPOSITIVO ---
+        col_view1, col_view2 = st.columns([1, 2])
+        with col_view1:
+            modo_tela = st.radio(
+                "Visualização:",
+                ["🖥️ Computador", "📱 Celular"],
+                horizontal=True,
+                help="O modo celular mostra as reservas em formato de lista, ideal para telas pequenas."
+            )
+
+        with st.spinner("Carregando reservas..."):
             try:
-                # 1. BURLANDO O LIMITE DE 1000 LINHAS DO SUPABASE (Mantido intacto)
+                # 1. BUSCA DE DADOS (Lógica de paginação mantida)
                 todas_reservas_ativas = []
                 inicio = 0
                 tamanho_pagina = 1000
-                
                 while True:
                     res_pagina = supabase.table("reservas").select("*").eq("status", "Ativa").range(inicio, inicio + tamanho_pagina - 1).execute()
-                    if not res_pagina.data:
-                        break
+                    if not res_pagina.data: break
                     todas_reservas_ativas.extend(res_pagina.data)
-                    if len(res_pagina.data) < tamanho_pagina:
-                        break
+                    if len(res_pagina.data) < tamanho_pagina: break
                     inicio += tamanho_pagina
 
                 if todas_reservas_ativas:
-                    # 2. AGRUPAMENTO INTELIGENTE (Por Data e Professor)
+                    # 2. PROCESSAMENTO (Lógica de títulos mantida)
+                    eventos = []
                     reservas_agrupadas = {}
-                    
                     for r in todas_reservas_ativas:
                         prof = r.get('professor', 'Prof').strip()
                         espaco = r.get('espaco', 'Espaço')
                         aula = r.get('periodo', r.get('horario', r.get('aula', '')))
-                        equipamentos = r.get('equipamentos', '')
+                        equip = r.get('equipamentos', '')
                         raw_data = r.get('data_reserva') or r.get('data') or ""
                         
-                        if not raw_data: continue
-                        
-                        # PARSER DE DATA (Mantido intacto)
+                        # Parser de Data Blindado
                         data_str = str(raw_data).strip()
-                        data_valida = None
-                        
                         try:
                             dt_obj = pd.to_datetime(data_str, format="%Y-%m-%d")
-                            data_valida = dt_obj.strftime("%Y-%m-%d")
-                        except ValueError:
-                            try:
-                                dt_obj = pd.to_datetime(data_str, format="%d/%m/%Y")
-                                data_valida = dt_obj.strftime("%Y-%m-%d")
-                            except ValueError:
-                                try:
-                                    dt_obj = pd.to_datetime(data_str, dayfirst=True)
-                                    data_valida = dt_obj.strftime("%Y-%m-%d")
-                                except:
-                                    pass
-                                    
-                        if not data_valida:
-                            continue 
-
-                        # Agrupa as aulas no mesmo dia para o mesmo professor
-                        chave = (data_valida, prof)
-                        if chave not in reservas_agrupadas:
-                            reservas_agrupadas[chave] = []
+                        except:
+                            try: dt_obj = pd.to_datetime(data_str, dayfirst=True)
+                            except: continue
                         
-                        # Guardamos todos os detalhes em vez de só o espaço
-                        reservas_agrupadas[chave].append({
-                            "espaco": espaco,
-                            "aula": aula,
-                            "equip": equipamentos
-                        })
+                        data_valida = dt_obj.strftime("%Y-%m-%d")
+                        chave = (data_valida, prof)
+                        if chave not in reservas_agrupadas: reservas_agrupadas[chave] = []
+                        reservas_agrupadas[chave].append({"espaco": espaco, "aula": aula, "equip": equip})
 
-                    # 3. PREPARAÇÃO DOS EVENTOS (Criando Títulos Descritivos)
-                    eventos = []
+                    # 3. CRIAÇÃO DOS EVENTOS
                     todos_profs = sorted(list(set(p for d, p in reservas_agrupadas.keys())))
                     mapa_cores = {prof: CORES_PROFESSORES[i % len(CORES_PROFESSORES)] for i, prof in enumerate(todos_profs)}
                     
                     for (data_fmt, prof), lista_detalhes in reservas_agrupadas.items():
-                        
-                        # Agrupa por espaço para organizar a leitura
                         resumo_espacos = {}
                         todos_equipamentos = set()
-                        
                         for det in lista_detalhes:
                             esp = det["espaco"]
-                            if esp not in resumo_espacos:
-                                resumo_espacos[esp] = []
-                            
-                            # Limpa " Aula" para ficar só "1ª", "2ª" e caber no bloco
+                            if esp not in resumo_espacos: resumo_espacos[esp] = []
                             aula_curta = str(det["aula"]).replace(" Aula", "").strip()
-                            if aula_curta:
-                                resumo_espacos[esp].append(aula_curta)
-                                
-                            # Coleta equipamentos, ignorando vazios ou hífens
+                            if aula_curta: resumo_espacos[esp].append(aula_curta)
                             eq_raw = str(det["equip"]).strip()
                             if eq_raw and eq_raw != "-":
-                                for e in eq_raw.split(","):
-                                    todos_equipamentos.add(e.strip())
+                                for e in eq_raw.split(","): todos_equipamentos.add(e.strip())
 
-                        # Constrói o texto por espaço. Ex: Auditório [1ª, 2ª]
-                        partes_texto = []
-                        for esp, aulas in resumo_espacos.items():
-                            aulas_ordenadas = ", ".join(sorted(set(aulas)))
-                            if aulas_ordenadas:
-                                partes_texto.append(f"{esp} [{aulas_ordenadas}]")
-                            else:
-                                partes_texto.append(f"{esp}")
-                                
-                        texto_espacos = " + ".join(partes_texto)
-                        
-                        # Monta o Título Final
+                        texto_espacos = " + ".join([f"{esp} [{', '.join(sorted(set(aulas)))}]" for esp, aulas in resumo_espacos.items()])
                         titulo_completo = f"{prof} | {texto_espacos}"
-                        
-                        # Adiciona os equipamentos no final com um ícone, se houver
-                        if todos_equipamentos:
-                            eq_str = ", ".join(sorted(todos_equipamentos))
-                            titulo_completo += f" 🔌 {eq_str}"
+                        if todos_equipamentos: titulo_completo += f" 🔌 {', '.join(sorted(todos_equipamentos))}"
                         
                         eventos.append({
                             "title": titulo_completo,
@@ -158,27 +118,27 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                             "borderColor": mapa_cores.get(prof, "#1f77b4"),
                             "allDay": True,
                         })
+
+                    # 4. CONFIGURAÇÃO DINÂMICA (AQUI ESTÁ O SEGREDO)
+                    visao_padrao = "dayGridMonth" if modo_tela == "🖥️ Computador" else "listMonth"
                     
                     calendar_options = {
                         "locale": "pt-br",
-                        "initialView": "dayGridMonth",
-                        "weekends": False,  # <--- A MÁGICA AQUI: Oculta sábado e domingo
-                        "dayMaxEvents": True, # Limita linhas exibidas com "Ver mais"
+                        "initialView": visao_padrao,
+                        "weekends": False,
+                        "dayMaxEvents": True,
                         "headerToolbar": {
                             "left": "prev,next today",
                             "center": "title",
-                            "right": "dayGridMonth,dayGridWeek"
+                            "right": "dayGridMonth,listMonth" # Permite trocar manualmente também
                         },
-                        "editable": False,
-                        "selectable": True,
                     }
                     
                     calendar(events=eventos, options=calendar_options)
                 else:
-                    st.info("Nenhuma reserva ativa para exibir no calendário.")
-                    
+                    st.info("Nenhuma reserva ativa.")
             except Exception as e:
-                st.error(f"Erro ao processar calendário: {e}")
+                st.error(f"Erro: {e}")
 
     # =========================================================
     # ABA 2: LISTA DIÁRIA
