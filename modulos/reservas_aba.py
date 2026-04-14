@@ -138,19 +138,20 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                         })
                     
                     # 4. CONFIGURAÇÃO CLEAN E DIRETA
-                    calendar_options = {
+                        calendar_options = {
                         "locale": "pt-br",
-                        "initialView": "listMonth", # FIXADO EM LISTA MENSAL
-                        "height": 650, # Altura boa para celular
+                        "initialView": "listWeek", # <-- COMEÇA NA SEMANA
+                        "height": 650, 
                         "headerToolbar": {
-                            "left": "prev,next", # Apenas setinhas
-                            "center": "title",   # Título (ex: abril de 2026) centralizado
-                            "right": "today"     # Botão pequeno "Hoje"
+                            "left": "prev,next", 
+                            "center": "title",   
+                            "right": "today,listWeek,listMonth" # <-- ADICIONADO BOTAO SEMANA
                         },
                         "buttonText": {
                             "today": "Hoje",
+                            "listWeek": "Semana", # <-- NOME DO BOTAO
+                            "listMonth": "Mês"
                         },
-                        # Esconde a data alternativa redundante na lista para limpar a tela
                         "listDayAltFormat": False,
                     }
                     
