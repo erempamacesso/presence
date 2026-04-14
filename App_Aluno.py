@@ -4,7 +4,7 @@ from supabase import create_client
 import base64
 import os
 
-# Importando os módulos que criamos
+# Importando os módulos das telas
 from telas_aluno.login import mostrar_tela_login
 from telas_aluno.dashboard_aluno import mostrar_tela_dashboard
 from telas_aluno.execucao_prova import render_instrucoes, render_prova
@@ -20,6 +20,7 @@ st.set_page_config(
     page_icon="logo_erempam.png" 
 )
 
+# Cores da Identidade Visual
 C_BG_DEEP = "#F0F4F8"      
 C_CARD_BG = "#FFFFFF"     
 C_PRIMARY = "#00C896"     
@@ -31,36 +32,30 @@ C_BORDER = "#E2E8F0"
 def get_base64_image(image_path):
     if os.path.exists(image_path):
         try:
-            with open(image_path, "rb") as img_file: 
+            with open(image_path, "rb") as img_file:
                 return base64.b64encode(img_file.read()).decode()
-        except: 
-            pass
+        except:
+            return ""
     return ""
 
 logo_lardiao_b64 = get_base64_image("logo_lardiao.png")
 
-st.markdown(f"""
-    <style>
-        .stApp {{ background-color: {C_BG_DEEP} !important; }}
-        .stApp p, .stApp span, .stApp label, .stMarkdown p {{ color: {C_TEXT} !important; }}
-        div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p {{ color: {C_TEXT} !important; font-size: 16px !important; }}
-        [data-testid="stSidebar"] {{display: none;}} #MainMenu {{visibility: hidden;}} footer {{visibility: hidden;}}
-        .main .block-container {{padding-top: 1.5rem;}}
-        .stTextInput>div>div>input {{ background-color: #F7FAFC !important; color: {C_TEXT} !important; border-radius: 12px !important; border-color: {C_BORDER} !important; padding: 14px !important; font-size: 16px !important; }}
-        .stTextInput>div>div>input:focus {{ border-color: {C_PRIMARY} !important; box-shadow: 0 0 0 0.2rem rgba(0,200,150,0.2) !important; background-color: #FFFFFF !important; }}
-        .stButton>button[kind="primary"] {{ background-color: {C_PRIMARY}; color: #FFFFFF; border: none; border-radius: 12px; height: 3.8em; font-weight: bold; font-size: 17px; transition: all 0.3s ease; width: 100%; }}
-        .stButton>button[kind="primary"]:hover {{ background-color: {C_SECONDARY}; color: white; transform: translateY(-2px); box-shadow: 0 5px 15px rgba(255,128,0,0.3); }}
-    </style>
-""", unsafe_allow_html=True)
-
 # ==========================================
-# 2. CONEXÃO SEGURA COM BANCO DE DADOS
+# 2. CONEXÃO COM OS DOIS PROJETOS SUPABASE
 # ==========================================
 @st.cache_resource
 def init_connections():
-    db_a = create_client(st.secrets["SUPABASE_URL_ALUNOS"], st.secrets["SUPABASE_KEY_ALUNOS"])
-    db_p = create_client(st.secrets["SUPABASE_URL_PROVAS"], st.secrets["SUPABASE_KEY_PROVAS"])
-    return db_a, db_p
+    # Projeto 1: Chamada Escolar (Notas e Presença)
+    url_alunos = st.secrets["supabase_url"]
+    key_alunos = st.secrets["supabase_key"]
+    db_alunos = create_client(url_alunos, key_alunos)
+    
+    # Projeto 2: Avaliador (Provas e Simulados)
+    url_provas = st.secrets["supabase_url_avaliador"]
+    key_provas = st.secrets["supabase_key_avaliador"]
+    db_provas = create_client(url_provas, key_provas)
+    
+    return db_alunos, db_provas
 
 db_alunos, db_provas = init_connections()
 
@@ -86,18 +81,28 @@ elif st.session_state.etapa == "ante_sala":
     if 'aluno' not in st.session_state or not st.session_state.aluno:
         st.session_state.etapa = "login"
         st.rerun()
-    # AGORA PASSAMOS OS DOIS: db_alunos (para notas) e db_provas (para atividades)
-    mostrar_tela_dashboard(db_alunos, db_provas)
+    
+    # IMPORTANTE: Passamos os dois bancos para o dashboard
+    # db_alunos (para notas) e db_provas (para simulados)
+    mostrar_tela_dashboard(db_alunos, db_provas) 
 
 elif st.session_state.etapa == "instrucoes":
     render_instrucoes(db_provas)
 
-elif st.session_state.etapa == "em_prova":
-    render_prova(db_provas, C_PRIMARY)
+elif st.session_state.etapa == "execucao":
+    render_prova(db_provas)
 
-elif st.session_state.etapa == "resultado_final":
-    render_suspense(C_PRIMARY, C_TEXT_MUTED, C_SECONDARY, C_TEXT)
+elif st.session_state.etapa == "suspense":
+    render_suspense()
 
-elif st.session_state.etapa == "ver_meu_resultado":
-    # Aqui estava o errinho! Agora passamos o db_provas para a função
-    render_revisao(db_provas)
+elif st.session_state.etapa == "revisao":
+    render_revisao()
+
+# Estilo Global (CSS)
+st.markdown(f"""
+    <style>
+    .stApp {{ background-color: {C_BG_DEEP}; }}
+    [data-testid="stHeader"] {{ background: rgba(0,0,0,0); }}
+    .main .block-container {{ padding-top: 2rem; }}
+    </style>
+""", unsafe_allow_html=True)
