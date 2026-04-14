@@ -37,7 +37,6 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
         "🗓️ Calendário", "👩‍🏫 Minhas Reservas", "✍️ Nova Reserva", "❌ Gerenciar", "🔑 Assinatura"
     ])
 
-
     # =========================================================
     # ABA 1: CALENDÁRIO (MODO LISTA MENSAL CLEAN - FOCADO EM MOBILE)
     # =========================================================
