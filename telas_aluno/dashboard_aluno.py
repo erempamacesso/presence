@@ -16,34 +16,51 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
     turma_aluno = str(aluno.get('turma', ''))
     serie_aluno = turma_aluno[:2] + " Ano" if len(turma_aluno) >= 2 else "1º Ano"
 
+    
     with aba_provas:
         try:
-            # CORREÇÃO: Alterado de 'visivel' para 'ativa' conforme a estrutura do seu banco
-            res = db_provas.table("modelos_prova")\
-                .select("*")\
-                .eq("ativa", True)\
-                .eq("serie", serie_aluno)\
+            res = (
+                db_provas.table("modelos_prova")
+                .select("*")
+                .eq("serie", serie_aluno)
+                .order("criado_em", desc=True)
                 .execute()
-            
-            if res.data:
-                for prova in res.data:
+            )
+
+            provas = res.data if res and res.data else []
+
+            if provas:
+                for prova in provas:
                     with st.container(border=True):
                         col_info, col_btn = st.columns([3, 1])
+
                         with col_info:
-                            st.subheader(prova['titulo'])
-                            st.write(f"📚 Matéria: {prova['materia']}")
-                            st.caption(f"⏱️ Tempo: {prova.get('tempo_duracao', 'N/A')} min")
-                        
+                            titulo = prova.get("titulo", "Atividade sem título")
+                            tempo = prova.get("tempo_duracao", prova.get("tempo_dur", prova.get("tempo", "N/A")))
+                            ativa = prova.get("ativa", False)
+                            data_limite = prova.get("data_limite")
+
+                            st.subheader(titulo)
+                            st.write("📚 Tipo: Simulado")
+                            st.caption(f"⏱️ Tempo: {tempo} min")
+                            st.caption(f"Status: {'Ativa' if ativa else 'Inativa'}")
+
+                            if data_limite:
+                                st.caption(f"📅 Data limite: {data_limite}")
+
                         with col_btn:
-                            st.write("") # Espaçador
-                            if st.button("Abrir Atividade", key=f"p_{prova['id']}", use_container_width=True):
+                            st.write("")
+                            prova_id = prova.get("id", "sem_id")
+                            if st.button("Abrir Atividade", key=f"p_{prova_id}", use_container_width=True):
                                 st.session_state.prova_config = prova
                                 st.session_state.etapa = "instrucoes"
                                 st.rerun()
             else:
-                st.info(f"Nenhuma atividade ativa encontrada para o {serie_aluno}.")
+                st.info(f"Nenhuma atividade encontrada para o {serie_aluno}.")
+
         except Exception as e:
             st.error(f"Erro ao carregar banco de provas: {e}")
+
 
     with aba_concluidas:
         st.subheader("Seu Histórico")
