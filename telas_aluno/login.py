@@ -1,7 +1,35 @@
 # telas_aluno/login.py
 import streamlit as st
+import base64
+import os
 
-def mostrar_tela_login(db_alunos, logo_lardiao_b64, C_CARD_BG, C_BORDER, C_PRIMARY, C_TEXT_MUTED):
+def mostrar_tela_login(db_alunos):
+    # ==========================================
+    # CONFIGURAÇÕES DE CORES
+    # ==========================================
+    C_CARD_BG = "#ffffff"
+    C_BORDER = "#e2e8f0"
+    C_PRIMARY = "#3b82f6"
+    C_TEXT_MUTED = "#64748b"
+    
+    # ==========================================
+    # CARREGA LOGO
+    # ==========================================
+    logo_lardiao_b64 = ""
+    logo_path = "logo_erempam.png"
+    
+    if os.path.exists(logo_path):
+        try:
+            with open(logo_path, "rb") as f:
+                logo_lardiao_b64 = base64.b64encode(f.read()).decode()
+        except Exception as e:
+            st.warning(f"⚠️ Não foi possível carregar o logo: {e}")
+    else:
+        st.warning(f"⚠️ Arquivo '{logo_path}' não encontrado")
+    
+    # ==========================================
+    # INTERFACE DE LOGIN
+    # ==========================================
     st.markdown(f"""
         <style>
         .login-card-unificado {{
