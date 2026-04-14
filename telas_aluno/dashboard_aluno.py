@@ -12,35 +12,57 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
         "📊 Meu Desempenho"
     ])
 
-    # Identifica a série para filtrar as provas (Ex: "2º Ano")
-    serie_aluno = str(aluno.get('turma', ''))[:2] + " Ano"
+    # Identifica a série para filtrar as provas (Ex: "2º C" vira "2º Ano")
+    turma_aluno = str(aluno.get('turma', ''))
+    serie_aluno = turma_aluno[:2] + " Ano" if len(turma_aluno) >= 2 else "1º Ano"
 
     with aba_provas:
         try:
-            # Busca provas que estão marcadas como 'visivel' no Projeto Provas
+            # CORREÇÃO: Alterado de 'visivel' para 'ativa' conforme a estrutura do seu banco
             res = db_provas.table("modelos_prova")\
                 .select("*")\
-                .eq("visivel", True)\
+                .eq("ativa", True)\
                 .eq("serie", serie_aluno)\
                 .execute()
             
             if res.data:
                 for prova in res.data:
                     with st.container(border=True):
-                        st.subheader(prova['titulo'])
-                        st.write(f"📚 Matéria: {prova['materia']}")
-                        if st.button("Abrir Atividade", key=f"p_{prova['id']}"):
-                            st.session_state.prova_config = prova
-                            st.session_state.etapa = "instrucoes"
-                            st.rerun()
+                        col_info, col_btn = st.columns([3, 1])
+                        with col_info:
+                            st.subheader(prova['titulo'])
+                            st.write(f"📚 Matéria: {prova['materia']}")
+                            st.caption(f"⏱️ Tempo: {prova.get('tempo_duracao', 'N/A')} min")
+                        
+                        with col_btn:
+                            st.write("") # Espaçador
+                            if st.button("Abrir Atividade", key=f"p_{prova['id']}", use_container_width=True):
+                                st.session_state.prova_config = prova
+                                st.session_state.etapa = "instrucoes"
+                                st.rerun()
             else:
-                st.info(f"Nenhuma atividade nova para o {serie_aluno}.")
+                st.info(f"Nenhuma atividade ativa encontrada para o {serie_aluno}.")
         except Exception as e:
             st.error(f"Erro ao carregar banco de provas: {e}")
 
     with aba_concluidas:
-        st.write("Aqui aparecerão seus resultados passados.")
-        # Opcional: Adicionar busca na tabela resultados_provas aqui
+        st.subheader("Seu Histórico")
+        try:
+            # Busca os resultados que o aluno já enviou
+            res_c = db_provas.table("resultados_provas")\
+                .select("*")\
+                .eq("aluno_id", str(aluno['id']))\
+                .execute()
+            
+            if res_c.data:
+                for res in res_c.data:
+                    with st.expander(f"✅ Resultado da Atividade (ID: {res['prova_id']})"):
+                        st.write(f"**Pontuação:** {res.get('pontuacao', 0)}")
+                        st.caption(f"Finalizado em: {res.get('created_at', '')[:10]}")
+            else:
+                st.write("Você ainda não concluiu nenhuma atividade.")
+        except Exception as e:
+            st.error(f"Erro ao carregar histórico: {e}")
 
     with aba_desempenho:
         # CHAMA A TELA DE DESEMPENHO USANDO OS DOIS BANCOS
