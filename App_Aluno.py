@@ -86,8 +86,8 @@ elif st.session_state.etapa == "ante_sala":
     if 'aluno' not in st.session_state or not st.session_state.aluno:
         st.session_state.etapa = "login"
         st.rerun()
-    # Passamos db_provas para buscar as atividades e as notas no dashboard
-    mostrar_tela_dashboard(db_provas, db_provas) 
+    # AGORA PASSAMOS OS DOIS: db_alunos (para notas) e db_provas (para atividades)
+    mostrar_tela_dashboard(db_alunos, db_provas)
 
 elif st.session_state.etapa == "instrucoes":
     render_instrucoes(db_provas)
