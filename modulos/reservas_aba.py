@@ -341,7 +341,7 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                 except Exception as e:
                     st.error(f"Erro ao carregar histórico: {e}")
     
-# =========================================================
+    # =========================================================
     # ABA 4: NOVA RESERVA (SISTEMA ANTI-FANTASMA)
     # =========================================================
     with aba_nova:
@@ -455,19 +455,51 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
     with aba_cancelar:
         st.subheader("Cancelar Reservas")
         data_alvo = st.date_input("1. Data da reserva:", value=datetime.date.today(), format="DD/MM/YYYY", key="aba4_data")
+        str_data_alvo = str(data_alvo) # Converte a data escolhida para string "YYYY-MM-DD"
         
-        res_dia = supabase.table("reservas").select("*").eq("status", "Ativa").execute()
-        dados_filtrados = []
-        if res_dia.data:
-            for r in res_dia.data:
-                data_r = r.get("data_reserva") or r.get("data") or ""
-                try:
-                    data_r_fmt = str(pd.to_datetime(str(data_r), errors='coerce').date())
-                except Exception:
-                    data_r_fmt = str(data_r)
-                if data_r_fmt == str(data_alvo):
-                    dados_filtrados.append(r)
+        with st.spinner("Buscando reservas no banco..."):
+            # 1. BURLANDO O LIMITE DE 1000 LINHAS DO SUPABASE
+            todas_reservas_ativas = []
+            inicio = 0
+            tamanho_pagina = 1000
+            
+            while True:
+                res_pagina = supabase.table("reservas").select("*").eq("status", "Ativa").range(inicio, inicio + tamanho_pagina - 1).execute()
+                if not res_pagina.data:
+                    break
+                todas_reservas_ativas.extend(res_pagina.data)
+                if len(res_pagina.data) < tamanho_pagina:
+                    break
+                inicio += tamanho_pagina
 
+            # 2. FILTRAGEM COM PARSER DE DATA ROBUSTO
+            dados_filtrados = []
+            if todas_reservas_ativas:
+                for r in todas_reservas_ativas:
+                    raw_data = r.get("data_reserva") or r.get("data") or ""
+                    data_str = str(raw_data).strip()
+                    data_valida = None
+                    
+                    # Tenta converter a data lidando com os padrões BR e Americano
+                    try:
+                        dt_obj = pd.to_datetime(data_str, format="%Y-%m-%d")
+                        data_valida = dt_obj.strftime("%Y-%m-%d")
+                    except ValueError:
+                        try:
+                            dt_obj = pd.to_datetime(data_str, format="%d/%m/%Y")
+                            data_valida = dt_obj.strftime("%Y-%m-%d")
+                        except ValueError:
+                            try:
+                                dt_obj = pd.to_datetime(data_str, dayfirst=True)
+                                data_valida = dt_obj.strftime("%Y-%m-%d")
+                            except: 
+                                pass
+                    
+                    # Se a data traduzida bater com a data escolhida no calendário, adiciona na lista
+                    if data_valida == str_data_alvo:
+                        dados_filtrados.append(r)
+
+        # 3. INTERFACE DE CANCELAMENTO
         if dados_filtrados:
             df_cancel = pd.DataFrame(dados_filtrados)
             professores_do_dia = sorted(df_cancel['professor'].unique().tolist())
@@ -491,7 +523,7 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                         if prof_sel in GESTORES or (senha_correta and str(senha_input).strip() == str(senha_correta).strip()):
                             for id_c in ids_para_cancelar:
                                 supabase.table("reservas").update({"status": "Cancelada", "cancelado_por": prof_sel}).eq("id", id_c).execute()
-                            st.success("✅ Cancelado!")
+                            st.success("✅ Cancelado com sucesso!")
                             time.sleep(1)
                             st.rerun()
                         else:
