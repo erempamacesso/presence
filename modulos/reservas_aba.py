@@ -296,7 +296,7 @@ def exibir_reservas(supabase, lista_professores_antiga, aulas_opcoes, espacos, a
                         # 4. CONFIGURAÇÃO CLEAN DO CALENDÁRIO
                         calendar_options = {
                             "locale": "pt-br",
-                            "initialView": "listMonth", 
+                            "initialView": "listWeek", 
                             "height": 650,
                             "headerToolbar": {
                                 "left": "prev,next",
