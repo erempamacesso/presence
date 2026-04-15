@@ -3,41 +3,45 @@ from telas_aluno.desempenho import mostrar_tela_desempenho
 
 def mostrar_tela_dashboard(db_alunos, db_provas):
     aluno = st.session_state.aluno
-    
-    # CSS Específico para deixar os botões com cara de "Cards de App"
-    st.markdown("""
-        <style>
-        .stButton > button {
-            width: 100%;
-            height: 120px !important;
-            border-radius: 15px !important;
-            background-color: #ffffff !important;
-            color: #31333F !important;
-            border: 1px solid #e0e0e0 !important;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05) !important;
-            font-size: 18px !important;
-            font-weight: bold !important;
-            flex-direction: column !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            gap: 10px !important;
-        }
+
+    # --- HEADER DISCRETO ---
+    # Usando HTML para controle total do tamanho (Nome Completo, mas pequeno)
+    st.markdown(f'<p class="titulo-clean">👋 Olá, {aluno["nome"]}</p>', unsafe_allow_html=True)
+    st.markdown(f'<p class="subtitulo-clean">{aluno.get("turma", "Estudante")} | EREMPAM</p>', unsafe_allow_html=True)
+
+    if "menu_ativo" not in st.session_state:
+        st.session_state.menu_ativo = "home"
+
+    # ---------------------------------------------------------
+    # TELA 1: MENU PRINCIPAL
+    # ---------------------------------------------------------
+    if st.session_state.menu_ativo == "home":
+        st.write("Escolha uma opção:") # Texto simples sem ser header
         
-        .stButton > button:hover {
-            border-color: #4CAF50 !important;
-            color: #4CAF50 !important;
-            background-color: #f9fff9 !important;
-            transform: translateY(-2px);
-            transition: all 0.2s ease;
-        }
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("📝 Simulados", key="btn_simu", use_container_width=True):
+                st.session_state.menu_ativo = "provas"; st.rerun()
+            if st.button("📊 Desempenho", key="btn_desem", use_container_width=True):
+                st.session_state.menu_ativo = "notas"; st.rerun()
+        with col2:
+            if st.button("✅ Atividades", key="btn_concl", use_container_width=True):
+                st.session_state.menu_ativo = "historico"; st.rerun()
+            if st.button("🚪 Sair", key="btn_sair", use_container_width=True):
+                st.session_state.aluno = None; st.session_state.etapa = "login"; st.rerun()
 
-        div[data-testid="stVerticalBlock"] > div:last-child .stButton > button {
-            border-color: #ff4b4b22 !important;
-        }
-        </style>
-    """, unsafe_allow_html=True)
+    # ---------------------------------------------------------
+    # TELA 2, 3 e 4 (Títulos Discretos)
+    # ---------------------------------------------------------
+    elif st.session_state.menu_ativo == "provas":
+        if st.button("⬅️ Voltar"): st.session_state.menu_ativo = "home"; st.rerun()
+        st.markdown('<p class="titulo-clean">📝 Simulados Disponíveis</p>', unsafe_allow_html=True)
+        # ... resto do código das provas ...
 
+    elif st.session_state.menu_ativo == "historico":
+        if st.button("⬅️ Voltar"): st.session_state.menu_ativo = "home"; st.rerun()
+        st.markdown('<p class="titulo-clean">✅ Suas Conquistas</p>', unsafe_allow_html=True)
+        # ... resto do código do histórico ...
     if "menu_ativo" not in st.session_state:
         st.session_state.menu_ativo = "home"
 
