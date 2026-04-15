@@ -12,14 +12,13 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
         "📊 Meu Desempenho"
     ])
 
-    # Identifica a série para filtrar as provas
+    # Filtro de série
     turma_aluno = str(aluno.get('turma', ''))
     serie_aluno = turma_aluno[:2] + " Ano" if len(turma_aluno) >= 2 else "1º Ano"
 
     # --- ABA 1: PROVAS DISPONÍVEIS ---
     with aba_provas:
         try:
-            # Nota: Em modelos_prova a coluna de data é 'criado_em' (visto no seu Print 2)
             res = db_provas.table("modelos_prova").select("*")\
                 .eq("serie", serie_aluno)\
                 .eq("ativa", True)\
@@ -38,50 +37,53 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
                                 st.session_state.etapa = "instrucoes"
                                 st.rerun()
             else:
-                st.info(f"Nenhuma atividade nova para o {serie_aluno}.")
+                st.info(f"Nenhuma atividade disponível para o {serie_aluno}.")
         except Exception as e:
-            st.error(f"Erro ao carregar banco de provas: {e}")
+            st.error(f"Erro no banco de provas: {e}")
 
-    # --- ABA 2: ATIVIDADES CONCLUÍDAS ---
+    # --- ABA 2: ATIVIDADES CONCLUÍDAS (BLINDADO) ---
     with aba_concluidas:
         st.subheader("Seu Histórico")
         try:
-            # CORREÇÃO AQUI: Trocado 'created_at' por 'data_envio'
+            # 1. Busca todos os registros do aluno (usando * para evitar erro de coluna)
             res_c = db_provas.table("resultados_provas")\
-                .select("prova_id, acertos, data_envio")\
+                .select("*")\
                 .eq("aluno_id", str(aluno['id']))\
                 .execute()
             
             if res_c.data:
-                # Lógica de agrupamento para evitar repetições
-                provas_unicas = {}
-                for item in res_c.data:
-                    p_id = item['prova_id']
-                    if p_id not in provas_unicas:
-                        provas_unicas[p_id] = item
+                # 2. Agrupamento por prova_id (evita repetir o card para cada questão da prova)
+                provas_concluidas = {}
+                for reg in res_c.data:
+                    p_id = reg.get('prova_id')
+                    if p_id and p_id not in provas_concluidas:
+                        provas_concluidas[p_id] = reg
 
-                # Busca nomes das provas para o título
-                ids_lista = list(provas_unicas.keys())
-                res_nomes = db_provas.table("modelos_prova")\
-                    .select("id, titulo")\
-                    .in_("id", ids_lista)\
-                    .execute()
-                
-                nomes_map = {p['id']: p['titulo'] for p in res_nomes.data} if res_nomes.data else {}
+                # 3. Busca títulos das provas para exibir bonito
+                ids_lista = list(provas_concluidas.keys())
+                res_titulos = db_provas.table("modelos_prova").select("id, titulo").in_("id", ids_lista).execute()
+                mapa_titulos = {p['id']: p['titulo'] for p in res_titulos.data} if res_titulos.data else {}
 
-                for p_id, dados in provas_unicas.items():
-                    titulo_prova = nomes_map.get(p_id, f"Atividade {p_id[:8]}")
-                    with st.expander(f"✅ {titulo_prova}"):
+                # 4. Renderização dos cards
+                for p_id, dados in provas_concluidas.items():
+                    nome_atividade = mapa_titulos.get(p_id, f"Atividade {str(p_id)[:8]}")
+                    
+                    with st.expander(f"✅ {nome_atividade}"):
                         c1, c2 = st.columns(2)
-                        c1.metric("Acertos", f"{dados.get('acertos', 0)}")
-                        # CORREÇÃO AQUI: Trocado 'created_at' por 'data_envio'
-                        data_final = dados.get('data_envio', '---')
-                        c2.write(f"**Finalizado em:** {data_final[:10] if data_final else '---'}")
                         
-                        if st.button("Ver Revisão", key=f"rev_{p_id}"):
-                            st.info("A revisão detalhada será liberada em breve.")
+                        # Usa 'acertos' conforme sua imagem da estrutura
+                        pontos = dados.get('acertos', 0)
+                        c1.metric("Pontuação", f"{pontos}")
+                        
+                        # Usa 'data_resposta' conforme sua imagem da estrutura
+                        data_bruta = dados.get('data_resposta', '---')
+                        data_limpa = str(data_bruta)[:10] if data_bruta else "---"
+                        c2.write(f"**Data:** {data_limpa}")
+                        
+                        if st.button("Revisar", key=f"rev_{p_id}"):
+                            st.info("Detalhes das questões em desenvolvimento.")
             else:
-                st.info("Você ainda não concluiu nenhuma atividade.")
+                st.info("Você ainda não possui atividades concluídas.")
         except Exception as e:
             st.error(f"Erro ao carregar histórico: {e}")
 
