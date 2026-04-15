@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 
 def mostrar_tela_desempenho(db_alunos, db_provas):
-    st.subheader("📊 Meu Boletim de Desempenho")
+    st.subheader("📊 Meu Desempenho")
     aluno = st.session_state.aluno
     aluno_id = str(aluno['id'])
     
