@@ -7,7 +7,6 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
     # CSS Específico para deixar os botões com cara de "Cards de App"
     st.markdown("""
         <style>
-        /* Estiliza os botões do Menu Principal */
         .stButton > button {
             width: 100%;
             height: 120px !important;
@@ -25,7 +24,6 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
             gap: 10px !important;
         }
         
-        /* Efeito ao passar o mouse ou clicar */
         .stButton > button:hover {
             border-color: #4CAF50 !important;
             color: #4CAF50 !important;
@@ -34,19 +32,17 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
             transition: all 0.2s ease;
         }
 
-        /* Botão de Sair (Destaque diferente) */
         div[data-testid="stVerticalBlock"] > div:last-child .stButton > button {
             border-color: #ff4b4b22 !important;
         }
         </style>
     """, unsafe_allow_html=True)
 
-    # Controle de Navegação Interna
     if "menu_ativo" not in st.session_state:
         st.session_state.menu_ativo = "home"
 
-    # --- HEADER DO APP ---
-    st.markdown(f"## 👋 Olá, {aluno['nome'].split()[0]}!") # Pega só o primeiro nome
+    # --- HEADER DO APP (Agora com NOME COMPLETO) ---
+    st.markdown(f"## 👋 Olá, {aluno['nome']}!")
     st.caption(f"📍 {aluno.get('turma', 'Estudante')} | EREMPAM")
 
     # ---------------------------------------------------------
@@ -55,7 +51,6 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
     if st.session_state.menu_ativo == "home":
         st.write("### O que vamos fazer agora?")
         
-        # Grid 2x2 para os botões principais
         col1, col2 = st.columns(2)
         
         with col1:
@@ -87,7 +82,6 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
         
         st.subheader("📝 Simulados para Você")
         
-        # Filtro de série (sua lógica original)
         turma_aluno = str(aluno.get('turma', ''))
         serie_aluno = turma_aluno[:2] + " Ano" if len(turma_aluno) >= 2 else "1º Ano"
 
@@ -108,7 +102,7 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
             st.error(f"Erro ao buscar provas: {e}")
 
     # ---------------------------------------------------------
-    # TELA 3: ATIVIDADES CONCLUÍDAS
+    # TELA 3: ATIVIDADES CONCLUÍDAS (Ajuste o nome da Tabela aqui!)
     # ---------------------------------------------------------
     elif st.session_state.menu_ativo == "historico":
         if st.button("⬅️ Voltar ao Menu"):
@@ -118,8 +112,11 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
         st.subheader("✅ Suas Conquistas")
         
         try:
-            # Sua lógica original de busca de respostas
-            res_r = db_provas.table("respostas_alunos").select("*, modelos_prova(titulo)").eq("aluno_id", str(aluno['id'])).execute()
+            # 🛑 ATENÇÃO: TROQUE 'respostas_alunos' PELO NOME REAL DA SUA TABELA!
+            nome_da_tabela = "modelos_prova" 
+            
+            res_r = db_provas.table(nome_da_tabela).select("*, modelos_prova(titulo)").eq("aluno_id", str(aluno['id'])).execute()
+            
             if res_r.data:
                 for resp in res_r.data:
                     with st.container(border=True):
@@ -130,19 +127,18 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
                         
                         if st.button("Ver Diagnóstico IA", key=f"ia_{resp['id']}"):
                             st.toast("Buscando análise...")
-                            # Aqui você pode chamar o seu st.status com a IA
+                            # Aqui entra a sua lógica de IA
             else:
                 st.info("Você ainda não completou nenhuma atividade.")
         except Exception as e:
             st.error(f"Erro no histórico: {e}")
 
     # ---------------------------------------------------------
-    # TELA 4: DESEMPENHO (A TELA QUE FIZEMOS ANTES)
+    # TELA 4: DESEMPENHO
     # ---------------------------------------------------------
     elif st.session_state.menu_ativo == "notas":
         if st.button("⬅️ Voltar ao Menu"):
             st.session_state.menu_ativo = "home"
             st.rerun()
         
-        # Chama a função que já temos pronta no outro arquivo
         mostrar_tela_desempenho(db_alunos, db_provas)

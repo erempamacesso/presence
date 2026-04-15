@@ -84,7 +84,7 @@ def mostrar_tela_desempenho(db_alunos, db_provas):
         # Formatação chique: Transforma todos os números em 1 casa decimal (ex: 7.5, 0.0)
         df_notas_formatado = df_notas.map(lambda x: f"{x:.1f}")
 
-        st.markdown("### 📅 Notas do Trimestre (Diário de Classe)")
+        st.markdown("### 📅 Notas do Trimestre")
         
         # Desenha a tabela na tela sem a coluna de índices (0)
         st.dataframe(df_notas_formatado, hide_index=True, use_container_width=True)
