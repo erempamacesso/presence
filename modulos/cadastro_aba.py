@@ -254,22 +254,30 @@ def exibir_cadastro(supabase):
                 except Exception as e:
                     st.error(f"Erro interno de banco de dados. Verifique a tabela 'alunos'.")
             
-            # Se conseguiu buscar com sucesso e tem dados
+           # Se conseguiu buscar com sucesso e tem dados
             if res and res.data:
                 df = pd.DataFrame(res.data)
                 
-                # Garante que as colunas apareçam mesmo se estiverem vazias no banco
-                if 'matricula' not in df.columns: df['matricula'] = "Não informada"
-                if 'data_nascimento' not in df.columns: df['data_nascimento'] = "Não informada"
+                # 1. Garante que as colunas existam
+                if 'matricula' not in df.columns: df['matricula'] = "---"
+                if 'data_nascimento' not in df.columns: df['data_nascimento'] = None
                 
-                # Exibe a tabela bonitinha
+                # 2. CONVERSÃO DA DATA (Brasileira)
+                # Transformamos em data e depois em texto formatado
+                try:
+                    df['data_nascimento'] = pd.to_datetime(df['data_nascimento']).dt.strftime('%d/%m/%Y')
+                    # Se a data for nula, o pandas coloca 'NaT', vamos trocar por um traço
+                    df['data_nascimento'] = df['data_nascimento'].replace('NaT/NaT/NaT', '---').fillna('---')
+                except:
+                    pass # Se falhar, mantém como está para não quebrar o app
+
+                # 3. Exibe a tabela com as colunas na ordem certa
                 st.dataframe(
                     df[['id', 'nome', 'matricula', 'turma', 'data_nascimento']], 
                     use_container_width=True, 
                     hide_index=True
                 )
-            elif res and not res.data:
-                st.warning("Nenhum estudante encontrado com esse termo.")
+           
 
 if __name__ == "__main__":
     pass
