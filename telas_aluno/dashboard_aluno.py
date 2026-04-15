@@ -16,13 +16,15 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
     turma_aluno = str(aluno.get('turma', ''))
     serie_aluno = turma_aluno[:2] + " Ano" if len(turma_aluno) >= 2 else "1º Ano"
 
-    
+    # --- ABA 1: PROVAS DISPONÍVEIS ---
     with aba_provas:
         try:
+            # CORREÇÃO: Filtramos por 'ativa' (a coluna real do seu banco)
             res = (
                 db_provas.table("modelos_prova")
                 .select("*")
                 .eq("serie", serie_aluno)
+                .eq("ativa", True)
                 .order("criado_em", desc=True)
                 .execute()
             )
@@ -36,36 +38,35 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
 
                         with col_info:
                             titulo = prova.get("titulo", "Atividade sem título")
-                            tempo = prova.get("tempo_duracao", prova.get("tempo_dur", prova.get("tempo", "N/A")))
-                            ativa = prova.get("ativa", False)
+                            materia = prova.get("materia", "Geral")
+                            # Tenta buscar o tempo em diferentes nomes de coluna por segurança
+                            tempo = prova.get("tempo_duracao", prova.get("tempo_dur", "N/A"))
                             data_limite = prova.get("data_limite")
 
                             st.subheader(titulo)
-                            st.write("📚 Tipo: Simulado")
-                            st.caption(f"⏱️ Tempo: {tempo} min")
-                            st.caption(f"Status: {'Ativa' if ativa else 'Inativa'}")
+                            st.write(f"📚 **Matéria:** {materia}")
+                            st.caption(f"⏱️ **Tempo:** {tempo} min")
 
                             if data_limite:
-                                st.caption(f"📅 Data limite: {data_limite}")
+                                st.caption(f"📅 **Prazo Final:** {data_limite}")
 
                         with col_btn:
-                            st.write("")
+                            st.write("") # Espaçador visual
                             prova_id = prova.get("id", "sem_id")
                             if st.button("Abrir Atividade", key=f"p_{prova_id}", use_container_width=True):
                                 st.session_state.prova_config = prova
                                 st.session_state.etapa = "instrucoes"
                                 st.rerun()
             else:
-                st.info(f"Nenhuma atividade encontrada para o {serie_aluno}.")
+                st.info(f"Nenhuma atividade nova disponível para o {serie_aluno}.")
 
         except Exception as e:
             st.error(f"Erro ao carregar banco de provas: {e}")
 
-
+    # --- ABA 2: ATIVIDADES CONCLUÍDAS ---
     with aba_concluidas:
         st.subheader("Seu Histórico")
         try:
-            # Busca os resultados que o aluno já enviou
             res_c = db_provas.table("resultados_provas")\
                 .select("*")\
                 .eq("aluno_id", str(aluno['id']))\
@@ -73,15 +74,15 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
             
             if res_c.data:
                 for res in res_c.data:
-                    with st.expander(f"✅ Resultado da Atividade (ID: {res['prova_id']})"):
+                    with st.expander(f"✅ Atividade Finalizada (ID: {res['prova_id']})"):
                         st.write(f"**Pontuação:** {res.get('pontuacao', 0)}")
                         st.caption(f"Finalizado em: {res.get('created_at', '')[:10]}")
             else:
-                st.write("Você ainda não concluiu nenhuma atividade.")
+                st.info("Você ainda não possui atividades concluídas no sistema.")
         except Exception as e:
             st.error(f"Erro ao carregar histórico: {e}")
 
+    # --- ABA 3: DESEMPENHO ---
     with aba_desempenho:
-        # CHAMA A TELA DE DESEMPENHO USANDO OS DOIS BANCOS
-        # db_alunos (Notas da Chamada) e db_provas (Histórico de Simulados)
+        # Passa as duas conexões conforme a nova estrutura do desempenho.py
         mostrar_tela_desempenho(db_alunos, db_provas)
