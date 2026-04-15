@@ -102,7 +102,7 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
             st.error(f"Erro ao buscar provas: {e}")
 
     # ---------------------------------------------------------
-    # TELA 3: ATIVIDADES CONCLUÍDAS (Ajuste o nome da Tabela aqui!)
+    # TELA 3: ATIVIDADES CONCLUÍDAS
     # ---------------------------------------------------------
     elif st.session_state.menu_ativo == "historico":
         if st.button("⬅️ Voltar ao Menu"):
@@ -112,26 +112,53 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
         st.subheader("✅ Suas Conquistas")
         
         try:
-            # 🛑 ATENÇÃO: TROQUE 'respostas_alunos' PELO NOME REAL DA SUA TABELA!
-            nome_da_tabela = "modelos_prova" 
+            # 1. Busca os resultados do aluno (Igual ao seu código original que funcionava!)
+            res_c = db_provas.table("resultados_provas").select("*").eq("aluno_id", str(aluno['id'])).execute()
             
-            res_r = db_provas.table(nome_da_tabela).select("*, modelos_prova(titulo)").eq("aluno_id", str(aluno['id'])).execute()
-            
-            if res_r.data:
-                for resp in res_r.data:
+            if res_c.data:
+                # 2. Agrupa por prova para evitar duplicatas (já que salva por questão)
+                provas_concluidas = {}
+                for reg in res_c.data:
+                    p_id = reg.get('prova_id')
+                    if p_id and p_id not in provas_concluidas:
+                        provas_concluidas[p_id] = reg
+
+                # 3. Mapeia títulos das provas em uma segunda busca
+                ids_lista = list(provas_concluidas.keys())
+                res_titulos = db_provas.table("modelos_prova").select("id, titulo").in_("id", ids_lista).execute()
+                mapa_titulos = {p['id']: p['titulo'] for p in res_titulos.data} if res_titulos.data else {}
+
+                # 4. Renderiza os cards com o visual de App
+                for p_id, dados in provas_concluidas.items():
+                    nome_atividade = mapa_titulos.get(p_id, f"Atividade {str(p_id)[:8]}")
+                    
                     with st.container(border=True):
-                        titulo = resp.get('modelos_prova', {}).get('titulo', 'Prova Finalizada')
-                        nota = resp.get('nota_final', 0)
-                        st.markdown(f"**{titulo}**")
-                        st.write(f"Nota: `{nota:.1f}`")
+                        st.markdown(f"### ✅ {nome_atividade}")
                         
-                        if st.button("Ver Diagnóstico IA", key=f"ia_{resp['id']}"):
-                            st.toast("Buscando análise...")
-                            # Aqui entra a sua lógica de IA
+                        data_r = str(dados.get('data_resposta', ''))[:10]
+                        st.caption(f"📅 Concluída em: {data_r}")
+                        
+                        st.write(f"📊 **Acertos:** `{dados.get('acertos', 0)}`")
+                        
+                        # Botão para expandir o Diagnóstico da IA
+                        if st.button("🔍 Ver Diagnóstico Pedagógico", key=f"btn_feedback_{p_id}", use_container_width=True):
+                            with st.status("Buscando análise da IA...", expanded=True):
+                                # Busca na tabela feedback_ia_alunos
+                                res_f = db_provas.table("feedback_ia_alunos")\
+                                    .select("diagnostico_pedagogico")\
+                                    .eq("aluno_id", str(aluno['id']))\
+                                    .eq("prova_id", p_id)\
+                                    .execute()
+                                
+                                if res_f.data:
+                                    feedback_texto = res_f.data[0].get('diagnostico_pedagogico', 'Sem detalhes.')
+                                    st.info(f"💡 **Dica do Professor IA:**\n\n{feedback_texto}")
+                                else:
+                                    st.warning("O diagnóstico para esta prova ainda está sendo processado.")
             else:
                 st.info("Você ainda não completou nenhuma atividade.")
         except Exception as e:
-            st.error(f"Erro no histórico: {e}")
+            st.error(f"Erro ao carregar histórico: {e}")
 
     # ---------------------------------------------------------
     # TELA 4: DESEMPENHO
