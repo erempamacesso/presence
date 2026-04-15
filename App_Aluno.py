@@ -12,49 +12,51 @@ st.set_page_config(
 )
 
 # ==========================================
-# CSS MOBILE: CLEAN & DISCRETO
+# CSS MOBILE: ULTRA MINIMALISTA (Estilo iOS)
 # ==========================================
 st.markdown("""
     <style>
-        /* Esconde Sidebar e controles */
+        /* Esconde Sidebar */
         [data-testid="collapsedControl"], [data-testid="stSidebar"] { display: none !important; }
         
-        /* Remove o espaço em branco gigante no topo */
+        /* Margens super enxutas */
         .block-container {
-            padding-top: 1rem !important;
-            padding-bottom: 1rem !important;
+            padding: 1.5rem 1rem !important;
+            max-width: 100% !important;
         }
 
-        /* BOTÕES DO MENU: Menores e mais elegantes */
+        /* BOTÕES EM FORMATO DE LISTA (iOS Style) */
         div.stButton > button {
-            height: 75px !important; /* Altura reduzida */
-            border-radius: 10px !important;
-            font-size: 14px !important; /* Fonte menor */
-            font-weight: 500 !important;
-            border: 1px solid #eeeeee !important;
-            background-color: #fcfcfc !important;
-            color: #444444 !important;
-            transition: all 0.2s ease;
+            height: 55px !important; /* Bem finos */
+            border-radius: 8px !important;
+            font-size: 15px !important;
+            font-weight: 400 !important;
+            border: 1px solid #E5E7EB !important; /* Borda quase invisível */
+            background-color: transparent !important;
+            color: #1F2937 !important;
+            display: flex !important;
+            justify-content: flex-start !important; /* Alinhado à esquerda */
+            padding-left: 20px !important;
+            box-shadow: none !important;
+            transition: background 0.2s ease;
         }
         
         div.stButton > button:hover {
-            border-color: #4CAF50 !important;
-            background-color: #ffffff !important;
-            color: #4CAF50 !important;
+            background-color: #F3F4F6 !important;
+            border-color: #D1D5DB !important;
         }
 
-        /* Estilo para Títulos Discretos */
-        .titulo-clean {
-            font-size: 18px !important;
-            font-weight: 600 !important;
-            color: #333333;
-            margin-bottom: 5px !important;
+        /* Texto do Cabeçalho Super Clean */
+        .header-nome {
+            font-size: 22px !important;
+            font-weight: 500 !important;
+            color: #111827;
+            margin-bottom: 2px !important;
         }
-        
-        .subtitulo-clean {
-            font-size: 14px !important;
-            color: #777777;
-            margin-bottom: 20px !important;
+        .header-turma {
+            font-size: 13px !important;
+            color: #6B7280;
+            margin-bottom: 30px !important;
         }
     </style>
 """, unsafe_allow_html=True)
