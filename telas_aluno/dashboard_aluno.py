@@ -152,7 +152,7 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
                                 
                                 if res_f.data:
                                     feedback_texto = res_f.data[0].get('diagnostico_pedagogico', 'Sem detalhes.')
-                                    st.info(f"💡 **Dica do Professor IA:**\n\n{feedback_texto}")
+                                    st.info(f"💡 **Dica do Professor:**\n\n{feedback_texto}")
                                 else:
                                     st.warning("O diagnóstico para esta prova ainda está sendo processado.")
             else:

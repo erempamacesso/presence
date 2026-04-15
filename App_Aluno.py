@@ -12,31 +12,49 @@ st.set_page_config(
 )
 
 # ==========================================
-# CSS MOBILE: BOTÕES GRANDES E SEM SIDEBAR
+# CSS MOBILE: CLEAN & DISCRETO
 # ==========================================
 st.markdown("""
     <style>
-        /* Esconde o botão de abrir a sidebar e a própria sidebar */
-        [data-testid="stSidebarNav"] {display: none !important;}
-        [data-testid="collapsedControl"] {display: none !important;}
-        section[data-testid="stSidebar"] {display: none !important;}
+        /* Esconde Sidebar e controles */
+        [data-testid="collapsedControl"], [data-testid="stSidebar"] { display: none !important; }
         
-        /* Estilização dos Botões para Mobile (Dashboard) */
+        /* Remove o espaço em branco gigante no topo */
+        .block-container {
+            padding-top: 1rem !important;
+            padding-bottom: 1rem !important;
+        }
+
+        /* BOTÕES DO MENU: Menores e mais elegantes */
         div.stButton > button {
-            height: 75px;
-            border-radius: 12px;
-            font-size: 18px !important;
-            font-weight: bold;
-            transition: all 0.3s ease;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            height: 75px !important; /* Altura reduzida */
+            border-radius: 10px !important;
+            font-size: 14px !important; /* Fonte menor */
+            font-weight: 500 !important;
+            border: 1px solid #eeeeee !important;
+            background-color: #fcfcfc !important;
+            color: #444444 !important;
+            transition: all 0.2s ease;
         }
         
         div.stButton > button:hover {
-            border-color: #ff4b4b;
-            color: #ff4b4b;
-            transform: scale(1.02);
+            border-color: #4CAF50 !important;
+            background-color: #ffffff !important;
+            color: #4CAF50 !important;
+        }
+
+        /* Estilo para Títulos Discretos */
+        .titulo-clean {
+            font-size: 18px !important;
+            font-weight: 600 !important;
+            color: #333333;
+            margin-bottom: 5px !important;
+        }
+        
+        .subtitulo-clean {
+            font-size: 14px !important;
+            color: #777777;
+            margin-bottom: 20px !important;
         }
     </style>
 """, unsafe_allow_html=True)
