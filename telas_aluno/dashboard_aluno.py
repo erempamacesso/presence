@@ -4,9 +4,11 @@ from telas_aluno.desempenho import mostrar_tela_desempenho
 def mostrar_tela_dashboard(db_alunos, db_provas):
     aluno = st.session_state.aluno
 
-    # --- HEADER ---
-    st.markdown(f'<div class="header-nome">Olá, {aluno["nome"]}</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="header-turma">{aluno.get("turma", "Estudante")} • EREMPAM</div>', unsafe_allow_html=True)
+   # --- HEADER ---
+    # Coloquei style="font-size: 18px;" para forçar a fonte a ficar menor. 
+    # Você pode mudar esse número (16, 18, 20...) até achar o tamanho perfeito!
+    st.markdown(f'<div class="header-nome" style="font-size: 18px !important;">Olá, {aluno["nome"]}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="header-turma" style="font-size: 12px !important;">{aluno.get("turma", "Estudante")} • EREMPAM</div>', unsafe_allow_html=True)
 
     if "menu_ativo" not in st.session_state:
         st.session_state.menu_ativo = "home"
