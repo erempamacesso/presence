@@ -11,51 +11,59 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+
 # ==========================================
-# CSS MOBILE: ULTRA MINIMALISTA (Estilo iOS)
+# CSS MOBILE: ULTRA MINIMALISTA (Correção)
 # ==========================================
 st.markdown("""
     <style>
-        /* Esconde Sidebar */
-        [data-testid="collapsedControl"], [data-testid="stSidebar"] { display: none !important; }
+        /* Esconde Sidebar e o Header (Deploy/Running) do Streamlit */
+        [data-testid="collapsedControl"], 
+        [data-testid="stSidebar"], 
+        [data-testid="stHeader"] { 
+            display: none !important; 
+        }
         
-        /* Margens super enxutas */
+        /* Margem segura no topo para não esconder nada */
         .block-container {
-            padding: 1.5rem 1rem !important;
+            padding-top: 3rem !important; 
+            padding-bottom: 2rem !important;
+            padding-left: 1.5rem !important;
+            padding-right: 1.5rem !important;
             max-width: 100% !important;
         }
 
-        /* BOTÕES EM FORMATO DE LISTA (iOS Style) */
+        /* BOTÕES EM FORMATO DE LISTA (Adaptável ao Tema) */
         div.stButton > button {
-            height: 55px !important; /* Bem finos */
-            border-radius: 8px !important;
-            font-size: 15px !important;
-            font-weight: 400 !important;
-            border: 1px solid #E5E7EB !important; /* Borda quase invisível */
+            height: 60px !important; 
+            border-radius: 10px !important;
+            font-size: 16px !important;
+            font-weight: 500 !important;
+            border: 1px solid var(--secondary-background-color) !important; 
             background-color: transparent !important;
-            color: #1F2937 !important;
+            color: var(--text-color) !important; /* Cor automática (Claro/Escuro) */
             display: flex !important;
-            justify-content: flex-start !important; /* Alinhado à esquerda */
+            justify-content: flex-start !important; 
             padding-left: 20px !important;
             box-shadow: none !important;
-            transition: background 0.2s ease;
+            transition: all 0.2s ease;
         }
         
         div.stButton > button:hover {
-            background-color: #F3F4F6 !important;
-            border-color: #D1D5DB !important;
+            border-color: #4CAF50 !important;
+            color: #4CAF50 !important;
         }
 
-        /* Texto do Cabeçalho Super Clean */
+        /* Texto do Cabeçalho (Adaptável ao Tema) */
         .header-nome {
-            font-size: 22px !important;
-            font-weight: 500 !important;
-            color: #111827;
-            margin-bottom: 2px !important;
+            font-size: 24px !important;
+            font-weight: bold !important;
+            color: var(--text-color) !important;
+            margin-bottom: 4px !important;
         }
         .header-turma {
-            font-size: 13px !important;
-            color: #6B7280;
+            font-size: 14px !important;
+            color: gray !important;
             margin-bottom: 30px !important;
         }
     </style>
