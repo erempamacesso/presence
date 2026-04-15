@@ -4,6 +4,53 @@ import os
 import sys
 
 # ==========================================
+# CONFIGURAÇÃO DE PÁGINA (SIDEBAR REMOVIDA)
+# ==========================================
+st.set_page_config(
+    page_title="Portal do Aluno | EREMPAM",
+    layout="wide",
+    page_icon="🎓",
+    initial_sidebar_state="collapsed" # Começa fechado
+)
+
+# --- CSS PARA BOTÕES GRANDES E ESCONDER SIDEBAR ---
+st.markdown("""
+    <style>
+        /* Esconde o botão de abrir a sidebar e a própria sidebar */
+        [data-testid="stSidebarNav"] {display: none;}
+        [data-testid="collapsedControl"] {display: none;}
+        
+        /* Estilização dos Botões Grandes (Dashboard) */
+        div.stButton > button {
+            width: 100%;
+            height: 100px;
+            border-radius: 15px;
+            font-size: 20px !important;
+            font-weight: bold;
+            margin-bottom: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background-color: #f0f2f6;
+            border: 2px solid #e0e0e0;
+            transition: all 0.3s ease;
+        }
+        
+        div.stButton > button:hover {
+            border-color: #ff4b4b;
+            color: #ff4b4b;
+            transform: scale(1.02);
+        }
+
+        /* Ajuste para o texto dentro do botão */
+        div.stButton > button p {
+            font-size: 20px !important;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+# ==========================================
 # IMPORTAÇÕES DAS TELAS
 # ==========================================
 try:
@@ -16,152 +63,86 @@ except ImportError as e:
     st.stop()
 
 # ==========================================
-# CONFIGURAÇÃO DE PÁGINA
-# ==========================================
-st.set_page_config(
-    page_title="Portal do Aluno | EREMPAM",
-    layout="wide",
-    page_icon="🎓",
-    initial_sidebar_state="collapsed"
-)
-
-# ==========================================
-# CONEXÃO COM OS DOIS PROJETOS SUPABASE
+# CONEXÃO SUPABASE (MESMA LÓGICA ATUAL)
 # ==========================================
 @st.cache_resource
 def init_connections():
-    """
-    Inicializa as conexões com os dois projetos Supabase.
-    
-    Projeto 1: SIGEREMPAM (Alunos e Chamada)
-    Projeto 2: AVALIADOR (Questões e Provas)
-    """
     try:
-        # Validar se secrets estão carregados
-        try:
-            url_alunos = st.secrets["SUPABASE_URL_ALUNOS"]
-            key_alunos = st.secrets["SUPABASE_KEY_ALUNOS"]
-            url_provas = st.secrets["SUPABASE_URL_PROVAS"]
-            key_provas = st.secrets["SUPABASE_KEY_PROVAS"]
-        except KeyError as e:
-            st.error(f"❌ Secret não configurado: {e}")
-            st.info("📋 Verifique se todos os secrets estão no `.streamlit/secrets.toml`")
-            st.stop()
-        
-        # Projeto 1: SIGEREMPAM (Alunos)
-        db_alunos = create_client(url_alunos, key_alunos)
-        
-        # Projeto 2: AVALIADOR (Provas)
-        db_provas = create_client(url_provas, key_provas)
-        
-        return db_alunos, db_provas
-        
+        url_alunos = st.secrets["SIGEREMPAM_URL"]
+        key_alunos = st.secrets["SIGEREMPAM_KEY"]
+        url_provas = st.secrets["AVALIADOR_URL"]
+        key_provas = st.secrets["AVALIADOR_KEY"]
+        return create_client(url_alunos, key_alunos), create_client(url_provas, key_provas)
     except Exception as e:
-        st.error(f"❌ Erro ao conectar aos bancos de dados: {str(e)}")
-        st.stop()
+        st.error(f"Erro de conexão: {e}")
+        return None, None
 
-# Inicializa os bancos de dados
-try:
-    db_alunos, db_provas = init_connections()
-    if db_alunos is None or db_provas is None:
-        st.error("❌ Erro: Bancos de dados não foram inicializados corretamente")
-        st.stop()
-except Exception as e:
-    st.error(f"❌ Erro crítico na inicialização: {str(e)}")
-    st.stop()
+db_alunos, db_provas = init_connections()
 
 # ==========================================
-# INICIALIZAÇÃO DO SESSION STATE
+# LÓGICA DE NAVEGAÇÃO POR BOTÕES (HUB)
 # ==========================================
-if 'etapa' not in st.session_state:
+if "etapa" not in st.session_state:
     st.session_state.etapa = "login"
 
-if 'aluno' not in st.session_state:
+if "aluno" not in st.session_state:
     st.session_state.aluno = None
 
-if 'prova_config' not in st.session_state:
-    st.session_state.prova_config = None
-
-# ==========================================
-# ROTEADOR DE TELAS (MÁQUINA DE ESTADOS)
-# ==========================================
 try:
+    # 1. TELA DE LOGIN
     if st.session_state.etapa == "login":
-        # Tela de Login
         mostrar_tela_login(db_alunos)
     
-    elif st.session_state.etapa == "ante_sala":
-        # Validar se aluno está autenticado
+    # 2. HUB PRINCIPAL (BOTÕES GRANDES)
+    elif st.session_state.etapa == "dashboard":
         if not st.session_state.aluno:
             st.session_state.etapa = "login"
             st.rerun()
+            
+        st.markdown(f"### Olá, {st.session_state.aluno['nome']}! 👋")
+        st.write("O que você deseja fazer hoje?")
         
-        # Dashboard do Aluno (Provas Disponíveis e Desempenho)
-        mostrar_tela_dashboard(db_alunos, db_provas)
-    
+        # Grid de Botões Grandes (2 colunas para mobile/desktop)
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("📝\nSimulados\nDisponíveis", key="btn_provas"):
+                st.session_state.sub_etapa = "provas"
+                # Aqui você pode redirecionar para a função específica
+            
+        with col2:
+            if st.button("📊\nMeu\nDesempenho", key="btn_notas"):
+                st.session_state.sub_etapa = "notas"
+
+        with col1:
+            if st.button("✅\nAtividades\nConcluídas", key="btn_concluidas"):
+                st.session_state.sub_etapa = "concluidas"
+
+        with col2:
+            if st.button("🚪\nSair do\nPortal", key="btn_logout"):
+                st.session_state.aluno = None
+                st.session_state.etapa = "login"
+                st.rerun()
+
+        # Renderiza a tela baseada no botão clicado (Sub-etapas)
+        sub = st.session_state.get("sub_etapa", "provas")
+        st.divider()
+        
+        # Chama as funções que já criamos antes
+        mostrar_tela_dashboard(db_alunos, db_provas) # Você pode ajustar para mostrar só a aba certa
+
+    # 3. EXECUÇÃO DE PROVA
     elif st.session_state.etapa == "instrucoes":
-        # Validar se aluno está autenticado
-        if not st.session_state.aluno:
-            st.session_state.etapa = "login"
-            st.rerun()
-        
-        # Tela de Instruções da Prova
-        render_instrucoes(db_provas)
-    
-    elif st.session_state.etapa == "execucao":
-        # Validar se aluno está autenticado
-        if not st.session_state.aluno:
-            st.session_state.etapa = "login"
-            st.rerun()
-        
-        # Execução da Prova
+        render_instrucoes()
+    elif st.session_state.etapa == "prova":
         render_prova(db_provas)
-    
     elif st.session_state.etapa == "suspense":
-        # Validar se aluno está autenticado
-        if not st.session_state.aluno:
-            st.session_state.etapa = "login"
-            st.rerun()
-        
-        # Tela de Suspense (Verificando resposta)
         render_suspense()
-    
     elif st.session_state.etapa == "revisao":
-        # Validar se aluno está autenticado
-        if not st.session_state.aluno:
-            st.session_state.etapa = "login"
-            st.rerun()
-        
-        # Tela de Revisão de Resultados
         render_revisao(db_provas)
-    
-    else:
-        # Estado desconhecido - retornar ao login
-        st.warning(f"⚠️ Estado desconhecido: {st.session_state.etapa}")
-        st.session_state.etapa = "login"
-        st.rerun()
 
 except Exception as e:
-    st.error(f"❌ Erro ao renderizar tela: {str(e)}")
-    st.error("💡 Tente fazer login novamente")
-    if st.button("🔄 Voltar para Login"):
+    st.error(f"❌ Erro: {str(e)}")
+    if st.button("🔄 Voltar para Início"):
         st.session_state.etapa = "login"
-        st.session_state.aluno = None
         st.rerun()
-
-# ==========================================
-# RODAPÉ COM INFORMAÇÕES DE DEBUG
-# ==========================================
-with st.sidebar:
-    if st.checkbox("🔧 Mostrar Debug Info"):
-        st.write("### Debug Info")
-        st.write(f"**Etapa Atual:** {st.session_state.etapa}")
-        st.write(f"**Aluno Autenticado:** {st.session_state.aluno is not None}")
-        if st.session_state.aluno:
-            st.write(f"**Nome:** {st.session_state.aluno.get('nome', 'N/A')}")
-            st.write(f"**Matrícula:** {st.session_state.aluno.get('numero_matricula', 'N/A')}")
-        st.divider()
-        if st.button("🔐 Fazer Logout"):
-            st.session_state.etapa = "login"
-            st.session_state.aluno = None
-            st.rerun()
