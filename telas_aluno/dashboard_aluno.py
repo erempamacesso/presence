@@ -64,7 +64,7 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
         if st.button("← Voltar ao Menu", use_container_width=True): 
             st.session_state.menu_ativo = "home"; st.rerun()
             
-        st.markdown('<div class="header-nome" style="font-size: 20px !important;">Conquistas</div>', unsafe_allow_html=True)
+        st.markdown('<div class="header-nome" style="font-size: 20px !important;">Atividades Realizadas</div>', unsafe_allow_html=True)
         st.markdown('<div class="header-turma">Seu histórico de provas</div>', unsafe_allow_html=True)
         
         try:
@@ -92,7 +92,7 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
                         st.write(f"Acertos: `{dados.get('acertos', 0)}`")
                         
                         if st.button("Ver Diagnóstico Pedagógico", key=f"btn_feedback_{p_id}", use_container_width=True):
-                            with st.status("Buscando análise da IA...", expanded=True):
+                            with st.status("Buscando análise da...", expanded=True):
                                 res_f = db_provas.table("feedback_ia_alunos").select("diagnostico_pedagogico").eq("aluno_id", aluno['id']).eq("prova_id", p_id).execute()
                                 if res_f.data:
                                     st.info(f"💡 {res_f.data[0].get('diagnostico_pedagogico', 'Sem detalhes.')}")

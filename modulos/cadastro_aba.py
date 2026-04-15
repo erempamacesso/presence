@@ -241,18 +241,35 @@ def exibir_cadastro(supabase):
     elif st.session_state.aba_cadastro_ativa == "🔍 Consulta Rápida":
         st.subheader("Busca Geral")
         busca = st.text_input("Digite o nome do aluno ou matrícula:")
+        
         if busca:
-            # Busca tanto por nome quanto por matrícula
-            res = supabase.table("alunos").select("*").or_(f"nome.ilike.%{busca}%,matricula.ilike.%{busca}%").execute()
-            if res.data:
+            res = None
+            try:
+                # 1ª Tentativa: Busca no nome e na matrícula (assumindo que matrícula é texto/string)
+                res = supabase.table("alunos").select("*").or_(f"nome.ilike.%{busca}%,matricula.ilike.%{busca}%").execute()
+            except Exception:
+                # 2ª Tentativa: Se der erro (ex: matrícula é número ou não existe), busca SÓ pelo nome
+                try:
+                    res = supabase.table("alunos").select("*").ilike("nome", f"%{busca}%").execute()
+                except Exception as e:
+                    st.error(f"Erro interno de banco de dados. Verifique a tabela 'alunos'.")
+            
+            # Se conseguiu buscar com sucesso e tem dados
+            if res and res.data:
                 df = pd.DataFrame(res.data)
-                # Garante que a coluna matrícula apareça mesmo se estiver vazia no banco
+                
+                # Garante que as colunas apareçam mesmo se estiverem vazias no banco
                 if 'matricula' not in df.columns: df['matricula'] = "Não informada"
                 if 'data_nascimento' not in df.columns: df['data_nascimento'] = "Não informada"
                 
-                st.dataframe(df[['id', 'nome', 'matricula', 'turma', 'data_nascimento']], use_container_width=True, hide_index=True)
-            else:
-                st.info("Nenhum aluno encontrado com essa busca.")
+                # Exibe a tabela bonitinha
+                st.dataframe(
+                    df[['id', 'nome', 'matricula', 'turma', 'data_nascimento']], 
+                    use_container_width=True, 
+                    hide_index=True
+                )
+            elif res and not res.data:
+                st.warning("Nenhum estudante encontrado com esse termo.")
 
 if __name__ == "__main__":
     pass
