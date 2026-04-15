@@ -34,12 +34,13 @@ def mostrar_tela_desempenho(db_alunos, db_provas):
                 dados = res_notas.data[0]
                 at3 = float(dados.get('at3', 0))
                 at4 = float(dados.get('at4', 0))
+                at5 = float(dados.get('at5', 0))
                 n2 = float(dados.get('prova', 0))
         except:
             st.warning("⚠️ Nota do Diário de Classe em sincronização...")
 
         # 3. CÁLCULOS
-        soma_n1 = at1 + at2 + at3 + at4
+        soma_n1 = at1 + at2 + at3 + at4 + at5
         media = (soma_n1 + n2) / 2 if (soma_n1 + n2) > 0 else 0.0
 
         # 4. EXIBIÇÃO DA TABELA (Conforme seu Print 3)
@@ -50,6 +51,7 @@ def mostrar_tela_desempenho(db_alunos, db_provas):
             "AT2 🔒": [at2],
             "AT3": [at3],
             "AT4": [at4],
+            "AT5": [at5],
             "N2 (Prova)": [n2],
             "Σ N1": [soma_n1],
             "Média": [media]
