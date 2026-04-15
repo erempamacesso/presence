@@ -7,7 +7,7 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
    # --- HEADER ---
     # Coloquei style="font-size: 18px;" para forçar a fonte a ficar menor. 
     # Você pode mudar esse número (16, 18, 20...) até achar o tamanho perfeito!
-    st.markdown(f'<div class="header-nome" style="font-size: 12px !important;">Olá, {aluno["nome"]}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="header-nome" style="font-size: 10px !important;">Olá, {aluno["nome"]}</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="header-turma" style="font-size: 10px !important;">{aluno.get("turma", "Estudante")} • EREMPAM</div>', unsafe_allow_html=True)
 
     if "menu_ativo" not in st.session_state:
