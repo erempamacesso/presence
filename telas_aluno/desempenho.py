@@ -10,8 +10,6 @@ def mostrar_tela_desempenho(db_alunos, db_provas):
     turma_aluno = str(aluno.get('turma', '')).lower()
     ano_ref = "2º ano" if "2º" in turma_aluno else ("3º ano" if "3º" in turma_aluno else "1º ano")
     
-    st.write(f"Olá, **{aluno['nome']}**! Acompanhe suas notas abaixo.")
-
     # =========================================================================
     # 1. FUNÇÃO DINÂMICA: BUSCA A NOTA CALCULADA DOS SIMULADOS (AT1 e AT2)
     # =========================================================================
