@@ -41,7 +41,7 @@ def mostrar_tela_login(supabase_conn):
             padding: 0 !important;
             max-width: 320px; 
             margin: auto;
-            margin-top: 35vh; /* Altura do peito na foto */
+            margin-top: 35vh; 
             display: flex;
             flex-direction: column;
         }}
@@ -59,7 +59,7 @@ def mostrar_tela_login(supabase_conn):
             border-bottom: 2px solid rgba(255, 255, 255, 0.8) !important;
             border-radius: 0px !important;
             font-size: 1.3rem !important;
-            text-align: left !important; /* <--- Texto na esquerda! */
+            text-align: left !important; 
             width: 100% !important;
             padding-bottom: 8px !important;
         }}
@@ -67,19 +67,24 @@ def mostrar_tela_login(supabase_conn):
         input::placeholder {{
             color: white !important;
             opacity: 1 !important;
-            text-align: left !important; /* <--- Placeholder na esquerda! */
+            text-align: left !important; 
         }}
 
         div[data-testid="InputInstructions"] {{ display: none !important; }}
 
-        /* BOTÃO ENTRAR NO CENTRO */
+        /* ========================================================= */
+        /* A SOLUÇÃO DEFINITIVA PARA O BOTÃO CENTRALIZADO            */
+        /* ========================================================= */
+        
+        /* 1. A caixa que guarda o botão precisa ocupar a tela toda */
         div[data-testid="stFormSubmitButton"] {{
-            display: flex;
-            justify-content: center; /* Mantém o botão no meio */
-            width: 100%;
-            margin-top: 1.5rem !important;
+            width: 100% !important;
+            text-align: center !important;
+            display: block !important;
+            margin-top: 2rem !important;
         }}
 
+        /* 2. O botão em si é forçado a ter margens iguais dos lados */
         div[data-testid="stFormSubmitButton"] > button {{
             background: rgba(255, 255, 255, 0.2) !important;
             backdrop-filter: blur(5px) !important;
@@ -89,7 +94,12 @@ def mostrar_tela_login(supabase_conn):
             border: 1px solid rgba(255, 255, 255, 0.5) !important;
             border-radius: 30px !important;
             padding: 0.6rem 3rem !important;
-            width: auto !important;
+            
+            /* O Segredo: */
+            width: fit-content !important; 
+            margin: 0 auto !important; 
+            display: block !important;
+            
             transition: 0.3s;
         }}
 
@@ -98,19 +108,20 @@ def mostrar_tela_login(supabase_conn):
             transform: scale(1.02) !important;
         }}
 
-        /* TEXTOS ABAIXO DO BOTÃO (2 linhas de distância) */
+        /* TEXTOS ABAIXO DO BOTÃO */
         .textos-abaixo {{
             text-align: center;
-            margin-top: 2rem; /* Cria o espaço em branco abaixo do botão */
+            margin-top: 2rem; 
+            width: 100%;
         }}
 
         .titulo-escola {{
-            font-size: 2rem; /* Bem grande para chamar atenção */
+            font-size: 2rem; 
             font-weight: 900;
             color: white;
             margin-bottom: 0px;
             letter-spacing: 2px;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.5); /* Sombrinha para leitura clara */
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5); 
         }}
         
         .subtitulo-eco {{
@@ -144,7 +155,7 @@ def mostrar_tela_login(supabase_conn):
                 except Exception as e:
                     st.error(f"Erro: {e}")
 
-    # Os textos agora estão fora do rodapé e ficam acompanhando o formulário logo abaixo dele!
+    # Textos lá no fundo
     st.markdown("""
         <div class="textos-abaixo">
             <p class="titulo-escola">EREMPAM</p>
