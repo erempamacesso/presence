@@ -17,12 +17,11 @@ def mostrar_tela_login(supabase_conn):
                     continue
         return None
 
-    # Usando o nome em minúsculo como você alertou
     img_b64 = get_base64_image("fundo_app.png") or get_base64_image("fundo_app.jpg")
     bg_style = f"url('data:image/jpeg;base64,{img_b64}')" if img_b64 else "none"
 
     # ---------------------------------------------------------
-    # 2. MÁGICA DO CSS: ESTILO LIMPO E CENTRALIZADO
+    # 2. MÁGICA DO CSS: AJUSTES FINAIS DE LAYOUT
     # ---------------------------------------------------------
     st.markdown(f"""
         <style>
@@ -34,51 +33,51 @@ def mostrar_tela_login(supabase_conn):
 
         header {{visibility: hidden;}}
         
-        /* Centralizando o formulário e os itens dentro dele */
+        /* O formulário Invisível */
         div[data-testid="stForm"] {{
             background: transparent !important;
             border: none !important;
             box-shadow: none !important;
             padding: 0 !important;
-            max-width: 300px; 
+            max-width: 320px; 
             margin: auto;
-            margin-top: 38vh;
+            margin-top: 35vh; /* Altura do peito na foto */
             display: flex;
             flex-direction: column;
-            align-items: center; /* Centraliza o botão e o input */
         }}
 
-        /* Removendo fundos do Streamlit */
+        /* Removendo o fundo branco padrão do Streamlit */
         div[data-baseweb="input"], div[data-baseweb="base-input"] {{
             background-color: transparent !important;
             border: none !important;
         }}
 
-        /* Estilizando a linha de entrada */
+        /* LINHA DE DIGITAÇÃO ALINHADA À ESQUERDA */
         input[type="text"] {{
             background-color: transparent !important;
             color: white !important;
             border-bottom: 2px solid rgba(255, 255, 255, 0.8) !important;
             border-radius: 0px !important;
             font-size: 1.3rem !important;
-            text-align: center !important; /* Texto da matrícula no centro */
+            text-align: left !important; /* <--- Texto na esquerda! */
             width: 100% !important;
+            padding-bottom: 8px !important;
         }}
         
-        /* Cor branca para o placeholder "Matrícula" */
         input::placeholder {{
             color: white !important;
             opacity: 1 !important;
+            text-align: left !important; /* <--- Placeholder na esquerda! */
         }}
 
-        /* Esconder instruções "Press Enter" */
         div[data-testid="InputInstructions"] {{ display: none !important; }}
 
-        /* Botão Entrar Centralizado e Translúcido */
+        /* BOTÃO ENTRAR NO CENTRO */
         div[data-testid="stFormSubmitButton"] {{
             display: flex;
-            justify-content: center;
+            justify-content: center; /* Mantém o botão no meio */
             width: 100%;
+            margin-top: 1.5rem !important;
         }}
 
         div[data-testid="stFormSubmitButton"] > button {{
@@ -89,42 +88,47 @@ def mostrar_tela_login(supabase_conn):
             font-weight: 700 !important;
             border: 1px solid rgba(255, 255, 255, 0.5) !important;
             border-radius: 30px !important;
-            padding: 0.6rem 3rem !important; /* Largura fixa para o botão */
+            padding: 0.6rem 3rem !important;
             width: auto !important;
-            margin-top: 2rem !important;
             transition: 0.3s;
         }}
 
-        .footer-titulos {{
-            position: fixed;
-            bottom: 25px;
-            left: 0;
-            width: 100%;
-            text-align: center;
+        div[data-testid="stFormSubmitButton"] > button:hover {{
+            background: rgba(255, 255, 255, 0.35) !important;
+            transform: scale(1.02) !important;
         }}
 
-        .titulo-eco {{
-            font-size: 1.8rem;
+        /* TEXTOS ABAIXO DO BOTÃO (2 linhas de distância) */
+        .textos-abaixo {{
+            text-align: center;
+            margin-top: 2rem; /* Cria o espaço em branco abaixo do botão */
+        }}
+
+        .titulo-escola {{
+            font-size: 2rem; /* Bem grande para chamar atenção */
             font-weight: 900;
-            background: linear-gradient(90deg, #00f2fe 0%, #4facfe 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+            color: white;
             margin-bottom: 0px;
+            letter-spacing: 2px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5); /* Sombrinha para leitura clara */
         }}
         
         .subtitulo-eco {{
-            font-size: 0.9rem;
-            color: rgba(255, 255, 255, 0.6);
-            letter-spacing: 3px;
+            font-size: 1.1rem;
+            font-weight: 700;
+            background: linear-gradient(90deg, #00f2fe 0%, #4facfe 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: 1px;
+            margin-top: 5px;
         }}
         </style>
     """, unsafe_allow_html=True)
 
     # ---------------------------------------------------------
-    # 3. INTERFACE
+    # 3. INTERFACE DE LOGIN
     # ---------------------------------------------------------
     with st.form("login_aluno"):
-        # Placeholder agora em branco e texto centralizado
         matricula = st.text_input("Matrícula", placeholder="Matrícula", label_visibility="collapsed")
         
         if st.form_submit_button("ENTRAR"):
@@ -140,9 +144,10 @@ def mostrar_tela_login(supabase_conn):
                 except Exception as e:
                     st.error(f"Erro: {e}")
 
+    # Os textos agora estão fora do rodapé e ficam acompanhando o formulário logo abaixo dele!
     st.markdown("""
-        <div class="footer-titulos">
-            <p class="titulo-eco">EREMPAM</p>
+        <div class="textos-abaixo">
+            <p class="titulo-escola">EREMPAM</p>
             <p class="subtitulo-eco">ECOSSISTEMA DO ALUNO</p>
         </div>
     """, unsafe_allow_html=True)
