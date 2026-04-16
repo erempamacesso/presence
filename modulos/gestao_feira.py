@@ -15,16 +15,23 @@ def exibir_gestao_feira(supabase_conn):
     ])
     
     # ==========================================
-    # ABA 0: VITRINE (OTIMIZADA COM CACHE)
+    # ABA 0: VITRINE (OTIMIZADA COM ATUALIZAÇÃO RÁPIDA)
     # ==========================================
     with aba_ver:
-        # Função interna para cachear a vitrine e evitar select *
-        @st.cache_data(ttl=600)
+        # 1. Diminuímos o TTL para 60 segundos para facilitar os testes
+        @st.cache_data(ttl=60)
         def buscar_eventos_vitrine(_supabase):
-            # Selecionando apenas as colunas necessárias para a vitrine
+            # Selecionando apenas as colunas necessárias
             return _supabase.table("feira_eventos").select(
-                "id, nome, data_inicio, data_fim, onde, turmas, edital_link, imagem_capa_link, max_membros"
+                "id, nome, data_inicio, data_fim, onde, turmas, edital_link, imagem_capa_link, max_membros, ativo"
             ).eq("ativo", True).execute()
+
+        # Botão discreto para forçar a limpeza do cache se algo não aparecer
+        col_refresh, _ = st.columns([1, 3])
+        with col_refresh:
+            if st.button("🔄 Atualizar Vitrine"):
+                st.cache_data.clear()
+                st.rerun()
 
         try:
             res = buscar_eventos_vitrine(supabase_conn)
@@ -32,6 +39,7 @@ def exibir_gestao_feira(supabase_conn):
             
             if not eventos:
                 st.info("Nenhum evento ativo no momento.")
+                st.warning("⚠️ Dica: Verifique no Supabase se a coluna 'ativo' está como TRUE para o seu evento.")
             else:
                 for ev in eventos:
                     with st.container(border=True):
@@ -42,6 +50,7 @@ def exibir_gestao_feira(supabase_conn):
                         col_info, col_btn = st.columns([3, 1])
                         with col_info:
                             st.subheader(f"🏆 {ev['nome']}")
+                            # Formatação básica de data caso venha do banco em formato americano
                             st.caption(f"🗓️ {ev['data_inicio']} até {ev['data_fim']}")
                             st.write(f"📍 **Onde:** {ev.get('onde', 'EREM PAM')}")
                             st.write(f"👥 **Turmas:** {ev.get('turmas', 'Geral')}")
