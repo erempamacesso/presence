@@ -61,7 +61,7 @@ def mostrar_tela_inscricao_feira(supabase_conn):
                             """, unsafe_allow_html=True)
                             
                             # BOTÃO MAGICO: Leva para a tela de temas
-                            if st.button("👉 Quero Participar", key=f"part_ev_{ev['id']}", type="primary", use_container_width=True):
+                            if st.button("INSCREVA-SE", key=f"part_ev_{ev['id']}", type="primary", use_container_width=True):
                                 st.session_state.evento_selecionado = ev
                                 st.session_state.fluxo_feira = 'escolha_tema'
                                 st.rerun()

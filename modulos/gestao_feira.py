@@ -10,9 +10,9 @@ def exibir_gestao_feira(supabase_conn):
     # 1. Função de busca com cache definida ANTES das abas (Melhor performance)
     @st.cache_data(ttl=60)
     def buscar_eventos_vitrine(_supabase):
-        # Selecionando as colunas de membros (min e max)
+        # ATUALIZAÇÃO: Agora o SELECT puxa também insc_abertura e insc_final
         return _supabase.table("feira_eventos").select(
-            "id, nome, data_inicio, data_fim, onde, turmas, edital_link, imagem_capa_link, min_membros, max_membros, ativo"
+            "id, nome, data_inicio, data_fim, onde, turmas, edital_link, imagem_capa_link, min_membros, max_membros, ativo, insc_abertura, insc_final"
         ).eq("ativo", True).execute()
 
     # 2. CRIANDO AS 3 ABAS
@@ -75,7 +75,17 @@ def exibir_gestao_feira(supabase_conn):
                                 d_ini_br, d_fim_br = data_ini, data_fim
 
                             # Data em vermelho conforme o print
-                            st.markdown(f"🗓️ **Período:** <span style='color: #ff4b4b;'>{d_ini_br} até {d_fim_br}</span>", unsafe_allow_html=True)
+                            st.markdown(f"🗓️ **Período do Evento:** <span style='color: #ff4b4b;'>{d_ini_br} até {d_fim_br}</span>", unsafe_allow_html=True)
+                            
+                            # EXIBINDO O PERÍODO DE INSCRIÇÕES NA VITRINE
+                            insc_abertura = ev.get('insc_abertura', '')
+                            insc_final = ev.get('insc_final', '')
+                            try:
+                                d_insc_ini_br = datetime.datetime.strptime(insc_abertura, '%Y-%m-%d').strftime('%d/%m/%Y')
+                                d_insc_fim_br = datetime.datetime.strptime(insc_final, '%Y-%m-%d').strftime('%d/%m/%Y')
+                                st.markdown(f"✍️ **Inscrições:** <span style='color: #2e7d32; font-weight: bold;'>{d_insc_ini_br} a {d_insc_fim_br}</span>", unsafe_allow_html=True)
+                            except:
+                                pass # Se não tiver data, não mostra nada
                             
                             st.write(f"📍 **Onde:** {ev.get('onde', 'EREM PAM')}")
                             st.write(f"👥 **Turmas:** {ev.get('turmas', 'Geral')}")
@@ -105,7 +115,7 @@ def exibir_gestao_feira(supabase_conn):
             st.error(f"Erro ao carregar vitrine: {e}")
 
     # ==========================================
-    # ABA 1: CRIAR NOVO EVENTO (COM UPLOAD)
+    # ABA 1: CRIAR NOVO EVENTO (COM UPLOAD E NOVAS DATAS)
     # ==========================================
     with aba_evento:
         st.subheader("Configurar Novo Evento")
@@ -113,10 +123,17 @@ def exibir_gestao_feira(supabase_conn):
         with st.form("form_criacao_evento_mestre", clear_on_submit=True):
             nome_evento = st.text_input("Nome do Evento", placeholder="Ex: NATUMAT 2026")
             
+            st.markdown("##### 🗓️ Datas do Evento")
             col1, col2 = st.columns(2)
-            data_inicio = col1.date_input("Data de Início")
-            data_fim = col2.date_input("Data de Fim")
+            data_inicio = col1.date_input("Data de Início do Evento")
+            data_fim = col2.date_input("Data de Fim do Evento")
             
+            st.markdown("##### ⏳ Período de Inscrições")
+            col_insc1, col_insc2 = st.columns(2)
+            data_insc_abertura = col_insc1.date_input("Abertura das Inscrições")
+            data_insc_final = col_insc2.date_input("Encerramento das Inscrições")
+            
+            st.markdown("##### 📍 Detalhes e Regras")
             col3, col4 = st.columns(2)
             local_ev = col3.text_input("Local da Feira", placeholder="Ex: Pátio e Laboratórios")
             turmas_ev = col4.text_input("Público-Alvo / Turmas", placeholder="Ex: 1º e 2º Anos")
@@ -162,11 +179,13 @@ def exibir_gestao_feira(supabase_conn):
                             repo.create_file(path_pdf, f"Upload Edital: {nome_evento}", arquivo_pdf.read(), branch="main")
                             link_pdf_final = f"https://raw.githubusercontent.com/erempamacesso/presence/main/{path_pdf}"
                             
-                        # Salvar no Supabase
+                        # Salvar no Supabase (AGORA COM AS NOVAS DATAS)
                         dados_para_salvar = {
                             "nome": nome_evento,
                             "data_inicio": str(data_inicio),
                             "data_fim": str(data_fim),
+                            "insc_abertura": str(data_insc_abertura), # NOVO CAMPO
+                            "insc_final": str(data_insc_final),       # NOVO CAMPO
                             "onde": local_ev,
                             "turmas": turmas_ev,
                             "min_membros": min_alunos,
