@@ -16,7 +16,7 @@ st.set_page_config(
 # ==========================================
 try:
     from telas_aluno.login import mostrar_tela_login
-    from telas_aluno.inscricao_feira import mostrar_tela_inscricao_feira 
+    from telas_app_aluno.inscricao_feira import mostrar_tela_inscricao_feira 
 except ImportError as e:
     st.error(f"❌ Erro ao importar módulos: {e}")
     st.stop()
