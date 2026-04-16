@@ -17,7 +17,7 @@ def mostrar_tela_login(supabase_conn):
                     continue
         return None
 
-    img_b64 = get_base64_image("FUNDO_APP.jpg") or get_base64_image("FUNDO_APP.png")
+    img_b64 = get_base64_image("fundo_app.jpg") or get_base64_image("fundo_app.png")
     bg_style = f"url('data:image/jpeg;base64,{img_b64}')" if img_b64 else "none"
 
     # ---------------------------------------------------------
