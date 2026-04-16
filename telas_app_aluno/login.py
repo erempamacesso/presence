@@ -1,25 +1,46 @@
 import streamlit as st
+import base64
 import time
 
 def mostrar_tela_login(supabase_conn):
     # ==========================================
     # MÁGICA DO CSS: VISUAL MODERNO (REACT STYLE)
     # ==========================================
-    st.markdown("""
+    import base64
+
+def mostrar_tela_login(supabase_conn):
+    # Função para converter a imagem local em Base64
+    def get_base64_binario(file_path):
+        with open(file_path, "rb") as f:
+            data = f.read()
+        return base64.b64encode(data).decode()
+
+    # Tenta carregar a imagem do seu caminho específico
+    try:
+        img_path = r"D:\argos-erempam\fundo_app.png"
+        img_base64 = get_base64_binario(img_path)
+        fundo_style = f"data:image/png;base64,{img_base64}"
+    except Exception as e:
+        # Fallback caso o arquivo não seja encontrado
+        fundo_style = "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?q=80&w=2070"
+
+    # ==========================================
+    # MÁGICA DO CSS: VISUAL MODERNO (REACT STYLE)
+    # ==========================================
+    st.markdown(f"""
         <style>
-        /* 1. Imagem de fundo cobrindo tudo com sobreposição escura */
-        .stApp {
-            /* DEPOIS TROQUE O LINK ABAIXO PELA SUA IMAGEM GERADA POR IA */
-            background: linear-gradient(rgba(10, 25, 47, 0.75), rgba(10, 25, 47, 0.85)), 
-                        url('https://images.unsplash.com/photo-1550751827-4bd374c3f58b?q=80&w=2070&auto=format&fit=crop') no-repeat center center fixed !important;
+        /* 1. Imagem de fundo com sobreposição escura (Preto 75% a 85%) */
+        .stApp {{
+            background: linear-gradient(rgba(0, 0, 0, 0.75), rgba(0, 0, 0, 0.85)), 
+                        url("{fundo_style}") no-repeat center center fixed !important;
             background-size: cover !important;
-        }
+        }}
 
-        /* 2. Ocultar o cabeçalho padrão do Streamlit para ficar tela limpa */
-        header {visibility: hidden;}
+        /* 2. Ocultar o cabeçalho padrão do Streamlit */
+        header {{visibility: hidden;}}
 
-        /* 3. Estilizando o Form para virar um Cartão de Vidro (Glassmorphism) */
-        div[data-testid="stForm"] {
+        /* 3. Cartão de Vidro (Glassmorphism) */
+        div[data-testid="stForm"] {{
             background: rgba(255, 255, 255, 0.05);
             backdrop-filter: blur(16px);
             -webkit-backdrop-filter: blur(16px);
@@ -27,16 +48,16 @@ def mostrar_tela_login(supabase_conn):
             border-radius: 24px;
             padding: 3rem 2rem;
             box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-        }
+        }}
 
         /* 4. Textos dentro do form */
-        div[data-testid="stForm"] p, div[data-testid="stForm"] label {
+        div[data-testid="stForm"] p, div[data-testid="stForm"] label {{
             color: #e2e8f0 !important;
             font-weight: 500 !important;
-        }
+        }}
 
         /* 5. Títulos do Ecossistema */
-        .titulo-eco {
+        .titulo-eco {{
             text-align: center;
             font-size: 2.5rem;
             font-weight: 900;
@@ -46,9 +67,9 @@ def mostrar_tela_login(supabase_conn):
             margin-bottom: 0px;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             letter-spacing: -1px;
-        }
+        }}
         
-        .subtitulo-eco {
+        .subtitulo-eco {{
             text-align: center;
             font-size: 1.2rem;
             font-weight: 400;
@@ -56,37 +77,30 @@ def mostrar_tela_login(supabase_conn):
             letter-spacing: 4px;
             margin-bottom: 2rem;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
+        }}
 
-        /* 6. Inputs arredondados e modernos */
-        div[data-baseweb="input"] {
+        /* 6. Inputs arredondados */
+        div[data-baseweb="input"] {{
             border-radius: 12px !important;
             background-color: rgba(255, 255, 255, 0.9) !important;
             border: 2px solid transparent !important;
-            transition: all 0.3s ease !important;
-        }
-        div[data-baseweb="input"]:focus-within {
-            border: 2px solid #4facfe !important;
-            box-shadow: 0 0 10px rgba(79, 172, 254, 0.5) !important;
-        }
+        }}
 
         /* 7. Botão Principal com Efeito Hover */
-        div[data-testid="stFormSubmitButton"] > button {
+        div[data-testid="stFormSubmitButton"] > button {{
             background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%) !important;
             color: #0a192f !important;
             font-weight: 800 !important;
             font-size: 1.1rem !important;
-            border: none !important;
             border-radius: 12px !important;
-            padding: 0.8rem !important;
+            border: none !important;
             transition: all 0.3s ease !important;
             text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-        div[data-testid="stFormSubmitButton"] > button:hover {
+        }}
+        div[data-testid="stFormSubmitButton"] > button:hover {{
             transform: translateY(-3px) !important;
             box-shadow: 0 8px 20px rgba(79, 172, 254, 0.4) !important;
-        }
+        }}
         </style>
     """, unsafe_allow_html=True)
 
