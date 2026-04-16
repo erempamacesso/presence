@@ -42,44 +42,60 @@ def exibir_gestao_feira(supabase_conn):
             else:
                 for ev in eventos:
                     with st.container(border=True):
-                        # 1. Capa do Evento
-                        if ev.get('imagem_capa_link'):
-                            st.image(ev['imagem_capa_link'], use_container_width=True)
+                        # Criando 3 colunas para o layout horizontal: [Imagem, Infos, Botões]
+                        col_img, col_info, col_btn = st.columns([1.5, 3, 1.5])
                         
-                        col_info, col_btn = st.columns([2.5, 1.5])
+                        # ==================================
+                        # COLUNA 1: IMAGEM DA CAPA
+                        # ==================================
+                        with col_img:
+                            if ev.get('imagem_capa_link'):
+                                st.image(ev['imagem_capa_link'], use_container_width=True)
+                            else:
+                                # Um bloco cinza elegante caso o evento não tenha imagem
+                                st.markdown("""
+                                    <div style='height: 150px; background-color: #f0f2f6; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #888;'>
+                                        🖼️ Sem Imagem
+                                    </div>
+                                """, unsafe_allow_html=True)
                         
+                        # ==================================
+                        # COLUNA 2: INFORMAÇÕES
+                        # ==================================
                         with col_info:
                             st.subheader(f"🏆 {ev['nome']}")
                             
-                            # 2. Datas formatadas
+                            # Conversão de Datas
                             data_ini = ev.get('data_inicio', '')
                             data_fim = ev.get('data_fim', '')
-                            # Inverte o padrao americano YYYY-MM-DD para DD/MM/YYYY se possível
                             try:
                                 d_ini_br = datetime.datetime.strptime(data_ini, '%Y-%m-%d').strftime('%d/%m/%Y')
                                 d_fim_br = datetime.datetime.strptime(data_fim, '%Y-%m-%d').strftime('%d/%m/%Y')
                             except:
                                 d_ini_br, d_fim_br = data_ini, data_fim
 
-                            st.markdown(f"🗓️ **Período:** <span style='font-size: 1.1rem; color: #ff4b4b;'>{d_ini_br} até {d_fim_br}</span>", unsafe_allow_html=True)
+                            # Data em vermelho conforme o print
+                            st.markdown(f"🗓️ **Período:** <span style='color: #ff4b4b;'>{d_ini_br} até {d_fim_br}</span>", unsafe_allow_html=True)
                             
                             st.write(f"📍 **Onde:** {ev.get('onde', 'EREM PAM')}")
                             st.write(f"👥 **Turmas:** {ev.get('turmas', 'Geral')}")
                         
+                        # ==================================
+                        # COLUNA 3: BADGE E BOTÃO
+                        # ==================================
                         with col_btn:
-                            # 3. Mínimo e Máximo de Alunos (Badge)
                             v_min = ev.get('min_membros', 0)
                             v_max = ev.get('max_membros', 0)
                             
+                            # Bloco de alunos formatado idêntico ao print
                             st.markdown(f"""
-                                <div style="background-color: #f0f2f6; padding: 10px; border-radius: 10px; text-align: center; border: 1px solid #ddd;">
-                                    <span style="font-size: 0.8rem; color: #555;">ALUNOS POR GRUPO</span><br>
-                                    <span style="font-size: 1.5rem; font-weight: bold; color: #1f77b4;">{v_min} a {v_max}</span>
+                                <div style="background-color: #f8f9fa; padding: 10px; border-radius: 8px; text-align: center; border: 1px solid #e6e6e6; margin-bottom: 12px;">
+                                    <span style="font-size: 0.70rem; color: #666; text-transform: uppercase; letter-spacing: 0.5px;">ALUNOS POR GRUPO</span><br>
+                                    <span style="font-size: 1.4rem; font-weight: 800; color: #1f77b4;">{v_min} a {v_max}</span>
                                 </div>
                             """, unsafe_allow_html=True)
                             
-                            st.write("") # Espaçador
-                            
+                            # Botão de Edital
                             if ev.get("edital_link"):
                                 st.link_button("📄 Ver Edital", ev["edital_link"], use_container_width=True)
                             else:
