@@ -5,8 +5,6 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
     aluno = st.session_state.aluno
 
    # --- HEADER ---
-    # Coloquei style="font-size: 18px;" para forçar a fonte a ficar menor. 
-    # Você pode mudar esse número (16, 18, 20...) até achar o tamanho perfeito!
     st.markdown(f'<div class="header-nome" style="font-size: 10px !important;">Olá, {aluno["nome"]}</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="header-turma" style="font-size: 10px !important;">{aluno.get("turma", "Estudante")} • EREMPAM</div>', unsafe_allow_html=True)
 
@@ -17,14 +15,20 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
     # TELA 1: MENU PRINCIPAL
     # ---------------------------------------------------------
     if st.session_state.menu_ativo == "home":
-        if st.button("📝 Simulados Disponíveis", use_container_width=True):
-            st.session_state.menu_ativo = "provas"; st.rerun()
-            
-        if st.button("✅ Atividades Concluídas", use_container_width=True):
-            st.session_state.menu_ativo = "historico"; st.rerun()
-            
-        if st.button("📊 Meu Desempenho", use_container_width=True):
-            st.session_state.menu_ativo = "notas"; st.rerun()
+        # Criando a "moldura" para os botões principais
+        with st.container(border=True):
+            if st.button("📝 Simulados Disponíveis", use_container_width=True):
+                st.session_state.menu_ativo = "provas"; st.rerun()
+                
+            if st.button("✅ Atividades Concluídas", use_container_width=True):
+                st.session_state.menu_ativo = "historico"; st.rerun()
+                
+            if st.button("📊 Meu Desempenho", use_container_width=True):
+                st.session_state.menu_ativo = "notas"; st.rerun()
+
+            # --- NOVO BOTÃO DA FEIRA ---
+            if st.button("🎪 Inscrição Feira de Ciências", use_container_width=True):
+                st.session_state.etapa = "inscricao_feira"; st.rerun()
             
         st.write("") # Espaço
         
@@ -32,7 +36,7 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
             st.session_state.aluno = None; st.session_state.etapa = "login"; st.rerun()
 
     # ---------------------------------------------------------
-    # TELA 2: PROVAS DISPONÍVEIS
+    # TELA 2: PROVAS DISPONÍVEIS (Sem alterações daqui para baixo)
     # ---------------------------------------------------------
     elif st.session_state.menu_ativo == "provas":
         if st.button("← Voltar ao Menu", use_container_width=True): 
@@ -70,7 +74,6 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
         st.markdown('<div class="header-turma">Seu histórico de provas</div>', unsafe_allow_html=True)
         
         try:
-            # Buscando usando o ID original do aluno (sem forçar string caso seja inteiro)
             res_c = db_provas.table("resultados_provas").select("*").eq("aluno_id", aluno['id']).execute()
             
             if res_c.data:
