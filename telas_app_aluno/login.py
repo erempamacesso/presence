@@ -21,7 +21,7 @@ def mostrar_tela_login(supabase_conn):
     bg_style = f"url('data:image/jpeg;base64,{img_b64}')" if img_b64 else "none"
 
     # ---------------------------------------------------------
-    # 2. MÁGICA DO CSS: AJUSTES FINAIS DE LAYOUT
+    # 2. MÁGICA DO CSS
     # ---------------------------------------------------------
     st.markdown(f"""
         <style>
@@ -33,7 +33,6 @@ def mostrar_tela_login(supabase_conn):
 
         header {{visibility: hidden;}}
         
-        /* O formulário Invisível */
         div[data-testid="stForm"] {{
             background: transparent !important;
             border: none !important;
@@ -46,13 +45,11 @@ def mostrar_tela_login(supabase_conn):
             flex-direction: column;
         }}
 
-        /* Removendo o fundo branco padrão do Streamlit */
         div[data-baseweb="input"], div[data-baseweb="base-input"] {{
             background-color: transparent !important;
             border: none !important;
         }}
 
-        /* LINHA DE DIGITAÇÃO ALINHADA À ESQUERDA */
         input[type="text"] {{
             background-color: transparent !important;
             color: white !important;
@@ -72,19 +69,7 @@ def mostrar_tela_login(supabase_conn):
 
         div[data-testid="InputInstructions"] {{ display: none !important; }}
 
-        /* ========================================================= */
-        /* A SOLUÇÃO DEFINITIVA PARA O BOTÃO CENTRALIZADO            */
-        /* ========================================================= */
-        
-        /* 1. A caixa que guarda o botão precisa ocupar a tela toda */
-        div[data-testid="stFormSubmitButton"] {{
-            width: 100% !important;
-            text-align: center !important;
-            display: block !important;
-            margin-top: 2rem !important;
-        }}
-
-        /* 2. O botão em si é forçado a ter margens iguais dos lados */
+        /* ESTILO DO BOTÃO (Sem tentar forçar a posição por aqui) */
         div[data-testid="stFormSubmitButton"] > button {{
             background: rgba(255, 255, 255, 0.2) !important;
             backdrop-filter: blur(5px) !important;
@@ -93,13 +78,8 @@ def mostrar_tela_login(supabase_conn):
             font-weight: 700 !important;
             border: 1px solid rgba(255, 255, 255, 0.5) !important;
             border-radius: 30px !important;
-            padding: 0.6rem 3rem !important;
-            
-            /* O Segredo: */
-            width: fit-content !important; 
-            margin: 0 auto !important; 
-            display: block !important;
-            
+            padding: 0.6rem !important;
+            width: 100% !important; /* Preenche a coluna do meio */
             transition: 0.3s;
         }}
 
@@ -108,7 +88,6 @@ def mostrar_tela_login(supabase_conn):
             transform: scale(1.02) !important;
         }}
 
-        /* TEXTOS ABAIXO DO BOTÃO */
         .textos-abaixo {{
             text-align: center;
             margin-top: 2rem; 
@@ -142,7 +121,15 @@ def mostrar_tela_login(supabase_conn):
     with st.form("login_aluno"):
         matricula = st.text_input("Matrícula", placeholder="Matrícula", label_visibility="collapsed")
         
-        if st.form_submit_button("ENTRAR"):
+        st.write("") # Dá um espacinho entre a linha e o botão
+        
+        # O TRUQUE MÁGICO: 3 colunas (espaço vazio, botão, espaço vazio)
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            # use_container_width=True faz ele esticar perfeitamente na coluna 2
+            submit = st.form_submit_button("ENTRAR", use_container_width=True)
+            
+        if submit:
             if matricula:
                 try:
                     res = supabase_conn.table("alunos").select("*").eq("matricula", matricula).execute()
@@ -155,7 +142,7 @@ def mostrar_tela_login(supabase_conn):
                 except Exception as e:
                     st.error(f"Erro: {e}")
 
-    # Textos lá no fundo
+    # Textos abaixo
     st.markdown("""
         <div class="textos-abaixo">
             <p class="titulo-escola">EREMPAM</p>
