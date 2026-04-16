@@ -132,7 +132,7 @@ def mostrar_tela_login(supabase_conn):
         if submit:
             if matricula:
                 try:
-                    res = supabase_conn.table("alunos").select("*").eq("matricula", matricula).execute()
+                    res = supabase_conn.table("alunos").select("*").eq("numero_matricula", matricula).execute()
                     if res.data:
                         st.session_state.aluno = res.data[0]
                         st.session_state.etapa = "ante_sala"
