@@ -19,7 +19,7 @@ try:
     from telas_aluno.dashboard_aluno import mostrar_tela_dashboard
     from telas_aluno.execucao_prova import render_instrucoes, render_prova
     from telas_aluno.resultados import render_suspense, render_revisao
-    from telas_aluno.inscricao_feira import mostrar_tela_inscricao_feira 
+    
 except ImportError as e:
     st.error(f"❌ Erro ao importar módulos: {e}")
     st.stop()
@@ -86,16 +86,6 @@ elif st.session_state.etapa == "revisao":
         st.rerun()
     render_revisao(db_provas)
 
-# ==========================================
-# NOVA ROTA: INSCRIÇÃO DA FEIRA
-# ==========================================
-elif st.session_state.etapa == "inscricao_feira":
-    if not st.session_state.aluno:
-        st.session_state.etapa = "login"
-        st.rerun()
-    mostrar_tela_inscricao_feira(db_alunos)# ==========================================
-# CSS MOBILE: ULTRA MINIMALISTA (Correção)
-# ==========================================
 st.markdown("""
     <style>
         /* Esconde Sidebar e o Header (Deploy/Running) do Streamlit */

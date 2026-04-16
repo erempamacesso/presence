@@ -23,13 +23,9 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
             if st.button("✅ Atividades Concluídas", use_container_width=True):
                 st.session_state.menu_ativo = "historico"; st.rerun()
                 
-            if st.button("📊 Meu Desempenho", use_container_width=True):
+            if st.button("MEU DESEMPENHO", use_container_width=True):
                 st.session_state.menu_ativo = "notas"; st.rerun()
 
-            # --- NOVO BOTÃO DA FEIRA ---
-            if st.button("🎪 Inscrição Feira de Ciências", use_container_width=True):
-                st.session_state.etapa = "inscricao_feira"; st.rerun()
-            
         st.write("") # Espaço
         
         if st.button("🚪 Sair da Conta", use_container_width=True):
