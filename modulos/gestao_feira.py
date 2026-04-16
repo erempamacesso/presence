@@ -7,15 +7,21 @@ def exibir_gestao_feira(supabase_conn):
     st.title("🎪 Central de Eventos e Feiras")
     st.markdown("Gerencie os eventos, banners, editais e linhas de pesquisa da escola.")
     
-    # 1. Função de busca com cache definida ANTES das abas (Melhor performance)
+    # Função para formatar data ISO (2025-05-20) para BR (20/05/2025)
+    def formatar_data_br(data_iso):
+        if not data_iso: return ""
+        try:
+            return datetime.datetime.strptime(str(data_iso), '%Y-%m-%d').strftime('%d/%m/%Y')
+        except:
+            return str(data_iso)
+
+    # 1. Função de busca com cache
     @st.cache_data(ttl=60)
     def buscar_eventos_vitrine(_supabase):
-        # ATUALIZAÇÃO: Agora o SELECT puxa também insc_abertura e insc_final
         return _supabase.table("feira_eventos").select(
             "id, nome, data_inicio, data_fim, onde, turmas, edital_link, imagem_capa_link, min_membros, max_membros, ativo, insc_abertura, insc_final"
         ).eq("ativo", True).execute()
 
-    # 2. CRIANDO AS 3 ABAS
     aba_ver, aba_evento, aba_orientadores = st.tabs([
         "👀 Ver Eventos Ativos",
         "📅 1. Lançar Novo Evento", 
@@ -23,15 +29,12 @@ def exibir_gestao_feira(supabase_conn):
     ])
     
     # ==========================================
-    # ABA 0: VITRINE (CORRIGIDA: DATAS E MEMBROS)
+    # ABA 0: VITRINE (FORMATO BR)
     # ==========================================
     with aba_ver:
-        # Botão de atualização manual
-        col_refresh, _ = st.columns([1, 4])
-        with col_refresh:
-            if st.button("🔄 Atualizar Vitrine"):
-                st.cache_data.clear()
-                st.rerun()
+        if st.button("🔄 Atualizar Vitrine"):
+            st.cache_data.clear()
+            st.rerun()
 
         try:
             res = buscar_eventos_vitrine(supabase_conn)
@@ -42,62 +45,33 @@ def exibir_gestao_feira(supabase_conn):
             else:
                 for ev in eventos:
                     with st.container(border=True):
-                        # Criando 3 colunas para o layout horizontal: [Imagem, Infos, Botões]
                         col_img, col_info, col_btn = st.columns([1.5, 3, 1.5])
                         
-                        # ==================================
-                        # COLUNA 1: IMAGEM DA CAPA
-                        # ==================================
                         with col_img:
                             if ev.get('imagem_capa_link'):
                                 st.image(ev['imagem_capa_link'], use_container_width=True)
                             else:
-                                # Um bloco cinza elegante caso o evento não tenha imagem
-                                st.markdown("""
-                                    <div style='height: 150px; background-color: #f0f2f6; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #888;'>
-                                        🖼️ Sem Imagem
-                                    </div>
-                                """, unsafe_allow_html=True)
+                                st.markdown("<div style='height: 150px; background-color: #f0f2f6; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #888;'>🖼️ Sem Imagem</div>", unsafe_allow_html=True)
                         
-                        # ==================================
-                        # COLUNA 2: INFORMAÇÕES
-                        # ==================================
                         with col_info:
                             st.subheader(f"🏆 {ev['nome']}")
                             
-                            # Conversão de Datas
-                            data_ini = ev.get('data_inicio', '')
-                            data_fim = ev.get('data_fim', '')
-                            try:
-                                d_ini_br = datetime.datetime.strptime(data_ini, '%Y-%m-%d').strftime('%d/%m/%Y')
-                                d_fim_br = datetime.datetime.strptime(data_fim, '%Y-%m-%d').strftime('%d/%m/%Y')
-                            except:
-                                d_ini_br, d_fim_br = data_ini, data_fim
-
-                            # Data em vermelho conforme o print
-                            st.markdown(f"🗓️ **Período do Evento:** <span style='color: #ff4b4b;'>{d_ini_br} até {d_fim_br}</span>", unsafe_allow_html=True)
+                            # Datas do Evento (Formatadas BR)
+                            d_ini = formatar_data_br(ev.get('data_inicio'))
+                            d_fim = formatar_data_br(ev.get('data_fim'))
+                            st.markdown(f"🗓️ **Período do Evento:** <span style='color: #ff4b4b;'>{d_ini} até {d_fim}</span>", unsafe_allow_html=True)
                             
-                            # EXIBINDO O PERÍODO DE INSCRIÇÕES NA VITRINE
-                            insc_abertura = ev.get('insc_abertura', '')
-                            insc_final = ev.get('insc_final', '')
-                            try:
-                                d_insc_ini_br = datetime.datetime.strptime(insc_abertura, '%Y-%m-%d').strftime('%d/%m/%Y')
-                                d_insc_fim_br = datetime.datetime.strptime(insc_final, '%Y-%m-%d').strftime('%d/%m/%Y')
-                                st.markdown(f"✍️ **Inscrições:** <span style='color: #2e7d32; font-weight: bold;'>{d_insc_ini_br} a {d_insc_fim_br}</span>", unsafe_allow_html=True)
-                            except:
-                                pass # Se não tiver data, não mostra nada
+                            # Datas de Inscrição (Formatadas BR)
+                            d_insc_ini = formatar_data_br(ev.get('insc_abertura'))
+                            d_insc_fim = formatar_data_br(ev.get('insc_final'))
+                            if d_insc_ini and d_insc_fim:
+                                st.markdown(f"✍️ **Inscrições:** <span style='color: #2e7d32; font-weight: bold;'>{d_insc_ini} a {d_insc_fim}</span>", unsafe_allow_html=True)
                             
                             st.write(f"📍 **Onde:** {ev.get('onde', 'EREM PAM')}")
                             st.write(f"👥 **Turmas:** {ev.get('turmas', 'Geral')}")
                         
-                        # ==================================
-                        # COLUNA 3: BADGE E BOTÃO
-                        # ==================================
                         with col_btn:
-                            v_min = ev.get('min_membros', 0)
-                            v_max = ev.get('max_membros', 0)
-                            
-                            # Bloco de alunos formatado idêntico ao print
+                            v_min, v_max = ev.get('min_membros', 0), ev.get('max_membros', 0)
                             st.markdown(f"""
                                 <div style="background-color: #f8f9fa; padding: 10px; border-radius: 8px; text-align: center; border: 1px solid #e6e6e6; margin-bottom: 12px;">
                                     <span style="font-size: 0.70rem; color: #666; text-transform: uppercase; letter-spacing: 0.5px;">ALUNOS POR GRUPO</span><br>
@@ -105,17 +79,13 @@ def exibir_gestao_feira(supabase_conn):
                                 </div>
                             """, unsafe_allow_html=True)
                             
-                            # Botão de Edital
                             if ev.get("edital_link"):
                                 st.link_button("📄 Ver Edital", ev["edital_link"], use_container_width=True)
-                            else:
-                                st.button("🚫 Sem Edital", disabled=True, use_container_width=True, key=f"btn_off_{ev['id']}")
-                                
         except Exception as e:
             st.error(f"Erro ao carregar vitrine: {e}")
 
     # ==========================================
-    # ABA 1: CRIAR NOVO EVENTO (COM UPLOAD E NOVAS DATAS)
+    # ABA 1: FORMULÁRIO (FORMATO BR FORÇADO)
     # ==========================================
     with aba_evento:
         st.subheader("Configurar Novo Evento")
@@ -125,13 +95,14 @@ def exibir_gestao_feira(supabase_conn):
             
             st.markdown("##### 🗓️ Datas do Evento")
             col1, col2 = st.columns(2)
-            data_inicio = col1.date_input("Data de Início do Evento")
-            data_fim = col2.date_input("Data de Fim do Evento")
+            # O parâmetro format="DD/MM/YYYY" força a exibição brasileira no calendário
+            data_inicio = col1.date_input("Data de Início do Evento", format="DD/MM/YYYY")
+            data_fim = col2.date_input("Data de Fim do Evento", format="DD/MM/YYYY")
             
             st.markdown("##### ⏳ Período de Inscrições")
             col_insc1, col_insc2 = st.columns(2)
-            data_insc_abertura = col_insc1.date_input("Abertura das Inscrições")
-            data_insc_final = col_insc2.date_input("Encerramento das Inscrições")
+            data_insc_abertura = col_insc1.date_input("Abertura das Inscrições", format="DD/MM/YYYY")
+            data_insc_final = col_insc2.date_input("Encerramento das Inscrições", format="DD/MM/YYYY")
             
             st.markdown("##### 📍 Detalhes e Regras")
             col3, col4 = st.columns(2)
@@ -146,10 +117,10 @@ def exibir_gestao_feira(supabase_conn):
             
             st.markdown("---")
             st.write("🖼️ **Banner de Divulgação (Imagem)**")
-            arquivo_banner = st.file_uploader("Arraste a capa aqui (JPG ou PNG)", type=["png", "jpg", "jpeg"], key="up_capa_evento")
+            arquivo_banner = st.file_uploader("Arraste a capa aqui (JPG ou PNG)", type=["png", "jpg", "jpeg"])
             
             st.write("📄 **Edital Oficial (PDF)**")
-            arquivo_pdf = st.file_uploader("Arraste o edital aqui", type=["pdf"], key="up_pdf_evento")
+            arquivo_pdf = st.file_uploader("Arraste o edital aqui", type=["pdf"])
             
             salvar_evento = st.form_submit_button("💾 Salvar e Publicar Evento", type="primary", use_container_width=True)
             
@@ -157,35 +128,30 @@ def exibir_gestao_feira(supabase_conn):
                 if not nome_evento:
                     st.warning("⚠️ Você precisa digitar pelo menos o nome do evento!")
                 else:
-                    link_foto_final = ""
-                    link_pdf_final = ""
-                    
                     try:
-                        # Requer st.secrets["GITHUB_TOKEN"] configurado corretamente
                         token = st.secrets["GITHUB_TOKEN"]
                         g = Github(token)
                         repo = g.get_repo("erempamacesso/presence")
                         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                         
-                        # Processar Upload da Imagem
-                        if arquivo_banner is not None:
+                        link_foto_final = ""
+                        if arquivo_banner:
                             path_img = f"banners/banner_{ts}_{arquivo_banner.name}"
                             repo.create_file(path_img, f"Upload Banner: {nome_evento}", arquivo_banner.read(), branch="main")
                             link_foto_final = f"https://raw.githubusercontent.com/erempamacesso/presence/main/{path_img}"
                         
-                        # Processar Upload do PDF
-                        if arquivo_pdf is not None:
+                        link_pdf_final = ""
+                        if arquivo_pdf:
                             path_pdf = f"editais/edital_{ts}_{arquivo_pdf.name}"
                             repo.create_file(path_pdf, f"Upload Edital: {nome_evento}", arquivo_pdf.read(), branch="main")
                             link_pdf_final = f"https://raw.githubusercontent.com/erempamacesso/presence/main/{path_pdf}"
                             
-                        # Salvar no Supabase (AGORA COM AS NOVAS DATAS)
                         dados_para_salvar = {
                             "nome": nome_evento,
                             "data_inicio": str(data_inicio),
                             "data_fim": str(data_fim),
-                            "insc_abertura": str(data_insc_abertura), # NOVO CAMPO
-                            "insc_final": str(data_insc_final),       # NOVO CAMPO
+                            "insc_abertura": str(data_insc_abertura),
+                            "insc_final": str(data_insc_final),
                             "onde": local_ev,
                             "turmas": turmas_ev,
                             "min_membros": min_alunos,
@@ -197,55 +163,68 @@ def exibir_gestao_feira(supabase_conn):
                         }
                         
                         supabase_conn.table("feira_eventos").insert(dados_para_salvar).execute()
-                        st.success(f"✅ Evento '{nome_evento}' criado com sucesso!")
-                        # Limpa o cache para mostrar na vitrine imediatamente
+                        
+                        # Mensagem de sucesso com datas BR
+                        st.success(f"✅ Evento '{nome_evento}' publicado! Inscrições de {data_insc_abertura.strftime('%d/%m/%Y')} até {data_insc_final.strftime('%d/%m/%Y')}.")
                         st.cache_data.clear() 
-                        time.sleep(1.5)
+                        time.sleep(2)
                         st.rerun()
                         
                     except Exception as e:
-                        st.error(f"🚨 Erro durante o salvamento: {e}")
+                        st.error(f"🚨 Erro: {e}")
 
     # ==========================================
     # ABA 2: CADASTRAR TRABALHOS (ORIENTADORES)
     # ==========================================
     with aba_orientadores:
         st.subheader("Cadastro de Linhas de Pesquisa / Temas")
-        
         try:
-            # Busca eventos ativos
             res_ev = supabase_conn.table("feira_eventos").select("id, nome").eq("ativo", True).execute()
             dict_eventos = {item["nome"]: item["id"] for item in res_ev.data}
             
             with st.form("form_novo_trabalho_mestre", clear_on_submit=True):
                 ev_selecionado = st.selectbox("Para qual evento?", list(dict_eventos.keys())) if dict_eventos else None
-                
-                # Busca professores ativos
                 res_prof = supabase_conn.table("professores_matriculas").select("professor").execute()
                 lista_profs = ["Selecione..."] + sorted(list(set([p["professor"] for p in res_prof.data if p["professor"]])))
                 prof_selecionado = st.selectbox("Professor Orientador", lista_profs)
                 
                 titulo = st.text_input("Título da Linha de Pesquisa")
                 descricao = st.text_area("Descrição Breve")
-                vagas = st.number_input("Limite de Grupos", min_value=1, value=5)
                 
-                btn_salvar_tema = st.form_submit_button("➕ Adicionar Tema", use_container_width=True)
+                # --- NOVOS CAMPOS: DISCIPLINA E SÉRIE ---
+                col_disc, col_serie = st.columns(2)
+                disciplina_selecionada = col_disc.selectbox(
+                    "Disciplina do Trabalho", 
+                    ["Selecione...", "Química", "Física", "Biologia", "Matemática"]
+                )
                 
-                if btn_salvar_tema:
-                    if ev_selecionado and prof_selecionado != "Selecione..." and titulo:
-                        dados_tema = {
+                serie_selecionada = col_serie.selectbox(
+                    "Série Destinada", 
+                    ["Selecione...", "1º", "2º", "3º", "Geral"]
+                )
+                # ----------------------------------------
+                
+                vagas = st.number_input("Limite de Grupos (Vagas)", min_value=1, value=5)
+                
+                if st.form_submit_button("➕ Adicionar Tema", use_container_width=True):
+                    # Validação para garantir que o professor escolheu a disciplina e a série
+                    if ev_selecionado and prof_selecionado != "Selecione..." and titulo and disciplina_selecionada != "Selecione..." and serie_selecionada != "Selecione...":
+                        
+                        supabase_conn.table("feira_temas").insert({
                             "evento_id": dict_eventos[ev_selecionado],
                             "professor_nome": prof_selecionado,
                             "titulo_trabalho": titulo,
                             "descricao": descricao,
-                            "vagas_grupos": vagas
-                        }
-                        supabase_conn.table("feira_temas").insert(dados_tema).execute()
-                        st.success("✅ Linha de pesquisa cadastrada!")
-                        time.sleep(1)
+                            "vagas_grupos": vagas,
+                            "disciplina": disciplina_selecionada, # NOVO CAMPO
+                            "Serie": serie_selecionada            # NOVO CAMPO (Exatamente como está no Supabase)
+                        }).execute()
+                        
+                        st.success("✅ Linha de pesquisa cadastrada com sucesso!")
+                        time.sleep(1.5)
                         st.rerun()
                     else:
-                        st.warning("⚠️ Preencha o evento, o orientador e o título!")
+                        st.warning("⚠️ Preencha todos os campos obrigatórios (Evento, Orientador, Título, Disciplina e Série)!")
                         
         except Exception as e:
             st.error(f"Erro ao carregar dados: {e}")
