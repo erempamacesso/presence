@@ -25,7 +25,7 @@ def mostrar_tela_login(supabase_conn):
 
     # Nome do arquivo que você subiu (FUNDO_APP.jpg ou FUNDO_APP.png)
     # O código tenta os dois formatos para garantir
-    img_b64 = get_base64_image("FUNDO_APP.jpg") or get_base64_image("FUNDO_APP.png")
+    img_b64 = get_base64_image("fundo_app.jpg") or get_base64_image("fundo_app.png")
     
     # Define o estilo do fundo: Se achar a imagem, usa ela. Senão, fundo azul escuro.
     bg_style = f"url('data:image/jpeg;base64,{img_b64}')" if img_b64 else "none"
