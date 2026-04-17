@@ -66,7 +66,7 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
             st.error(f"Erro ao carregar eventos: {e}")
 
     # ==========================================
-    # PASSO 2: FILTRAR TEMAS (Lê de db_alunos)
+    # PASSO 2: FILTRAR TEMAS E BLOQUEAR OCUPADOS
     # ==========================================
     elif st.session_state.passo_insc == 2:
         evento = st.session_state.evento_selecionado
@@ -77,26 +77,49 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
             st.rerun()
 
         try:
+            # 1. A VERIFICAÇÃO (Consulta Cruzada)
+            # Vamos ao db_provas ver se a turma do aluno já escolheu algum tema neste evento
+            res_inscricoes = db_provas.table("feira_inscricoes") \
+                .select("tema_id") \
+                .eq("evento_id", evento['id']) \
+                .eq("turma", turma_aluno) \
+                .execute()
+            
+            # Criamos uma lista apenas com os IDs dos temas que já estão ocupados por esta turma
+            temas_ocupados_pela_turma = [insc['tema_id'] for insc in res_inscricoes.data]
+
+            # 2. BUSCAR TODOS OS TEMAS (Lê de db_alunos)
             res_temas = db_alunos.table("feira_temas").select("*").eq("evento_id", evento['id']).execute()
             
-            # Filtro pela coluna 'Serie' (conforme seu print)
+            # 3. FILTRO DA SÉRIE (Apenas temas da série do aluno ou Geral)
             temas_filtrados = [
                 t for t in res_temas.data 
                 if str(t.get('Serie')).strip() == serie_aluno or str(t.get('Serie')) == "Geral"
             ]
 
             if not temas_filtrados:
-                st.error("Desculpe, não há temas para sua série neste evento.")
+                st.error("Desculpe, não há temas para a sua série neste evento.")
             else:
+                # 4. DESENHAR NO ECRÃ COM A REGRA DE EXCLUSIVIDADE
                 for tema in temas_filtrados:
+                    # Verifica se o ID deste tema está na lista de ocupados
+                    is_ocupado = tema['id'] in temas_ocupados_pela_turma
+                    
                     with st.expander(f"📙 {tema['titulo_trabalho']}"):
                         st.write(f"**Orientador:** {tema.get('professor_nome')}")
-                        if st.button("ESCOLHER ESTE TEMA", key=f"t_{tema['id']}", use_container_width=True):
-                            st.session_state.tema_selecionado = tema
-                            st.session_state.passo_insc = 3
-                            st.rerun()
+                        
+                        if is_ocupado:
+                            # Se estiver ocupado, mostra o aviso e um botão desativado
+                            st.warning("🚫 Este tema já foi escolhido por outro grupo da sua turma.")
+                            st.button("TEMA INDISPONÍVEL", key=f"t_{tema['id']}", disabled=True, use_container_width=True)
+                        else:
+                            # Se estiver livre, mostra o botão normal
+                            if st.button("ESCOLHER ESTE TEMA", key=f"t_{tema['id']}", type="primary", use_container_width=True):
+                                st.session_state.tema_selecionado = tema
+                                st.session_state.passo_insc = 3
+                                st.rerun()
         except Exception as e:
-            st.error(f"Erro ao filtrar temas: {e}")
+            st.error(f"Erro ao carregar e filtrar temas: {e}")
 
     # ==========================================
     # PASSO 3: FINALIZAR (Lê de db_alunos | Escreve em db_provas)
