@@ -69,7 +69,7 @@ def mostrar_tela_login(supabase_conn):
 
         div[data-testid="InputInstructions"] {{ display: none !important; }}
 
-        /* ESTILO DO BOTÃO (Sem tentar forçar a posição por aqui) */
+        /* ESTILO DO BOTÃO */
         div[data-testid="stFormSubmitButton"] > button {{
             background: rgba(255, 255, 255, 0.2) !important;
             backdrop-filter: blur(5px) !important;
@@ -79,7 +79,7 @@ def mostrar_tela_login(supabase_conn):
             border: 1px solid rgba(255, 255, 255, 0.5) !important;
             border-radius: 30px !important;
             padding: 0.6rem !important;
-            width: 100% !important; /* Preenche a coluna do meio */
+            width: 100% !important; 
             transition: 0.3s;
         }}
 
@@ -90,7 +90,7 @@ def mostrar_tela_login(supabase_conn):
 
         .textos-abaixo {{
             text-align: center;
-            margin-top: 2rem; 
+            margin-top: -10px; /* 🎯 AJUSTE AQUI: Mudei de 2rem para -10px para colar no botão */
             width: 100%;
         }}
 
