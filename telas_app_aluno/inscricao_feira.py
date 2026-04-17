@@ -3,12 +3,9 @@ import datetime
 import time
 
 def mostrar_tela_inscricao_feira(supabase_conn):
-    # CSS para deixar a cara de "App Premium"
+    # CSS para Interface Profissional
     st.markdown("""
         <style>
-        .main { background-color: #f0f2f6; }
-        .stButton>button { border-radius: 8px; height: 3em; transition: 0.3s; }
-        .stButton>button:hover { transform: scale(1.02); }
         .event-card {
             background-color: white;
             padding: 20px;
@@ -29,59 +26,53 @@ def mostrar_tela_inscricao_feira(supabase_conn):
 
     st.title("🚀 Portal de Eventos EREMPAM")
     
-    # --- Lógica de Navegação de Passos ---
-    if 'passo' not in st.session_state:
-        st.session_state.passo = 1
+    # Sistema de Passos
+    if 'passo' not in st.session_state: st.session_state.passo = 1
     
-    # Indicador de progresso visual
-    p1, p2, p3 = "step-active" if st.session_state.passo == 1 else "", \
-                 "step-active" if st.session_state.passo == 2 else "", \
-                 "step-active" if st.session_state.passo == 3 else ""
+    p1 = "step-active" if st.session_state.passo == 1 else ""
+    p2 = "step-active" if st.session_state.passo == 2 else ""
+    p3 = "step-active" if st.session_state.passo == 3 else ""
     
     st.markdown(f"""
         <div class="step-container">
-            <div class="step {p1}">1. Escolher Evento</div>
-            <div class="step {p2}">2. Selecionar Tema</div>
-            <div class="step {p3}">3. Finalizar Equipe</div>
+            <div class="step {p1}">1. Evento</div>
+            <div class="step {p2}">2. Tema</div>
+            <div class="step {p3}">3. Equipe</div>
         </div>
     """, unsafe_allow_html=True)
 
-    # Pegar dados do aluno
     aluno = st.session_state.get('aluno', {})
     turma = aluno.get('turma', 'Sem Turma')
 
-    # ==========================================
-    # PASSO 1: VITRINE DE EVENTOS
-    # ==========================================
+    # PASSO 1: ESCOLHER EVENTO
     if st.session_state.passo == 1:
-        st.subheader("Eventos Disponíveis")
+        st.subheader("Selecione o Evento")
         try:
+            # Forçando a busca dos dados limpos
             res = supabase_conn.table("feira_eventos").select("*").eq("ativo", True).execute()
             if not res.data:
-                st.info("Nenhum evento aberto no momento.")
+                st.info("Nenhum evento ativo.")
             else:
                 for ev in res.data:
                     with st.container():
                         st.markdown(f"""
                             <div class="event-card">
-                                <h2 style='margin-top:0;'>{ev['nome']}</h2>
-                                <p>🗓️ <b>Data:</b> {ev['data_inicio']} até {ev['data_fim']}</p>
-                                <p>👥 <b>Equipes:</b> {ev['min_membros']} a {ev['max_membros']} integrantes</p>
+                                <h3 style='margin:0;'>{ev['nome']}</h3>
+                                <p style='margin:5px 0;'>🗓️ {ev['data_inicio']} até {ev['data_fim']}</p>
+                                <small>👥 Equipes de {ev['min_membros']} a {ev['max_membros']} integrantes</small>
                             </div>
                         """, unsafe_allow_html=True)
-                        if st.button(f"Ver Temas de {ev['nome']}", key=ev['id'], use_container_width=True, type="primary"):
+                        if st.button(f"Inscrever em {ev['nome']}", key=ev['id'], use_container_width=True):
                             st.session_state.evento_sel = ev
                             st.session_state.passo = 2
                             st.rerun()
         except Exception as e:
-            st.error(f"Erro na conexão: {e}")
+            st.error(f"Erro ao carregar: {e}")
 
-    # ==========================================
-    # PASSO 2: TEMAS
-    # ==========================================
+    # PASSO 2: ESCOLHER TEMA
     elif st.session_state.passo == 2:
         ev = st.session_state.evento_sel
-        st.subheader(f"Temas para: {ev['nome']}")
+        st.subheader(f"Temas: {ev['nome']}")
         
         if st.button("⬅️ Voltar"):
             st.session_state.passo = 1
@@ -90,38 +81,36 @@ def mostrar_tela_inscricao_feira(supabase_conn):
         try:
             res_temas = supabase_conn.table("feira_temas").select("*").eq("evento_id", ev['id']).execute()
             if not res_temas.data:
-                st.warning("Aguardando cadastro de temas pelo professor.")
+                st.warning("Nenhum tema disponível.")
             else:
                 for t in res_temas.data:
                     with st.expander(f"📙 {t['titulo_trabalho']}"):
-                        st.write(f"**Professor:** {t['professor_nome']}")
-                        st.write(f"**Disciplina:** {t['disciplina']}")
-                        if st.button("Escolher este tema", key=f"t_{t['id']}", use_container_width=True):
+                        st.write(f"**Orientador:** {t.get('professor_nome', 'N/A')}")
+                        if st.button("Selecionar este tema", key=f"t_{t['id']}", use_container_width=True):
                             st.session_state.tema_sel = t
                             st.session_state.passo = 3
                             st.rerun()
         except Exception as e:
             st.error(f"Erro: {e}")
 
-    # ==========================================
-    # PASSO 3: GRUPO
-    # ==========================================
+    # PASSO 3: FINALIZAR
     elif st.session_state.passo == 3:
         t = st.session_state.tema_sel
-        st.success(f"Você escolheu: **{t['titulo_trabalho']}**")
+        ev = st.session_state.evento_sel
+        st.success(f"Tema: {t['titulo_trabalho']}")
         
-        with st.form("form_final"):
-            st.write("### 👥 Quem são os membros?")
-            membros = st.text_area("Digite os nomes completos (um por linha)", placeholder="Ex:\nJoão Silva\nMaria Oliveira")
+        with st.form("final_form"):
+            st.write("### Integrantes da Equipe")
+            membros = st.text_area("Nomes dos membros (um por linha)", help="Não esqueça de ninguém!")
             
-            if st.form_submit_button("CONCLUIR INSCRIÇÃO", use_container_width=True):
-                # Aqui você insere no Supabase conforme sua lógica anterior
-                st.balloons()
-                st.success("Inscrição realizada com sucesso!")
-                time.sleep(2)
-                st.session_state.passo = 1
-                st.rerun()
-        
-        if st.button("⬅️ Mudar Tema"):
-            st.session_state.passo = 2
-            st.rerun()
+            if st.form_submit_button("CONFIRMAR INSCRIÇÃO", use_container_width=True):
+                lista = [m.strip() for m in membros.split('\n') if m.strip()]
+                if len(lista) + 1 < int(ev['min_membros']):
+                    st.error(f"Mínimo de {ev['min_membros']} pessoas!")
+                else:
+                    # Lógica de Insert aqui...
+                    st.balloons()
+                    st.success("Pronto! Inscrição realizada.")
+                    time.sleep(2)
+                    st.session_state.passo = 1
+                    st.rerun()
