@@ -95,6 +95,8 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                         
                         # --- 🕵️‍♂️ VERIFICAÇÃO DE BLOQUEIO DE MEMBRO (Aqui sim, db_provas!) ---
                         ja_inscrito = False
+                        nome_lider_equipe = "" # Variável para guardar quem é o líder do grupo
+                        
                         res_verificacao = db_provas.table("feira_inscricoes") \
                             .select("nomes_membros") \
                             .eq("evento_id", evento['id']) \
@@ -108,13 +110,21 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                                 for m in texto_equipe.split(",")
                             ]
                             
+                            # Se o aluno logado está na equipe
                             if aluno.get('nome') in membros_extraidos:
                                 ja_inscrito = True
+                                # O líder é sempre o primeiro nome da lista de membros!
+                                nome_lider_equipe = membros_extraidos[0] 
                                 break
 
                         # --- 🛑 RENDERIZAÇÃO CONDICIONAL DO BOTÃO ---
                         if ja_inscrito:
-                            st.error(f"🚨 **{aluno.get('nome')}**, você já faz parte de uma equipe inscrita neste evento!")
+                            # Verifica se o próprio aluno logado é o líder
+                            if nome_lider_equipe == aluno.get('nome'):
+                                st.error(f"🚨 **{aluno.get('nome')}**, você já realizou a inscrição da sua equipe como Líder neste evento!")
+                            else:
+                                st.error(f"🚨 **{aluno.get('nome')}**, você já faz parte da equipe liderada por **{nome_lider_equipe}** neste evento!")
+                            
                             st.button(
                                 "INSCRIÇÃO JÁ REALIZADA", 
                                 key=f"btn_block_{evento['id']}", 
@@ -126,7 +136,6 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                                 st.session_state.evento_selecionado = evento
                                 st.session_state.passo_insc = 2
                                 st.rerun()
-
         except Exception as e:
             st.error(f"Erro ao carregar eventos: {e}")
 
