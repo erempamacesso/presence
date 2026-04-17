@@ -66,23 +66,55 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
     """, unsafe_allow_html=True)
 
     # ==========================================
-    # PASSO 1: ESCOLHER EVENTO (Lê de db_alunos)
+    # PASSO 1: SELEÇÃO DE EVENTO
     # ==========================================
     if st.session_state.passo_insc == 1:
-        try:
-            res = db_alunos.table("feira_eventos").select("*").eq("ativo", True).execute()
-            if not res.data:
-                st.info("Nenhum evento disponível no momento.")
+        st.markdown("### 1. EVENTO")
+        
+        # (Aqui você já deve ter o seu 'evento' carregado do banco de dados)
+        # Supondo que você está dentro de um loop listando os eventos ativos:
+        
+        with st.container():
+            st.markdown(f"### {evento['nome']}")
+            st.caption(f"📅 {evento['data_inicio']} até {evento['data_fim']}")
+            
+            # --- 🕵️‍♂️ VERIFICAÇÃO DE BLOQUEIO DE MEMBRO ---
+            ja_inscrito = False
+            try:
+                # Busca todas as inscrições para este evento específico
+                res_verificacao = db_provas.table("feira_inscricoes") \
+                    .select("nomes_membros") \
+                    .eq("evento_id", evento['id']) \
+                    .execute()
+                
+                # Varre as strings de nomes_membros para ver se o aluno já está lá
+                for insc in res_verificacao.data:
+                    texto_equipe = insc.get('nomes_membros', '')
+                    membros_extraidos = [
+                        m.replace(" (Líder)", "").strip() 
+                        for m in texto_equipe.split(",")
+                    ]
+                    
+                    if aluno.get('nome') in membros_extraidos:
+                        ja_inscrito = True
+                        break # Se achou, já pode parar de procurar
+            except Exception as e:
+                st.error(f"Erro ao verificar status do aluno: {e}")
+
+            # --- 🛑 RENDERIZAÇÃO CONDICIONAL DO BOTÃO ---
+            if ja_inscrito:
+                st.error("🚨 **Atenção:** Você já faz parte de uma equipe inscrita neste evento! Apenas o líder da sua equipe pode gerenciar a inscrição.")
+                st.button(
+                    f"INSCREVER-SE EM: {evento['nome']}", 
+                    disabled=True, # Botão bloqueado!
+                    use_container_width=False,
+                    key=f"btn_bloqueado_{evento['id']}"
+                )
             else:
-                for ev in res.data:
-                    with st.container():
-                        st.markdown(f"""<div class="event-card"><h2>{ev['nome']}</h2><p>📅 {ev['data_inicio']} até {ev['data_fim']}</p></div>""", unsafe_allow_html=True)
-                        if st.button(f"INSCREVER-SE EM: {ev['nome']}", key=ev['id'], type="primary"):
-                            st.session_state.evento_selecionado = ev
-                            st.session_state.passo_insc = 2
-                            st.rerun()
-        except Exception as e:
-            st.error(f"Erro ao carregar eventos: {e}")
+                if st.button(f"INSCREVER-SE EM: {evento['nome']}", type="primary", use_container_width=False, key=f"btn_{evento['id']}"):
+                    st.session_state.evento_selecionado = evento
+                    st.session_state.passo_insc = 2
+                    st.rerun()
 
     # ==========================================
     # PASSO 2: FILTRAR TEMAS E APLICAR TRAVA DUPLA
