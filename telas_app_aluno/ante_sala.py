@@ -8,25 +8,31 @@ def mostrar_ante_sala():
     nome_completo = aluno.get('nome', 'Estudante') 
     
     # ---------------------------------------------------------
-    # 1. FUNÇÃO PARA CARREGAR IMAGENS (CORRIGIDA)
+    # 1. FUNÇÃO PARA CARREGAR IMAGENS (CAMINHOS CORRIGIDOS)
     # ---------------------------------------------------------
-    def get_asset_image(file_name):
-        # Tenta encontrar o arquivo dentro de telas_app_aluno/assets/
-        caminho = os.path.join("telas_app_aluno", "assets", file_name)
-        
+    def get_base64(caminho):
+        """Função genérica para ler qualquer caminho e converter em base64"""
         if os.path.exists(caminho):
             try:
                 with open(caminho, "rb") as f:
                     return base64.b64encode(f.read()).decode()
-            except Exception as e:
+            except Exception:
                 return None
         return None
 
-    # Tentando carregar o fundo (testa png e jpg)
-    bg_img = get_asset_image("fundo_app.png") or get_asset_image("fundo_app.jpg")
-    # Carregando a prancheta
-    prancheta_img = get_asset_image("prancheta.png")
+    # BUSCA O FUNDO NA RAIZ DO PROJETO (PASTA CENTRAL)
+    # Tenta png e jpg na pasta principal
+    bg_img = get_base64("fundo_app.png") or get_base64("fundo_app.jpg")
     
+    # Se não achar na raiz, tenta dentro de telas_app_aluno (caso o script esteja rodando de lá)
+    if not bg_img:
+        bg_img = get_base64(os.path.join("telas_app_aluno", "fundo_app.png"))
+
+    # BUSCA A PRANCHETA DENTRO DE ASSETS
+    path_prancheta = os.path.join("telas_app_aluno", "assets", "prancheta.png")
+    prancheta_img = get_base64(path_prancheta)
+    
+    # Prepara o CSS (ajustando o tipo de imagem dinamicamente para o fundo)
     bg_style = f"url('data:image/png;base64,{bg_img}')" if bg_img else "none"
     icon_style = f"url('data:image/png;base64,{prancheta_img}')" if prancheta_img else "none"
 
