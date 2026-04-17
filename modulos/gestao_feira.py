@@ -48,20 +48,35 @@ def exibir_gestao_feira(supabase_conn):
                         col_img, col_info, col_btn = st.columns([1.5, 3, 1.5])
                         
                         with col_img:
-                            link_imagem = ev.get('imagem_capa_link')
+                            link_db = ev.get('imagem_capa_link', '')
                             nome_evento = ev.get('nome', '').upper()
                             
-                            # 🚨 O TRUQUE DEFINITIVO: 
-                                                     
-                            if "NATUMAT" in nome_evento and (not link_imagem or "http" not in link_imagem):
-                                # 👇 AQUI ESTÁ O AJUSTE: trocamos .jpeg por .png no final do link
-                                link_imagem = "https://raw.githubusercontent.com/erempamacesso/presence/main/banners/natumat_2026.png"
-                                
-                            # Agora sim, ele exibe:
-                            if link_imagem and link_imagem.startswith("http"):
-                                st.image(link_imagem, use_container_width=True)
+                            # 1. Identifica o caminho do arquivo dentro do GitHub
+                            # Se for o NATUMAT antigo ou um link incompleto, ajustamos o caminho
+                            caminho_no_github = ""
+                            if "NATUMAT" in nome_evento:
+                                caminho_no_github = "banners/natumat_2026.png"
+                            elif link_db:
+                                # Extrai apenas o final do link (ex: banners/arquivo.png)
+                                caminho_no_github = link_db.split("/main/")[-1]
+
+                            if caminho_no_github:
+                                try:
+                                    # 2. USA O TOKEN PARA BUSCAR A IMAGEM NO REPO PRIVADO
+                                    token = st.secrets["GITHUB_TOKEN"]
+                                    g = Github(token)
+                                    # Certifique-se que o nome do repo aqui seja o mesmo do seu secrets
+                                    repo = g.get_repo("erempamacesso/presence") 
+                                    
+                                    contents = repo.get_contents(caminho_no_github)
+                                    # Exibe a imagem usando os bytes decodificados (sem precisar de URL pública)
+                                    st.image(contents.decoded_content, use_container_width=True)
+                                    
+                                except Exception as e:
+                                    st.error("Erro ao carregar imagem privada")
+                                    # Opcional: st.write(e) para debug
                             else:
-                                st.markdown("<div style='height: 150px; background-color: #f0f2f6; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #888;'>🖼️ Sem Imagem</div>", unsafe_allow_html=True)  
+                                st.markdown("<div style='height: 150px; background-color: #f0f2f6; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #888;'>🖼️ Sem Imagem</div>", unsafe_allow_html=True)
                         
                         with col_info:
                             st.subheader(f"🏆 {ev.get('nome', 'Evento')}")
