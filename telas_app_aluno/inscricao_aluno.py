@@ -2,7 +2,7 @@ import streamlit as st
 import datetime
 import time
 
-def mostrar_inscricao_aluno(db_alunos):
+def mostrar_inscricao_aluno(db_alunos, db_provas):
     # --- 1. ESTILO CSS ---
     st.markdown("""
         <style>
@@ -20,21 +20,20 @@ def mostrar_inscricao_aluno(db_alunos):
         </style>
     """, unsafe_allow_html=True)
 
-    # --- 2. IDENTIFICAÇÃO DA ESTUDANTE E SUA SÉRIE ---
+    # Identificação da estudante
     aluno = st.session_state.get('aluno', {})
     turma_aluno = aluno.get('turma', 'Sem Turma')
     id_aluno = str(aluno.get('id', ''))
     
-    # Lógica de extração da série (1º, 2º ou 3º)
+    # Lógica de extração da série
     serie_aluno = "Geral"
     if "1º" in turma_aluno: serie_aluno = "1º"
     elif "2º" in turma_aluno: serie_aluno = "2º"
     elif "3º" in turma_aluno: serie_aluno = "3º"
 
     st.title("🚀 Central de Inscrições")
-    st.info(f"🎓 Estudante: **{aluno.get('nome')}** | Série: **{serie_aluno}**")
+    st.info(f"🎓 **{aluno.get('nome')}** | Série: **{serie_aluno}** | Turma: **{turma_aluno}**")
 
-    # Controle de Navegação
     if 'passo_insc' not in st.session_state: st.session_state.passo_insc = 1
     
     # Stepper Visual
@@ -42,13 +41,13 @@ def mostrar_inscricao_aluno(db_alunos):
     st.markdown(f"""
         <div class="step-container">
             <div class="step {p1}">1. EVENTO</div>
-            <div class="step {p2}">2. SELECIONAR TEMA</div>
-            <div class="step {p3}">3. FINALIZAR</div>
+            <div class="step {p2}">2. TEMA</div>
+            <div class="step {p3}">3. EQUIPE E FINALIZAR</div>
         </div>
     """, unsafe_allow_html=True)
 
     # ==========================================
-    # PASSO 1: ESCOLHER EVENTO
+    # PASSO 1: ESCOLHER EVENTO (Lê de db_alunos)
     # ==========================================
     if st.session_state.passo_insc == 1:
         try:
@@ -64,10 +63,10 @@ def mostrar_inscricao_aluno(db_alunos):
                             st.session_state.passo_insc = 2
                             st.rerun()
         except Exception as e:
-            st.error(f"Erro: {e}")
+            st.error(f"Erro ao carregar eventos: {e}")
 
     # ==========================================
-    # PASSO 2: FILTRAR TEMAS PELA SÉRIE (A PARTE "DIFÍCIL")
+    # PASSO 2: FILTRAR TEMAS (Lê de db_alunos)
     # ==========================================
     elif st.session_state.passo_insc == 2:
         evento = st.session_state.evento_selecionado
@@ -78,119 +77,82 @@ def mostrar_inscricao_aluno(db_alunos):
             st.rerun()
 
         try:
-            # Buscamos os temas do evento
             res_temas = db_alunos.table("feira_temas").select("*").eq("evento_id", evento['id']).execute()
             
-            if not res_temas.data:
-                st.warning("Sem temas cadastrados.")
-            else:
-                # FILTRO MÁGICO CORRIGIDO: Usando 'Serie' com S maiúsculo igualzinho ao banco de dados
-                temas_filtrados = [
-                    t for t in res_temas.data 
-                    if str(t.get('Serie')).strip() == serie_aluno or str(t.get('Serie')) == "Geral"
-                ]
+            # Filtro pela coluna 'Serie' (conforme seu print)
+            temas_filtrados = [
+                t for t in res_temas.data 
+                if str(t.get('Serie')).strip() == serie_aluno or str(t.get('Serie')) == "Geral"
+            ]
 
-                if not temas_filtrados:
-                    st.error(f"Desculpe, não encontramos temas específicos para o {serie_aluno} ano neste evento.")
-                else:
-                    for tema in temas_filtrados:
-                        with st.expander(f"📙 {tema['titulo_trabalho']}"):
-                            st.write(f"**Orientador:** {tema.get('professor_nome')}")
-                            # Exibindo com a coluna correta
-                            st.write(f"**Série Destinada:** {tema.get('Serie')} Ano") 
-                            if st.button("ESCOLHER ESTE TEMA", key=f"t_{tema['id']}", use_container_width=True):
-                                st.session_state.tema_selecionado = tema
-                                st.session_state.passo_insc = 3
-                                st.rerun()
+            if not temas_filtrados:
+                st.error("Desculpe, não há temas para sua série neste evento.")
+            else:
+                for tema in temas_filtrados:
+                    with st.expander(f"📙 {tema['titulo_trabalho']}"):
+                        st.write(f"**Orientador:** {tema.get('professor_nome')}")
+                        if st.button("ESCOLHER ESTE TEMA", key=f"t_{tema['id']}", use_container_width=True):
+                            st.session_state.tema_selecionado = tema
+                            st.session_state.passo_insc = 3
+                            st.rerun()
         except Exception as e:
             st.error(f"Erro ao filtrar temas: {e}")
 
     # ==========================================
-    # PASSO 3: COMPOSIÇÃO DO GRUPO (SELEÇÃO INTELIGENTE)
+    # PASSO 3: FINALIZAR (Lê de db_alunos | Escreve em db_provas)
     # ==========================================
     elif st.session_state.passo_insc == 3:
         tema = st.session_state.tema_selecionado
         evento = st.session_state.evento_selecionado
         
-        st.success(f"Confirmando inscrição em: **{tema['titulo_trabalho']}**")
+        st.success(f"📍 Inscrição: **{tema['titulo_trabalho']}**")
         
-        # 1. BUSCAR OS COLEGAS DA MESMA TURMA
+        # Busca colegas na mesma turma (em db_alunos)
         colegas_turma = []
         try:
-            # Vai na tabela 'alunos' e puxa todos que têm a mesma turma do estudante logado
             res_colegas = db_alunos.table("alunos").select("nome").eq("turma", turma_aluno).execute()
-            
-            if res_colegas.data:
-                # Monta uma lista só com os nomes, tirando o próprio líder para ele não se selecionar de novo
-                colegas_turma = sorted([c['nome'] for c in res_colegas.data if c['nome'] != aluno.get('nome')])
-        except Exception as e:
-            st.error(f"Erro ao buscar lista de alunos da turma: {e}")
+            colegas_turma = sorted([c['nome'] for c in res_colegas.data if c['nome'] != aluno.get('nome')])
+        except:
+            pass
 
         with st.form("form_final"):
-            st.markdown("### 👥 Integrantes da Equipe")
-            st.info(f"🎓 Sua turma: **{turma_aluno}** | Regra do evento: de **{evento['min_membros']}** a **{evento['max_membros']}** pessoas.")
+            st.markdown("### 👥 Membros da Equipe")
+            st.text_input("Líder", value=aluno.get('nome'), disabled=True)
             
-            # Mostra o líder bloqueado
-            st.text_input("Líder (Você)", value=aluno.get('nome'), disabled=True)
+            membros_sel = st.multiselect("Selecione os colegas da sua turma:", options=colegas_turma)
             
-            # 2. CAIXA DE SELEÇÃO MÚLTIPLA (O Pulo do Gato!)
-            if colegas_turma:
-                membros_selecionados = st.multiselect(
-                    "Selecione os demais membros da sua equipe:",
-                    options=colegas_turma,
-                    placeholder="Clique aqui e escolha os colegas...",
-                    help="Você também pode digitar parte do nome para buscar mais rápido."
-                )
-            else:
-                # Fallback: Se por acaso a turma não tiver ninguém cadastrado, volta a ser texto
-                st.warning("Não foi possível carregar os colegas da sua turma automaticamente. Digite os nomes:")
-                outros = st.text_area("Nomes (um por linha)")
-                membros_selecionados = [] 
-
-            submit = st.form_submit_button("CONCLUIR INSCRIÇÃO", type="primary", use_container_width=True)
-            
-            if submit:
-                # Se caiu no fallback de digitar manualmente (turma vazia)
-                if not colegas_turma:
-                    membros_selecionados = [m.strip() for m in outros.split('\n') if m.strip()]
-                    
-                # 3. VALIDAÇÃO INTELIGENTE DE QUANTIDADE
-                total = len(membros_selecionados) + 1 # Soma os selecionados + o líder
+            # O BOTÃO FINAL
+            if st.form_submit_button("CONCLUIR INSCRIÇÃO", type="primary", use_container_width=True):
+                total = len(membros_sel) + 1
                 
                 if total < int(evento['min_membros']) or total > int(evento['max_membros']):
-                    st.error(f"❌ Ops! O grupo tem {total} pessoas. O evento {evento['nome']} exige que sejam entre {evento['min_membros']} e {evento['max_membros']} integrantes.")
+                    st.error(f"O grupo deve ter entre {evento['min_membros']} e {evento['max_membros']} integrantes.")
                 else:
-                    with st.spinner("Registrando equipe no banco de dados..."):
-                        try:
-                            # Montando o texto da equipe final
-                            equipe_completa = f"{aluno.get('nome')} (Líder)"
-                            if membros_selecionados:
-                                equipe_completa += ", " + ", ".join(membros_selecionados)
-                                
-                            dados_inscricao = {
-                                "evento_id": evento['id'], 
-                                "tema_id": tema['id'],
-                                "lider_id": id_aluno, 
-                                "turma": turma_aluno,
-                                "nomes_membros": equipe_completa, 
-                                "data_inscricao": str(datetime.date.today())
-                            }
-                            
-                            # Salva na tabela
-                            db_alunos.table("feira_inscricoes").insert(dados_inscricao).execute()
-                            
-                            st.balloons()
-                            st.success("✅ Equipe inscrita com sucesso!")
-                            time.sleep(3)
-                            
-                            # Volta para a ante-sala
-                            st.session_state.passo_insc = 1
-                            st.session_state.etapa = "ante_sala"
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"🚨 Erro ao salvar inscrição: {e}")
+                    try:
+                        equipe_str = f"{aluno.get('nome')} (Líder), " + ", ".join(membros_sel)
+                        
+                        dados_insc = {
+                            "evento_id": evento['id'],
+                            "tema_id": tema['id'],
+                            "lider_id": id_aluno,
+                            "turma": turma_aluno,
+                            "nomes_membros": equipe_str,
+                            "data_inscricao": str(datetime.date.today())
+                        }
+                        
+                        # --- A MÁGICA ACONTECE AQUI ---
+                        # Salvamos no projeto 'Avaliador-provas'
+                        db_provas.table("feira_inscricoes").insert(dados_insc).execute()
+                        
+                        st.balloons()
+                        st.success("✅ Inscrição confirmada no projeto Avaliador-provas!")
+                        time.sleep(2)
+                        st.session_state.passo_insc = 1
+                        st.session_state.etapa = "ante_sala"
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao salvar no banco de provas: {e}")
 
-        # Botão para voltar a escolher tema fora do form
         if st.button("⬅️ Trocar Tema"):
             st.session_state.passo_insc = 2
             st.rerun()

@@ -61,4 +61,4 @@ elif st.session_state.etapa == "ante_sala":
     mostrar_ante_sala() # O HUB Central (Ecossistema)
     
 elif st.session_state.etapa == "inscricao_aluno":
-    mostrar_inscricao_aluno(db_alunos)
+    mostrar_inscricao_aluno(db_alunos, db_provas)
