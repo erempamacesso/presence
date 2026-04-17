@@ -142,9 +142,12 @@ def mostrar_tela_login(supabase_conn):
                 except Exception as e:
                     st.error(f"Erro: {e}")
 
-    # Textos abaixo
+   # Textos abaixo (Agora com a logo!)
     st.markdown("""
         <div class="textos-abaixo">
+            <img src="https://raw.githubusercontent.com/erempamacesso/presence/main/logo_erempam.png" 
+                 alt="Logo EREMPAM" 
+                 style="width: 45px; opacity: 0.9; margin-bottom: -5px;">
             <p class="titulo-escola">EREMPAM</p>
             <p class="subtitulo-eco">ECOSSISTEMA DO ALUNO</p>
         </div>
