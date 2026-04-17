@@ -130,7 +130,7 @@ def mostrar_ante_sala():
     with col1:
         # Botão principal - Identificado pelo texto único
         if st.button("INSCRIÇÕES EVENTOS E ATIVIDADES COLETIVAS", type="primary", use_container_width=True):
-            st.session_state.etapa = "inscricao_feira"
+            st.session_state.etapa = "inscricao_aluno"
             st.rerun()
             
     with col2:
