@@ -38,10 +38,23 @@ except Exception as e:
     st.stop()
 
 # ==========================================
-# 4. GERENCIADOR DE ESTADO (Para lembrar em qual página estamos)
+# 4. GERENCIADOR DE ESTADO E LINKS DIRETOS
 # ==========================================
+
+# 1. O SENSOR DE URL: Verifica se alguém clicou em um link direto
+if "page" in st.query_params:
+    pagina_destino = st.query_params.get("page")
+    
+    # Se o link tiver "?page=criar_evento", direciona para a tela correta
+    if pagina_destino == "criar_evento":
+        st.session_state.pagina = "gestao_feira" 
+        
+    # Limpa a URL logo em seguida para o usuário poder navegar livremente depois
+    st.query_params.clear()
+
+# 2. DEFINIÇÃO PADRÃO: Se não tem link e está abrindo do zero, vai para o 'cenario'
 if 'pagina' not in st.session_state:
-    st.session_state.pagina = 'cenario' # Define a página inicial ao abrir o app
+    st.session_state.pagina = 'cenario' 
 
 if 'fechar_menu' not in st.session_state:
     st.session_state.fechar_menu = False
