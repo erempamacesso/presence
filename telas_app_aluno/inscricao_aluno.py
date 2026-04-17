@@ -218,21 +218,53 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
         
         st.success(f"📍 Inscrição: **{tema['titulo_trabalho']}**")
         
-        # Busca colegas na mesma turma (em db_alunos)
+        # 1. BUSCAR TODOS OS COLEGAS DA TURMA (db_alunos)
         colegas_turma = []
         try:
             res_colegas = db_alunos.table("alunos").select("nome").eq("turma", turma_aluno).execute()
-            colegas_turma = sorted([c['nome'] for c in res_colegas.data if c['nome'] != aluno.get('nome')])
-        except:
-            pass
+            # Lista inicial com todos (exceto o próprio líder logado)
+            todos_da_turma = [c['nome'] for c in res_colegas.data if c['nome'] != aluno.get('nome')]
+            
+            # 2. BUSCAR QUEM JÁ ESTÁ INSCRITO NESTE EVENTO (db_provas)
+            res_ocupados = db_provas.table("feira_inscricoes") \
+                .select("nomes_membros") \
+                .eq("evento_id", evento['id']) \
+                .eq("turma", turma_aluno) \
+                .execute()
+            
+            # 3. EXTRAIR OS NOMES QUE JÁ ESTÃO EM EQUIPES
+            nomes_ja_ocupados = set()
+            for insc in res_ocupados.data:
+                texto_equipe = insc.get('nomes_membros', '')
+                # Como salvamos como "Nome (Líder), Membro 1, Membro 2"
+                # Vamos quebrar pela vírgula e limpar os espaços e o sufixo "(Líder)"
+                membros_extraidos = [
+                    m.replace(" (Líder)", "").strip() 
+                    for m in texto_equipe.split(",")
+                ]
+                for m in membros_extraidos:
+                    nomes_ja_ocupados.add(m)
+            
+            # 4. FILTRAR: Só sobram os que NÃO estão na lista de ocupados
+            colegas_disponiveis = [nome for nome in todos_da_turma if nome not in nomes_ja_ocupados]
+            colegas_turma = sorted(colegas_disponiveis)
+            
+        except Exception as e:
+            st.error(f"Erro ao filtrar disponibilidade de alunos: {e}")
 
         with st.form("form_final"):
             st.markdown("### 👥 Membros da Equipe")
+            st.info(f"Olá {aluno.get('nome')}, selecione apenas os colegas que ainda não estão em outros grupos.")
+            
             st.text_input("Líder", value=aluno.get('nome'), disabled=True)
             
-            membros_sel = st.multiselect("Selecione os colegas da sua turma:", options=colegas_turma)
+            # Exibe apenas os colegas disponíveis
+            membros_sel = st.multiselect(
+                "Selecione os colegas disponíveis:", 
+                options=colegas_turma,
+                help="Se um colega não aparece aqui, é porque ele já faz parte de outra equipe."
+            )
             
-            # O BOTÃO FINAL
             if st.form_submit_button("CONCLUIR INSCRIÇÃO", type="primary", use_container_width=True):
                 total = len(membros_sel) + 1
                 
@@ -251,17 +283,16 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                             "data_inscricao": str(datetime.date.today())
                         }
                         
-                        # --- SALVAR NO BANCO DE PROVAS ---
                         db_provas.table("feira_inscricoes").insert(dados_insc).execute()
                         
                         st.balloons()
-                        st.success("✅ Inscrição confirmada no projeto Avaliador-provas!")
+                        st.success("✅ Inscrição confirmada com sucesso!")
                         time.sleep(2)
                         st.session_state.passo_insc = 1
                         st.session_state.etapa = "ante_sala"
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Erro ao salvar no banco de provas: {e}")
+                        st.error(f"Erro ao salvar: {e}")
 
         if st.button("⬅️ Trocar Tema"):
             st.session_state.passo_insc = 2
