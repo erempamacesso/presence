@@ -69,24 +69,24 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
     # PASSO 1: SELEÇÃO DE EVENTO
     # ==========================================
     if st.session_state.passo_insc == 1:
-        st.markdown("### 1. SELECIONE O EVENTO")
+        st.markdown("### 1. EVENTO")
 
         try:
-            # 1. BUSCAR EVENTOS ATIVOS NO BANCO
-            res_eventos = db_provas.table("feira_eventos").select("*").eq("status", "Ativo").execute()
+            # 1. BUSCAR EVENTOS ATIVOS NO BANCO (Corrigido: db_alunos!)
+            res_eventos = db_alunos.table("feira_eventos").select("*").eq("ativo", True).execute()
             lista_eventos = res_eventos.data
 
             if not lista_eventos:
                 st.info("No momento não há eventos com inscrições abertas.")
             else:
                 # 2. PARA CADA EVENTO ENCONTRADO, FAZEMOS A VERIFICAÇÃO
-                for evento in lista_eventos: # <--- AQUI A VARIÁVEL 'evento' É CRIADA!
+                for evento in lista_eventos:
                     
                     with st.container(border=True):
                         st.markdown(f"### {evento['nome']}")
                         st.caption(f"📅 Inscrições: {evento['data_inicio']} até {evento['data_fim']}")
                         
-                        # --- 🕵️‍♂️ VERIFICAÇÃO DE BLOQUEIO DE MEMBRO (Lógica que te mandei antes) ---
+                        # --- 🕵️‍♂️ VERIFICAÇÃO DE BLOQUEIO DE MEMBRO (Aqui sim, db_provas!) ---
                         ja_inscrito = False
                         res_verificacao = db_provas.table("feira_inscricoes") \
                             .select("nomes_membros") \
@@ -105,10 +105,15 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                                 ja_inscrito = True
                                 break
 
-                        # --- 🛑 BOTÃO OU AVISO ---
+                        # --- 🛑 RENDERIZAÇÃO CONDICIONAL DO BOTÃO ---
                         if ja_inscrito:
-                            st.error(f"🚨 **{aluno.get('nome')}**, você já faz parte de uma equipe neste evento.")
-                            st.button("INSCRIÇÃO JÁ REALIZADA", key=f"btn_block_{evento['id']}", disabled=True, use_container_width=True)
+                            st.error(f"🚨 **{aluno.get('nome')}**, você já faz parte de uma equipe inscrita neste evento!")
+                            st.button(
+                                "INSCRIÇÃO JÁ REALIZADA", 
+                                key=f"btn_block_{evento['id']}", 
+                                disabled=True, 
+                                use_container_width=True
+                            )
                         else:
                             if st.button(f"INSCREVER-SE EM: {evento['nome']}", type="primary", key=f"btn_{evento['id']}", use_container_width=True):
                                 st.session_state.evento_selecionado = evento
