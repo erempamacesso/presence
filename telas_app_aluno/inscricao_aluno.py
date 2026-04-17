@@ -71,6 +71,13 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
     if st.session_state.passo_insc == 1:
         st.markdown("### 1. EVENTO")
 
+    # --- BOTAO DE VOLTAR PARA A TELA INICIAL ---
+        if st.button("⬅️ Voltar ao Início"):
+            st.session_state.etapa = "ante_sala" # Garante que volta para a tela principal
+            st.rerun()
+            
+        st.markdown("### 1. EVENTO")
+
         try:
             # 1. BUSCAR EVENTOS ATIVOS NO BANCO (Corrigido: db_alunos!)
             res_eventos = db_alunos.table("feira_eventos").select("*").eq("ativo", True).execute()
