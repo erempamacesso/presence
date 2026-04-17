@@ -69,52 +69,54 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
     # PASSO 1: SELEÇÃO DE EVENTO
     # ==========================================
     if st.session_state.passo_insc == 1:
-        st.markdown("### 1. EVENTO")
-        
-        # (Aqui você já deve ter o seu 'evento' carregado do banco de dados)
-        # Supondo que você está dentro de um loop listando os eventos ativos:
-        
-        with st.container():
-            st.markdown(f"### {evento['nome']}")
-            st.caption(f"📅 {evento['data_inicio']} até {evento['data_fim']}")
-            
-            # --- 🕵️‍♂️ VERIFICAÇÃO DE BLOQUEIO DE MEMBRO ---
-            ja_inscrito = False
-            try:
-                # Busca todas as inscrições para este evento específico
-                res_verificacao = db_provas.table("feira_inscricoes") \
-                    .select("nomes_membros") \
-                    .eq("evento_id", evento['id']) \
-                    .execute()
-                
-                # Varre as strings de nomes_membros para ver se o aluno já está lá
-                for insc in res_verificacao.data:
-                    texto_equipe = insc.get('nomes_membros', '')
-                    membros_extraidos = [
-                        m.replace(" (Líder)", "").strip() 
-                        for m in texto_equipe.split(",")
-                    ]
-                    
-                    if aluno.get('nome') in membros_extraidos:
-                        ja_inscrito = True
-                        break # Se achou, já pode parar de procurar
-            except Exception as e:
-                st.error(f"Erro ao verificar status do aluno: {e}")
+        st.markdown("### 1. SELECIONE O EVENTO")
 
-            # --- 🛑 RENDERIZAÇÃO CONDICIONAL DO BOTÃO ---
-            if ja_inscrito:
-                st.error("🚨 **Atenção:** Você já faz parte de uma equipe inscrita neste evento! Apenas o líder da sua equipe pode gerenciar a inscrição.")
-                st.button(
-                    f"INSCREVER-SE EM: {evento['nome']}", 
-                    disabled=True, # Botão bloqueado!
-                    use_container_width=False,
-                    key=f"btn_bloqueado_{evento['id']}"
-                )
+        try:
+            # 1. BUSCAR EVENTOS ATIVOS NO BANCO
+            res_eventos = db_provas.table("feira_eventos").select("*").eq("status", "Ativo").execute()
+            lista_eventos = res_eventos.data
+
+            if not lista_eventos:
+                st.info("No momento não há eventos com inscrições abertas.")
             else:
-                if st.button(f"INSCREVER-SE EM: {evento['nome']}", type="primary", use_container_width=False, key=f"btn_{evento['id']}"):
-                    st.session_state.evento_selecionado = evento
-                    st.session_state.passo_insc = 2
-                    st.rerun()
+                # 2. PARA CADA EVENTO ENCONTRADO, FAZEMOS A VERIFICAÇÃO
+                for evento in lista_eventos: # <--- AQUI A VARIÁVEL 'evento' É CRIADA!
+                    
+                    with st.container(border=True):
+                        st.markdown(f"### {evento['nome']}")
+                        st.caption(f"📅 Inscrições: {evento['data_inicio']} até {evento['data_fim']}")
+                        
+                        # --- 🕵️‍♂️ VERIFICAÇÃO DE BLOQUEIO DE MEMBRO (Lógica que te mandei antes) ---
+                        ja_inscrito = False
+                        res_verificacao = db_provas.table("feira_inscricoes") \
+                            .select("nomes_membros") \
+                            .eq("evento_id", evento['id']) \
+                            .execute()
+                        
+                        for insc in res_verificacao.data:
+                            texto_equipe = insc.get('nomes_membros', '')
+                            # Limpa os nomes para comparar
+                            membros_extraidos = [
+                                m.replace(" (Líder)", "").strip() 
+                                for m in texto_equipe.split(",")
+                            ]
+                            
+                            if aluno.get('nome') in membros_extraidos:
+                                ja_inscrito = True
+                                break
+
+                        # --- 🛑 BOTÃO OU AVISO ---
+                        if ja_inscrito:
+                            st.error(f"🚨 **{aluno.get('nome')}**, você já faz parte de uma equipe neste evento.")
+                            st.button("INSCRIÇÃO JÁ REALIZADA", key=f"btn_block_{evento['id']}", disabled=True, use_container_width=True)
+                        else:
+                            if st.button(f"INSCREVER-SE EM: {evento['nome']}", type="primary", key=f"btn_{evento['id']}", use_container_width=True):
+                                st.session_state.evento_selecionado = evento
+                                st.session_state.passo_insc = 2
+                                st.rerun()
+
+        except Exception as e:
+            st.error(f"Erro ao carregar eventos: {e}")
 
     # ==========================================
     # PASSO 2: FILTRAR TEMAS E APLICAR TRAVA DUPLA
