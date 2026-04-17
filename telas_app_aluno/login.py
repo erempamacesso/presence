@@ -147,7 +147,7 @@ def mostrar_tela_login(supabase_conn):
         <div class="textos-abaixo">
             <img src="https://raw.githubusercontent.com/erempamacesso/presence/main/logo_erempam.png" 
                  alt="Logo EREMPAM" 
-                 style="width: 60x; opacity: 0.9; margin-bottom: -5px;">
+                 style="width: 40x; opacity: 0.9; margin-bottom: -5px;">
             <p class="titulo-escola">EREMPAM</p>
             <p class="subtitulo-eco">ECOSSISTEMA DO ALUNO</p>
         </div>
