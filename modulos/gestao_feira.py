@@ -52,8 +52,9 @@ def exibir_gestao_feira(supabase_conn):
                             nome_evento = ev.get('nome', '').upper()
                             
                             # 🚨 O TRUQUE DEFINITIVO: 
-                            # Se o nome do evento tiver "NATUMAT" e o link no banco for inválido ou vazio, ele injeta à força!
+                                                     
                             if "NATUMAT" in nome_evento and (not link_imagem or "http" not in link_imagem):
+                                # 👇 AQUI ESTÁ O AJUSTE: trocamos .jpeg por .png no final do link
                                 link_imagem = "https://raw.githubusercontent.com/erempamacesso/presence/main/banners/natumat_2026.png"
                                 
                             # Agora sim, ele exibe:
