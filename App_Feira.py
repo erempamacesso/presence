@@ -17,7 +17,7 @@ st.set_page_config(
 try:
     from telas_app_aluno.login import mostrar_tela_login
     from telas_app_aluno.ante_sala import mostrar_ante_sala
-    from telas_app_aluno.inscricao_feira import mostrar_tela_inscricao_feira 
+    from telas_app_aluno.inscricao_aluno import mostrar_tela_inscricao_feira 
 except ImportError as e:
     st.error(f"❌ Erro ao importar módulos: {e}")
     st.stop()
@@ -60,5 +60,5 @@ if st.session_state.etapa == "login":
 elif st.session_state.etapa == "ante_sala":
     mostrar_ante_sala() # O HUB Central (Ecossistema)
     
-elif st.session_state.etapa == "inscricao_feira":
+elif st.session_state.etapa == "inscricao_aluno":
     mostrar_tela_inscricao_feira(db_provas) # Usa o banco de provas onde estão os Eventos
