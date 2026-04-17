@@ -49,19 +49,21 @@ def exibir_gestao_feira(supabase_conn):
                         
                         with col_img:
                             link_imagem = ev.get('imagem_capa_link')
+                            nome_evento = ev.get('nome', '').upper()
                             
-                            if link_imagem:
-                                # Se o link não começar com "http", significa que é um caminho antigo. 
-                                # Então o sistema monta a URL completa do GitHub automaticamente!
-                                if not link_imagem.startswith("http"):
-                                    # Se no banco estiver salvo apenas "presence/banners/natumat_2026.jpeg"
-                                    link_imagem = "https://raw.githubusercontent.com/erempamacesso/presence/main/banners/natumat_2026.jpeg"
-                                    
+                            # 🚨 O TRUQUE DEFINITIVO: 
+                            # Se o nome do evento tiver "NATUMAT" e o link no banco for inválido ou vazio, ele injeta à força!
+                            if "NATUMAT" in nome_evento and (not link_imagem or "http" not in link_imagem):
+                                link_imagem = "https://raw.githubusercontent.com/erempamacesso/presence/main/banners/natumat_2026.jpeg"
+                                
+                            # Agora sim, ele exibe:
+                            if link_imagem and link_imagem.startswith("http"):
                                 st.image(link_imagem, use_container_width=True)
                             else:
-                                st.markdown("<div style='height: 150px; background-color: #f0f2f6; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #888;'>🖼️ Sem Imagem</div>", unsafe_allow_html=True)
+                                st.markdown("<div style='height: 150px; background-color: #f0f2f6; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #888;'>🖼️ Sem Imagem</div>", unsafe_allow_html=True)  
+                        
                         with col_info:
-                            st.subheader(f"🏆 {ev['nome']}")
+                            st.subheader(f"🏆 {ev.get('nome', 'Evento')}")
                             
                             # Datas do Evento (Formatadas BR)
                             d_ini = formatar_data_br(ev.get('data_inicio'))
@@ -88,6 +90,7 @@ def exibir_gestao_feira(supabase_conn):
                             
                             if ev.get("edital_link"):
                                 st.link_button("📄 Ver Edital", ev["edital_link"], use_container_width=True)
+                                
         except Exception as e:
             st.error(f"Erro ao carregar vitrine: {e}")
 
