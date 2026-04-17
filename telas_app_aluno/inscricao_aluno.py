@@ -84,10 +84,10 @@ def mostrar_inscricao_aluno(db_alunos):
             if not res_temas.data:
                 st.warning("Sem temas cadastrados.")
             else:
-                # FILTRO MÁGICO: Só aceita temas da série da aluna OU temas marcados como "Geral"
+                # FILTRO MÁGICO CORRIGIDO: Usando 'Serie' com S maiúsculo igualzinho ao banco de dados
                 temas_filtrados = [
                     t for t in res_temas.data 
-                    if str(t.get('serie')).strip() == serie_aluno or str(t.get('serie')) == "Geral"
+                    if str(t.get('Serie')).strip() == serie_aluno or str(t.get('Serie')) == "Geral"
                 ]
 
                 if not temas_filtrados:
@@ -96,7 +96,8 @@ def mostrar_inscricao_aluno(db_alunos):
                     for tema in temas_filtrados:
                         with st.expander(f"📙 {tema['titulo_trabalho']}"):
                             st.write(f"**Orientador:** {tema.get('professor_nome')}")
-                            st.write(f"**Série Destinada:** {tema.get('serie')}")
+                            # Exibindo com a coluna correta
+                            st.write(f"**Série Destinada:** {tema.get('Serie')} Ano") 
                             if st.button("ESCOLHER ESTE TEMA", key=f"t_{tema['id']}", use_container_width=True):
                                 st.session_state.tema_selecionado = tema
                                 st.session_state.passo_insc = 3
