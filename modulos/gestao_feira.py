@@ -48,11 +48,18 @@ def exibir_gestao_feira(supabase_conn):
                         col_img, col_info, col_btn = st.columns([1.5, 3, 1.5])
                         
                         with col_img:
-                            if ev.get('imagem_capa_link'):
-                                st.image(ev['imagem_capa_link'], use_container_width=True)
+                            link_imagem = ev.get('imagem_capa_link')
+                            
+                            if link_imagem:
+                                # Se o link não começar com "http", significa que é um caminho antigo. 
+                                # Então o sistema monta a URL completa do GitHub automaticamente!
+                                if not link_imagem.startswith("http"):
+                                    # Se no banco estiver salvo apenas "presence/banners/natumat_2026.jpeg"
+                                    link_imagem = "https://raw.githubusercontent.com/erempamacesso/presence/main/banners/natumat_2026.jpeg"
+                                    
+                                st.image(link_imagem, use_container_width=True)
                             else:
                                 st.markdown("<div style='height: 150px; background-color: #f0f2f6; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #888;'>🖼️ Sem Imagem</div>", unsafe_allow_html=True)
-                        
                         with col_info:
                             st.subheader(f"🏆 {ev['nome']}")
                             
@@ -85,7 +92,7 @@ def exibir_gestao_feira(supabase_conn):
             st.error(f"Erro ao carregar vitrine: {e}")
 
     # ==========================================
-    # ABA 1: FORMULÁRIO (FORMATO BR FORÇADO)
+    # ABA 1: FORMULÁRIO 
     # ==========================================
     with aba_evento:
         st.subheader("Configurar Novo Evento")
