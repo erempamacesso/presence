@@ -1,6 +1,7 @@
 import streamlit as st
 import datetime
 import time
+from collections import defaultdict
 
 def mostrar_inscricao_aluno(db_alunos, db_provas):
     # --- 1. ESTILO CSS ---
@@ -17,6 +18,24 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
         }
         .step { color: #bdc3c7; font-weight: bold; width: 30%; text-align: center; font-size: 0.9rem; }
         .step-active { color: #00d4ff; border-bottom: 3px solid #00d4ff; }
+        
+        .tema-card {
+            background: #f8f9fa; padding: 15px; border-radius: 8px;
+            margin: 10px 0; border-left: 4px solid #00d4ff;
+        }
+        .tema-card-bloqueado {
+            background: #ffe6e6; border-left-color: #d32f2f;
+            opacity: 0.7;
+        }
+        .tema-card-disciplina-bloqueada {
+            background: #fff3e0; border-left-color: #f57c00;
+            opacity: 0.7;
+        }
+        .disciplina-titulo {
+            font-weight: bold; font-size: 1.1rem; color: #333;
+            padding: 10px; background: #e3f2fd; border-radius: 5px;
+            margin-top: 15px; margin-bottom: 10px;
+        }
         </style>
     """, unsafe_allow_html=True)
 
@@ -77,7 +96,7 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
             st.rerun()
 
         try:
-            # 1. BUSCAR TODAS AS INSCRIÇÕES DESTE EVENTO (db_provas)
+            # ===== ETAPA 1: BUSCAR TODAS AS INSCRIÇÕES DESTE EVENTO =====
             res_inscricoes = db_provas.table("feira_inscricoes") \
                 .select("tema_id, turma") \
                 .eq("evento_id", evento['id']) \
@@ -85,24 +104,28 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
             
             inscricoes_feitas = res_inscricoes.data
 
-            # 2. SEPARAR QUEM PEGOU O QUÊ
-            # Lista de IDs de temas que já foram escolhidos por qualquer turma (Trava Global)
-            temas_escolhidos_geral = [insc['tema_id'] for insc in inscricoes_feitas]
+            # ===== ETAPA 2: CALCULAR BLOQUEIOS =====
+            # Temas específicos que JÁ FORAM ESCOLHIDOS (bloqueio global)
+            temas_escolhidos_global = [insc['tema_id'] for insc in inscricoes_feitas]
             
-            # Lista de IDs de temas escolhidos APENAS pela turma do aluno logado
+            # Disciplinas que JÁ FORAM ESCOLHIDAS PELA MINHA TURMA (bloqueio por turma)
             temas_da_minha_turma = [insc['tema_id'] for insc in inscricoes_feitas if insc['turma'] == turma_aluno]
+            
+            # Buscar todos os temas para extrair disciplinas
+            res_todos_temas_temp = db_alunos.table("feira_temas").select("*").eq("evento_id", evento['id']).execute()
+            todos_temas_dict = {t['id']: t for t in res_todos_temas_temp.data}
+            
+            # Disciplinas bloqueadas para minha turma
+            disciplinas_bloqueadas_turma = set()
+            for tema_id in temas_da_minha_turma:
+                if tema_id in todos_temas_dict:
+                    disciplinas_bloqueadas_turma.add(todos_temas_dict[tema_id].get('disciplina', ''))
 
-            # 3. BUSCAR TODOS OS TEMAS DO EVENTO (db_alunos)
+            # ===== ETAPA 3: BUSCAR TODOS OS TEMAS DO EVENTO =====
             res_temas = db_alunos.table("feira_temas").select("*").eq("evento_id", evento['id']).execute()
             todos_temas = res_temas.data
             
-            # 4. DESCOBRIR AS DISCIPLINAS BLOQUEADAS PARA A TURMA
-            disciplinas_bloqueadas_turma = set() # Usamos 'set' para não ter itens repetidos
-            for t in todos_temas:
-                if t['id'] in temas_da_minha_turma:
-                    disciplinas_bloqueadas_turma.add(t.get('disciplina', ''))
-
-            # 5. FILTRAR PELA SÉRIE DO ALUNO
+            # ===== ETAPA 4: FILTRAR PELA SÉRIE E APLICAR REGRAS =====
             temas_filtrados = [
                 t for t in todos_temas 
                 if str(t.get('Serie')).strip() == serie_aluno or str(t.get('Serie')) == "Geral"
@@ -111,34 +134,80 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
             if not temas_filtrados:
                 st.error("Desculpe, não há temas para a sua série neste evento.")
             else:
-                # 6. DESENHAR NA TELA COM AS REGRAS
+                # ===== ETAPA 5: AGRUPAR POR DISCIPLINA =====
+                temas_por_disciplina = defaultdict(list)
                 for tema in temas_filtrados:
+                    disciplina = tema.get('disciplina', 'Sem Disciplina')
+                    temas_por_disciplina[disciplina].append(tema)
+                
+                # ===== ETAPA 6: RENDERIZAR COM ACORDEON =====
+                for disciplina in sorted(temas_por_disciplina.keys()):
+                    temas_da_disciplina = temas_por_disciplina[disciplina]
                     
-                    is_escolhido_global = tema['id'] in temas_escolhidos_geral
-                    is_disciplina_bloqueada = tema.get('disciplina', '') in disciplinas_bloqueadas_turma
+                    # Verificar se esta disciplina está bloqueada para a minha turma
+                    disciplina_bloqueada = disciplina in disciplinas_bloqueadas_turma
                     
-                    with st.expander(f"📙 {tema['titulo_trabalho']} - {tema.get('disciplina', 'Sem disciplina')}"):
-                        st.write(f"**Orientador:** {tema.get('professor_nome')}")
-                        
-                        # VERIFICAÇÃO 1: Alguém já pegou esse tema exato?
-                        if is_escolhido_global:
-                            st.error("🚫 Este trabalho já foi escolhido por outra equipe.")
-                            st.button("TEMA INDISPONÍVEL", key=f"t_{tema['id']}", disabled=True, use_container_width=True)
-                            
-                        # VERIFICAÇÃO 2: A minha turma já pegou um tema dessa disciplina?
-                        elif is_disciplina_bloqueada:
-                            st.warning(f"⚠️ A sua turma ({turma_aluno}) já tem um grupo apresentando {tema.get('disciplina')}.")
-                            st.button("DISCIPLINA BLOQUEADA", key=f"t_{tema['id']}", disabled=True, use_container_width=True)
-                            
-                        # SE PASSOU NAS DUAS VERIFICAÇÕES, TÁ LIBERADO!
+                    # Label do acordeon com status
+                    if disciplina_bloqueada:
+                        label = f"📛 {disciplina} (Sua turma já escolheu) - BLOQUEADA"
+                    else:
+                        label = f"📚 {disciplina}"
+                    
+                    with st.expander(label, expanded=False):
+                        # Se a disciplina está bloqueada, mostrar mensagem
+                        if disciplina_bloqueada:
+                            st.warning(f"⚠️ A sua turma ({turma_aluno}) já escolheu um trabalho de {disciplina}. Nenhum outro tema desta disciplina está disponível.")
                         else:
-                            if st.button("ESCOLHER ESTE TEMA", key=f"t_{tema['id']}", type="primary", use_container_width=True):
-                                st.session_state.tema_selecionado = tema
-                                st.session_state.passo_insc = 3
-                                st.rerun()
+                            # Renderizar os temas da disciplina
+                            for tema in temas_da_disciplina:
+                                tema_escolhido_global = tema['id'] in temas_escolhidos_global
                                 
+                                # Container visual para o tema
+                                if tema_escolhido_global:
+                                    container_class = "tema-card tema-card-bloqueado"
+                                    status = "🚫 INDISPONÍVEL"
+                                else:
+                                    container_class = "tema-card"
+                                    status = "✅ DISPONÍVEL"
+                                
+                                st.markdown(f'<div class="{container_class}">', unsafe_allow_html=True)
+                                
+                                col1, col2 = st.columns([3, 1])
+                                with col1:
+                                    st.write(f"**{tema['titulo_trabalho']}**")
+                                    st.caption(f"👨‍🏫 {tema.get('professor_nome', 'Sem professor')}")
+                                    if tema.get('descricao'):
+                                        st.caption(f"📝 {tema.get('descricao')}")
+                                
+                                with col2:
+                                    st.caption(status)
+                                
+                                # Botão de seleção
+                                if tema_escolhido_global:
+                                    st.button(
+                                        "TEMA JÁ ESCOLHIDO",
+                                        key=f"t_{tema['id']}",
+                                        disabled=True,
+                                        use_container_width=True
+                                    )
+                                else:
+                                    if st.button(
+                                        "ESCOLHER ESTE TEMA",
+                                        key=f"t_{tema['id']}",
+                                        type="primary",
+                                        use_container_width=True
+                                    ):
+                                        st.session_state.tema_selecionado = tema
+                                        st.session_state.passo_insc = 3
+                                        st.rerun()
+                                
+                                st.markdown('</div>', unsafe_allow_html=True)
+                                st.divider()
+                
         except Exception as e:
             st.error(f"Erro ao carregar e filtrar temas: {e}")
+            import traceback
+            st.error(traceback.format_exc())
             
     # ==========================================
     # PASSO 3: FINALIZAR (Lê de db_alunos | Escreve em db_provas)
@@ -182,8 +251,7 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                             "data_inscricao": str(datetime.date.today())
                         }
                         
-                        # --- A MÁGICA ACONTECE AQUI ---
-                        # Salvamos no projeto 'Avaliador-provas'
+                        # --- SALVAR NO BANCO DE PROVAS ---
                         db_provas.table("feira_inscricoes").insert(dados_insc).execute()
                         
                         st.balloons()
