@@ -249,7 +249,7 @@ def gerar_pdf_pendencias(turma, alunos_pendentes):
         pdf.cell(140, 10, str(a["nome"])[:50], 1)
         pdf.cell(50, 10, "[ ] Foto Coletada", 1, ln=True, align="C")
 
-    return pdf.output(dest="S").encode("latin-1")
+    return pdf.output(dest="S")
 
 
 def gerar_pdf_fotograma_impresso(turma, alunos):
@@ -281,7 +281,7 @@ def gerar_pdf_fotograma_impresso(turma, alunos):
         else:
             pdf.cell(col_width, row_height, "", border=1, ln=True)
 
-    return pdf.output(dest="S").encode("latin-1")
+    return pdf.output(dest="S")
 
 
 # ==========================================
