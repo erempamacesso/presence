@@ -44,12 +44,21 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                                         res_r = supabase.table("resultados_provas").select("aluno_id, acertou")\
                                             .eq("prova_id", p_id).execute()
                                         
-                                        if res_r.data:
-                                            df_r = pd.DataFrame(res_r.data)
-                                            df_r['pts'] = df_r['acertou'].apply(lambda x: 1 if x is True else 0)
-                                            df_c = df_r.groupby('aluno_id')['pts'].sum().reset_index()
-                                            mapa_notas = dict(zip(df_c['aluno_id'].astype(str), df_c['pts'] * v_q))
-                                return mapa_notas
+                                    if res_r.data:
+                                        df_r = pd.DataFrame(res_r.data)
+                                        df_r['pts'] = df_r['acertou'].apply(lambda x: 1 if x is True else 0)
+                                        df_c = df_r.groupby('aluno_id')['pts'].sum().reset_index()
+                                        
+                                        # 1. Calcula a nota bruta (acertos * valor da questao)
+                                        df_c['nota_bruta'] = df_c['pts'] * v_q
+                                        
+                                        # 2. Aplica a mágica: Arredonda para múltiplos de 0.5
+                                        df_c['nota_arredondada'] = (df_c['nota_bruta'] * 2).round() / 2
+                                        
+                                        # 3. Monta o dicionário final para a tabela
+                                        mapa_notas = dict(zip(df_c['aluno_id'].astype(str), df_c['nota_arredondada']))
+                                        
+                                        return mapa_notas
 
                             mapa_at1 = buscar_nota_simulado("1º Simulado")
                             mapa_at2 = buscar_nota_simulado("2º Simulado")
