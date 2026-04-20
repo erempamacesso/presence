@@ -15,6 +15,7 @@ import io
 from streamlit_option_menu import option_menu
 from telas.boletim_siepe import mostrar_tela_boletim
 from telas.analise_dados import mostrar_tela_analise
+from telas.cadastrar_questoes import mostrar_tela_cadastrar_questoes
 from telas.biblioteca_questoes import mostrar_tela_biblioteca
 from telas.gerar_modelo_prova import mostrar_tela_gerar_modelo
 from telas.provas_elaboradas import mostrar_tela_provas_elaboradas
@@ -122,174 +123,29 @@ with st.sidebar:
 
 # --- 5. LÓGICA DAS PÁGINAS ---
 
-if menu == "Análise de Dados":
-    st.title("📊 Análise de Dados e Notas")
-    
-    try:
-        res_raw = supabase.table("resultados_provas").select("aluno_id, questao_id, acertou").execute()
-        res_alunos_base = supabase_alunos.table("alunos").select("id, turma, nome").execute()
-        
-        if res_raw.data and res_alunos_base.data:
-            df_raw = pd.DataFrame(res_raw.data)
-            df_alunos_base = pd.DataFrame(res_alunos_base.data)
-            df_raw['aluno_id'] = df_raw['aluno_id'].astype(str)
-            df_alunos_base['id'] = df_alunos_base['id'].astype(str)
-            
-            st.subheader("🎯 Visão Geral")
-            col_k1, col_k2 = st.columns(2)
-            col_k1.metric("Total de Respostas", len(df_raw))
-            col_k2.metric("Alunos Participantes", df_raw['aluno_id'].nunique())
-    except Exception as e:
-        st.info("Aguardando dados de respostas...")
+    elif menu == "Análise de Dados":
+        mostrar_tela_analise(supabase, supabase_alunos)
 
-    st.divider()
-    st.subheader("🏆 Desempenho por Aluno e Relatórios")
-    
-    res_p_modelos = supabase.table("modelos_prova").select("id, titulo, valor_questao, questoes_ids").order("id", desc=True).execute()
-    
-    if res_p_modelos.data:
-        provas_dict = {p['titulo']: p for p in res_p_modelos.data}
-        prova_nome = st.selectbox("Selecione a Prova para detalhar:", list(provas_dict.keys()))
-        prova_obj = provas_dict[prova_nome]
-        id_prova, valor_q = prova_obj['id'], float(prova_obj.get('valor_questao', 1.0))
-        ids_questoes_prova = prova_obj.get('questoes_ids', [])
+    elif menu == "Cadastrar Questões":
+        mostrar_tela_cadastrar_questoes(supabase)
 
-        res_res = supabase.table("resultados_provas").select("*").eq("prova_id", id_prova).execute()
-        
-        if res_res.data:
-            df_res = pd.DataFrame(res_res.data)
-            df_res['aluno_id'] = df_res['aluno_id'].astype(str)
-            df_res['pontos'] = df_res['acertou'].apply(lambda x: 1 if x is True else 0)
-            
-            df_notas = df_res.groupby('aluno_id').agg(total_acertos=('pontos', 'sum')).reset_index()
-            df_notas['nota_final'] = df_notas['total_acertos'] * valor_q
-            
-            res_al = supabase_alunos.table("alunos").select("id, nome, turma").in_("id", df_notas['aluno_id'].tolist()).execute()
-            df_alunos_nomes = pd.DataFrame(res_al.data)
-            df_alunos_nomes['id'] = df_alunos_nomes['id'].astype(str)
-            
-            df_tela = pd.merge(df_alunos_nomes, df_notas, left_on="id", right_on="aluno_id")
-            st.dataframe(df_tela[["nome", "turma", "total_acertos", "nota_final"]].sort_values("nome"), use_container_width=True)
+    elif menu == "Biblioteca de Questões":
+        mostrar_tela_biblioteca(supabase)
 
-            if st.button("📊 Gerar Relatório .XLSX Completo"):
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                    for turma in sorted(df_tela['turma'].unique()):
-                        df_turma = df_tela[df_tela['turma'] == turma].copy()
-                        df_turma.to_excel(writer, sheet_name=f"Turma {turma}", index=False)
-                st.download_button("📥 Baixar Excel", output.getvalue(), f"Relatorio_{prova_nome}.xlsx")
-        else:
-            st.info("Sem respostas para esta avaliação.")
+    elif menu == "Provas Elaboradas":
+        mostrar_tela_provas_elaboradas(supabase)
 
-elif menu == "Cadastrar Questões":
-    st.title("🖊️ Cadastro de Questões (Upload de Imagens)")
-    
-    # --- FUNÇÃO DE UPLOAD PARA O SUPABASE STORAGE ---
-    def upload_imagem(arquivo_upload):
-        if arquivo_upload is not None:
-            try:
-                # Gera um nome único para o arquivo
-                nome_unico = f"{int(time.time())}_{arquivo_upload.name.replace(' ', '_')}"
-                # Faz o upload para o bucket 'imagens'
-                res = supabase.storage.from_("imagens").upload(
-                    path=nome_unico, 
-                    file=arquivo_upload.getvalue(),
-                    file_options={"content-type": arquivo_upload.type}
-                )
-                # Pega a URL pública
-                return supabase.storage.from_("imagens").get_public_url(nome_unico)
-            except Exception as e:
-                st.error(f"Erro no upload da imagem: {e}")
-                return ""
-        return ""
+    elif menu == "Lista de Matrículas":
+        mostrar_tela_lista_matriculas(supabase_alunos)
 
-    tab1, tab2 = st.tabs(["📝 Cadastro Individual", "⚡ Importação Flash"])
-    
-    with tab1:
-        with st.form("form_nova_questao_upload", clear_on_submit=True):
-            st.subheader("1️⃣ Enunciado")
-            enunciado = st_quill(placeholder="Digite o enunciado...", html=True, key="quill_up")
-            
-            col_m, col_a = st.columns(2)
-            materia = col_m.selectbox("Disciplina", ["Matemática", "Português", "Física", "Química", "Biologia", "História", "Geografia"])
-            assunto = col_a.text_input("Assunto")
+    elif menu == "Central de Avisos":
+                        st.title("📲 Disparador de WhatsApp")
+                        if not WHATSAPP_LOCAL:
+                            st.warning("Biblioteca 'pywhatkit' não instalada para disparos.")
+                        # Lógica de envio em massa...
 
-            st.divider()
-            st.subheader("2️⃣ Alternativas (Faça Upload da Imagem ou digite o texto)")
-            
-            # Arrays para segurar os uploads temporariamente
-            textos_alts = {}
-            arquivos_alts = {}
-            
-            for letra in ["A", "B", "C", "D", "E"]:
-                c_txt, c_up = st.columns([2, 1])
-                textos_alts[letra] = c_txt.text_input(f"Texto da {letra})", key=f"t_{letra}")
-                # BOTÃO DE CARREGAR IMAGEM
-                arquivos_alts[letra] = c_up.file_uploader(f"Anexar Img {letra}", type=['png', 'jpg', 'jpeg'], key=f"f_{letra}")
+    elif menu == "Diagnósticos IA":
+        mostrar_tela_diagnosticos(supabase)
 
-            st.divider()
-            st.subheader("3️⃣ Resposta Correta")
-            correta = st.radio("Selecione a correta:", ["A", "B", "C", "D", "E"], horizontal=True)
-            
-            btn_salvar = st.form_submit_button("💾 Salvar na Biblioteca e Fazer Upload", type="primary")
-
-            if btn_salvar:
-                if not enunciado or len(enunciado) < 5:
-                    st.error("Preencha o enunciado!")
-                else:
-                    with st.spinner("Fazendo upload das imagens e salvando..."):
-                        alts_dados = {}
-                        
-                        # Processa cada alternativa
-                        for letra in ["A", "B", "C", "D", "E"]:
-                            # Se tiver arquivo, faz upload e pega a URL. Se não, URL fica vazia.
-                            url_final = upload_imagem(arquivos_alts[letra])
-                            alts_dados[letra] = {
-                                "texto": textos_alts[letra],
-                                "imagem": url_final
-                            }
-
-                        dados_final = {
-                            "enunciado": enunciado,
-                            "materia": materia,
-                            "assunto": assunto,
-                            "alternativas": alts_dados,
-                            "correta": correta,
-                            "revisada": True
-                        }
-                        
-                        try:
-                            supabase.table("questoes").insert(dados_final).execute()
-                            st.success("✅ Questão e imagens salvas com sucesso!")
-                        except Exception as e:
-                            st.error(f"Erro ao salvar no banco: {e}")
-
-    with tab2:
-        st.subheader("⚡ Importador Flash")
-        json_input = st.text_area("JSON de Questões:")
-        if st.button("🚀 Iniciar Importação"):
-            try:
-                for q in json.loads(json_input): supabase.table("questoes").insert(q).execute()
-                st.success("Importado!")
-            except: st.error("Erro JSON")
-
-elif menu == "Biblioteca de Questões":
-    mostrar_tela_biblioteca(supabase)
-
-elif menu == "Provas Elaboradas":
-    mostrar_tela_provas_elaboradas(supabase)
-
-elif menu == "Lista de Matrículas":
-    mostrar_tela_lista_matriculas(supabase_alunos)
-
-elif menu == "Central de Avisos":
-    st.title("📲 Disparador de WhatsApp")
-    if not WHATSAPP_LOCAL:
-        st.warning("Biblioteca 'pywhatkit' não instalada para disparos.")
-    # Lógica de envio em massa...
-
-elif menu == "Diagnósticos IA":
-    mostrar_tela_diagnosticos(supabase)
-
-elif menu == "Boletim Final SIEPE":
-    mostrar_tela_boletim(supabase, supabase_alunos)
+    elif menu == "Boletim Final SIEPE":
+        mostrar_tela_boletim(supabase, supabase_alunos)
