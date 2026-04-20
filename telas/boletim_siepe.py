@@ -11,8 +11,8 @@ def arredondar_siepe(nota):
     ,2 a ,6 -> ,5
     ,7 a ,9 -> +1,0 (próximo número inteiro)
     """
-    if pd.isna(nota):
-        return nota
+    if pd.isna(nota) or nota is None:
+        return 0.0
         
     nota = float(nota)
     inteiro = math.floor(nota)
@@ -64,7 +64,11 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                                     
                                     if res_p.data:
                                         p_id = res_p.data[0]['id']
-                                        v_q = float(res_p.data[0]['valor_questao'])
+                                        
+                                        # Proteção anti-crash igual fizemos na Análise de Dados
+                                        v_q_raw = res_p.data[0].get('valor_questao')
+                                        v_q = float(v_q_raw) if v_q_raw is not None else 1.0
+                                        
                                         res_r = supabase.table("resultados_provas").select("aluno_id, acertou")\
                                             .eq("prova_id", p_id).execute()
                                         
@@ -76,14 +80,13 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                                             # 1. Calcula a nota bruta
                                             df_c['nota_bruta'] = df_c['pts'] * v_q
                                             
-                                            # 2. Aplica a nova regra do SIEPE
+                                            # 2. Aplica a função do SIEPE direto na coluna
                                             df_c['nota_arredondada'] = df_c['nota_bruta'].apply(arredondar_siepe)
                                             
                                             # 3. Monta o dicionário final para a tabela
                                             mapa_notas = dict(zip(df_c['aluno_id'].astype(str), df_c['nota_arredondada']))
                                             
-                                            return mapa_notas
-                                return {}
+                                return mapa_notas
 
                             mapa_at1 = buscar_nota_simulado("1º Simulado")
                             mapa_at2 = buscar_nota_simulado("2º Simulado")
@@ -104,11 +107,11 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                             for col_name, valor in alteracoes.items():
                                 st.session_state[state_key].at[row_idx, col_name] = float(valor) if valor is not None else 0.0
 
-                    # 1. Calcula a soma da N1 bruta e depois aplica a regra SIEPE
+                    # Aplica o arredondamento SIEPE na soma N1
                     n1_bruta = st.session_state[state_key][['AT1', 'AT2', 'AT3', 'AT4', 'AT5']].sum(axis=1)
                     st.session_state[state_key]['N1'] = n1_bruta.apply(arredondar_siepe)
                     
-                    # 2. Calcula a Média Final bruta e depois aplica a regra SIEPE
+                    # Aplica o arredondamento SIEPE na Média Final
                     media_bruta = (st.session_state[state_key]['N1'] + st.session_state[state_key]['N2']) / 2
                     st.session_state[state_key]['Média Final'] = media_bruta.apply(arredondar_siepe)
 
@@ -116,9 +119,10 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                     st.subheader(f"Planilha de Notas - {turma_sel}")
                     
                     config_cols = {
-                        "aluno_id": None, "nome": st.column_config.TextColumn("Estudante", disabled=True, width="medium"),
-                        "N1": st.column_config.NumberColumn("Σ N1", disabled=True, width="small"),
-                        "Média Final": st.column_config.NumberColumn("Média", disabled=True, width="small"),
+                        "aluno_id": None, 
+                        "nome": st.column_config.TextColumn("Estudante", disabled=True, width="medium"),
+                        "N1": st.column_config.NumberColumn("Σ N1", disabled=True, width="small", format="%.1f"),
+                        "Média Final": st.column_config.NumberColumn("Média", disabled=True, width="small", format="%.1f"),
                     }
                     
                     for c in ['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N2']:
