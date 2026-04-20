@@ -13,6 +13,8 @@ import time
 import unicodedata
 import io
 from streamlit_option_menu import option_menu
+
+# Importando nossas telas modulares
 from telas.boletim_siepe import mostrar_tela_boletim
 from telas.analise_dados import mostrar_tela_analise
 from telas.cadastrar_questoes import mostrar_tela_cadastrar_questoes
@@ -101,7 +103,7 @@ with st.sidebar:
             "Lista de Matrículas",
             "Central de Avisos",
             "Diagnósticos IA",
-            "Boletim Final "
+            "Boletim Final SIEPE"
         ],
         icons=[
             "bar-chart-fill", "pencil-square", "book", "file-earmark-text",
@@ -122,30 +124,34 @@ with st.sidebar:
         st.rerun()
 
 # --- 5. LÓGICA DAS PÁGINAS ---
+# Agora sim, totalmente fora da sidebar (encostado na parede esquerda) e começando com 'if'
 
-    elif menu == "Análise de Dados":
-        mostrar_tela_analise(supabase, supabase_alunos)
+if menu == "Análise de Dados":
+    mostrar_tela_analise(supabase, supabase_alunos)
 
-    elif menu == "Cadastrar Questões":
-        mostrar_tela_cadastrar_questoes(supabase)
+elif menu == "Cadastrar Questões":
+    mostrar_tela_cadastrar_questoes(supabase)
 
-    elif menu == "Biblioteca de Questões":
-        mostrar_tela_biblioteca(supabase)
+elif menu == "Biblioteca de Questões":
+    mostrar_tela_biblioteca(supabase)
+    
+elif menu == "Gerar Modelo de Prova":
+    mostrar_tela_gerar_modelo(supabase)
 
-    elif menu == "Provas Elaboradas":
-        mostrar_tela_provas_elaboradas(supabase)
+elif menu == "Provas Elaboradas":
+    mostrar_tela_provas_elaboradas(supabase)
 
-    elif menu == "Lista de Matrículas":
-        mostrar_tela_lista_matriculas(supabase_alunos)
+elif menu == "Lista de Matrículas":
+    mostrar_tela_lista_matriculas(supabase_alunos)
 
-    elif menu == "Central de Avisos":
-                        st.title("📲 Disparador de WhatsApp")
-                        if not WHATSAPP_LOCAL:
-                            st.warning("Biblioteca 'pywhatkit' não instalada para disparos.")
-                        # Lógica de envio em massa...
+elif menu == "Central de Avisos":
+    st.title("📲 Disparador de WhatsApp")
+    if not WHATSAPP_LOCAL:
+        st.warning("Biblioteca 'pywhatkit' não instalada para disparos.")
+    # Lógica de envio em massa...
 
-    elif menu == "Diagnósticos IA":
-        mostrar_tela_diagnosticos(supabase)
+elif menu == "Diagnósticos IA":
+    mostrar_tela_diagnosticos(supabase)
 
-    elif menu == "Boletim Final SIEPE":
-        mostrar_tela_boletim(supabase, supabase_alunos)
+elif menu == "Boletim Final SIEPE":
+    mostrar_tela_boletim(supabase, supabase_alunos)
