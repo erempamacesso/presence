@@ -1,6 +1,31 @@
 import streamlit as st
 import pandas as pd
 import io
+import math
+
+# --- FUNÇÃO OFICIAL DE ARREDONDAMENTO SIEPE ---
+def arredondar_siepe(nota):
+    """
+    Regra de arredondamento:
+    ,0 e ,1 -> ,0
+    ,2 a ,6 -> ,5
+    ,7 a ,9 -> +1,0 (próximo número inteiro)
+    """
+    if pd.isna(nota):
+        return nota
+        
+    nota = float(nota)
+    inteiro = math.floor(nota)
+    # Pegamos a primeira casa decimal (ex: 2.72 vira 7)
+    decimal = round((nota - inteiro) * 10)
+    
+    if decimal in [0, 1]:
+        return float(inteiro)
+    elif decimal in [2, 3, 4, 5, 6]:
+        return float(inteiro + 0.5)
+    else: # 7, 8, 9, 10
+        return float(inteiro + 1)
+
 
 def mostrar_tela_analise(supabase, supabase_alunos):
     st.title("📊 Análise de Dados e Notas")
@@ -55,10 +80,13 @@ def mostrar_tela_analise(supabase, supabase_alunos):
                     # Agrupa os acertos por aluno
                     df_notas = df_res.groupby('aluno_id').agg(total_acertos=('pontos', 'sum')).reset_index()
                     
-                    # Calcula a nota final
-                    df_notas['nota_final'] = df_notas['total_acertos'] * valor_q
+                    # 1. Calcula a nota bruta (ex: 2.72)
+                    df_notas['nota_bruta'] = df_notas['total_acertos'] * valor_q
                     
-                    # Busca TODOS os alunos de uma vez (Evita erro de limitação ou tipo no Supabase)
+                    # 2. APLICA O ARREDONDAMENTO DO SIEPE NA NOTA (ex: 2.72 vira 3.0)
+                    df_notas['nota_final'] = df_notas['nota_bruta'].apply(arredondar_siepe)
+                    
+                    # Busca TODOS os alunos de uma vez
                     res_al = supabase_alunos.table("alunos").select("id, nome, turma").execute()
                     
                     if res_al.data:
@@ -69,8 +97,17 @@ def mostrar_tela_analise(supabase, supabase_alunos):
                         df_tela = pd.merge(df_alunos_nomes, df_notas, left_on="id", right_on="aluno_id")
                         
                         if not df_tela.empty:
-                            # Exibe a Tabela na tela
-                            st.dataframe(df_tela[["nome", "turma", "total_acertos", "nota_final"]].sort_values("nome"), use_container_width=True)
+                            # Exibe a Tabela na tela (agora com a nota já redondinha)
+                            st.dataframe(
+                                df_tela[["nome", "turma", "total_acertos", "nota_final"]].sort_values("nome"), 
+                                use_container_width=True,
+                                column_config={
+                                    "nota_final": st.column_config.NumberColumn(
+                                        "Nota Final",
+                                        format="%.1f" # Força a exibição com 1 casa decimal (ex: 3.5)
+                                    )
+                                }
+                            )
 
                             # Exportação para Excel
                             if st.button("📊 Gerar Relatório .XLSX Completo"):
