@@ -1,6 +1,30 @@
 import streamlit as st
 import pandas as pd
 import io
+import math
+
+# --- FUNÇÃO OFICIAL DE ARREDONDAMENTO SIEPE ---
+def arredondar_siepe(nota):
+    """
+    Regra de arredondamento:
+    ,0 e ,1 -> ,0
+    ,2 a ,6 -> ,5
+    ,7 a ,9 -> +1,0 (próximo número inteiro)
+    """
+    if pd.isna(nota):
+        return nota
+        
+    nota = float(nota)
+    inteiro = math.floor(nota)
+    decimal = round((nota - inteiro) * 10)
+    
+    if decimal in [0, 1]:
+        return float(inteiro)
+    elif decimal in [2, 3, 4, 5, 6]:
+        return float(inteiro + 0.5)
+    else: # 7, 8, 9, 10
+        return float(inteiro + 1)
+
 
 def mostrar_tela_boletim(supabase, supabase_alunos):
     st.title("📝 Meu Registro Pessoal de Notas")
@@ -44,21 +68,22 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                                         res_r = supabase.table("resultados_provas").select("aluno_id, acertou")\
                                             .eq("prova_id", p_id).execute()
                                         
-                                    if res_r.data:
-                                        df_r = pd.DataFrame(res_r.data)
-                                        df_r['pts'] = df_r['acertou'].apply(lambda x: 1 if x is True else 0)
-                                        df_c = df_r.groupby('aluno_id')['pts'].sum().reset_index()
-                                        
-                                        # 1. Calcula a nota bruta (acertos * valor da questao)
-                                        df_c['nota_bruta'] = df_c['pts'] * v_q
-                                        
-                                        # 2. Aplica a mágica: Arredonda para múltiplos de 0.5
-                                        df_c['nota_arredondada'] = (df_c['nota_bruta'] * 2).round() / 2
-                                        
-                                        # 3. Monta o dicionário final para a tabela
-                                        mapa_notas = dict(zip(df_c['aluno_id'].astype(str), df_c['nota_arredondada']))
-                                        
-                                        return mapa_notas
+                                        if res_r.data:
+                                            df_r = pd.DataFrame(res_r.data)
+                                            df_r['pts'] = df_r['acertou'].apply(lambda x: 1 if x is True else 0)
+                                            df_c = df_r.groupby('aluno_id')['pts'].sum().reset_index()
+                                            
+                                            # 1. Calcula a nota bruta
+                                            df_c['nota_bruta'] = df_c['pts'] * v_q
+                                            
+                                            # 2. Aplica a nova regra do SIEPE
+                                            df_c['nota_arredondada'] = df_c['nota_bruta'].apply(arredondar_siepe)
+                                            
+                                            # 3. Monta o dicionário final para a tabela
+                                            mapa_notas = dict(zip(df_c['aluno_id'].astype(str), df_c['nota_arredondada']))
+                                            
+                                            return mapa_notas
+                                return {}
 
                             mapa_at1 = buscar_nota_simulado("1º Simulado")
                             mapa_at2 = buscar_nota_simulado("2º Simulado")
@@ -79,8 +104,13 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                             for col_name, valor in alteracoes.items():
                                 st.session_state[state_key].at[row_idx, col_name] = float(valor) if valor is not None else 0.0
 
-                    st.session_state[state_key]['N1'] = st.session_state[state_key][['AT1', 'AT2', 'AT3', 'AT4', 'AT5']].sum(axis=1).round(1)
-                    st.session_state[state_key]['Média Final'] = ((st.session_state[state_key]['N1'] + st.session_state[state_key]['N2']) / 2).round(1)
+                    # 1. Calcula a soma da N1 bruta e depois aplica a regra SIEPE
+                    n1_bruta = st.session_state[state_key][['AT1', 'AT2', 'AT3', 'AT4', 'AT5']].sum(axis=1)
+                    st.session_state[state_key]['N1'] = n1_bruta.apply(arredondar_siepe)
+                    
+                    # 2. Calcula a Média Final bruta e depois aplica a regra SIEPE
+                    media_bruta = (st.session_state[state_key]['N1'] + st.session_state[state_key]['N2']) / 2
+                    st.session_state[state_key]['Média Final'] = media_bruta.apply(arredondar_siepe)
 
                     # --- DATA EDITOR COM ALTURA DINÂMICA ---
                     st.subheader(f"Planilha de Notas - {turma_sel}")
@@ -99,8 +129,7 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                             disabled=travada, width="small"
                         )
 
-                    # --- O AJUSTE ESTÁ AQUI ---
-                    # Calculamos a altura: (nº de linhas + 1 do header) * 35 pixels + 3 de borda
+                    # Calculamos a altura
                     altura_dinamica = (len(st.session_state[state_key]) + 1) * 35 + 3
 
                     st.data_editor(
@@ -109,7 +138,7 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                         hide_index=True,
                         column_config=config_cols,
                         use_container_width=True,
-                        height=altura_dinamica  # <--- Aplicando a altura calculada
+                        height=altura_dinamica
                     )
                     
                     # --- BOTÕES DE AÇÃO ---
