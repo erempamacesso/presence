@@ -103,7 +103,7 @@ with st.sidebar:
             "Lista de Matrículas",
             "Central de Avisos",
             "Diagnósticos IA",
-            "Minha planilha de Notas"
+            "Boletim Siepe"
         ],
         icons=[
             "bar-chart-fill", "pencil-square", "book", "file-earmark-text",
