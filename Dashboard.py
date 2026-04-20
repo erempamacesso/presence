@@ -14,6 +14,12 @@ import unicodedata
 import io
 from streamlit_option_menu import option_menu
 from telas.boletim_siepe import mostrar_tela_boletim
+from telas.analise_dados import mostrar_tela_analise
+from telas.biblioteca_questoes import mostrar_tela_biblioteca
+from telas.gerar_modelo_prova import mostrar_tela_gerar_modelo
+from telas.provas_elaboradas import mostrar_tela_provas_elaboradas
+from telas.lista_matriculas import mostrar_tela_lista_matriculas
+from telas.diagnosticos_ia import mostrar_tela_diagnosticos
 
 # --- PROTEÇÃO PARA O WHATSAPP ---
 try:
@@ -94,7 +100,7 @@ with st.sidebar:
             "Lista de Matrículas",
             "Central de Avisos",
             "Diagnósticos IA",
-            "Boletim Final SIEPE"
+            "Boletim Final "
         ],
         icons=[
             "bar-chart-fill", "pencil-square", "book", "file-earmark-text",
@@ -268,329 +274,13 @@ elif menu == "Cadastrar Questões":
             except: st.error("Erro JSON")
 
 elif menu == "Biblioteca de Questões":
-    st.title("📚 Biblioteca de Questões")
-    
-    res_q = supabase.table("questoes").select("*").order("id", desc=True).execute()
-    
-    if res_q.data:
-        df_q = pd.DataFrame(res_q.data)
-        
-        # Proteção de colunas
-        if 'serie' not in df_q.columns: df_q['serie'] = "Geral"
-        if 'assunto' not in df_q.columns: df_q['assunto'] = ""
-        
-        col_f1, col_f2 = st.columns(2)
-        with col_f1:
-            filtro_serie = st.multiselect("Filtrar por Série:", options=sorted(df_q['serie'].dropna().unique()))
-        with col_f2:
-            busca_assunto = st.text_input("Buscar por Assunto:")
-
-        if filtro_serie: df_q = df_q[df_q['serie'].isin(filtro_serie)]
-        if busca_assunto: df_q = df_q[df_q['assunto'].str.contains(busca_assunto, case=False, na=False)]
-
-        st.write(f"Total de questões encontradas: **{len(df_q)}**")
-        st.divider()
-
-        for index, row in df_q.iterrows():
-            str_serie = row.get('serie', '')
-            str_assunto = row.get('assunto', '')
-            
-            # --- ALTERAÇÃO AQUI: Removi o ID e a numeração do título do expander ---
-            with st.expander(f"📖 {str_serie} | Assunto: {str_assunto}"):
-                st.markdown(row['enunciado'], unsafe_allow_html=True)
-                
-                st.write("**Alternativas:**")
-                
-                alts = row.get('alternativas', {})
-                if isinstance(alts, str):
-                    try:
-                        alts = json.loads(alts.replace("'", '"'))
-                    except:
-                        alts = {}
-                
-                resposta_certa = row.get('resposta_correta', 'A')
-
-                if isinstance(alts, dict):
-                    for letra in ["A", "B", "C", "D"]:
-                        item = alts.get(letra, "")
-                        
-                        if isinstance(item, dict):
-                            txt_alt = item.get("texto", "")
-                            url_img = item.get("imagem", "")
-                        else:
-                            txt_alt = str(item)
-                            url_img = ""
-
-                        cor = "green" if letra == resposta_certa else "black"
-                        marcador = "✅" if letra == resposta_certa else "⚪"
-                        
-                        st.markdown(f"<span style='color:{cor}'>{marcador} **{letra})** {txt_alt}</span>", unsafe_allow_html=True)
-                        
-                        if url_img:
-                            st.image(url_img, width=200)
-                
-                st.divider()
-                # O ID continua sendo usado apenas "por baixo dos panos" no botão de excluir
-                if st.button("🗑️ Excluir Questão", key=f"del_{row['id']}", type="secondary"):
-                    try:
-                        supabase.table("questoes").delete().eq("id", row['id']).execute()
-                        st.success("Questão removida!")
-                        time.sleep(0.5)
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao excluir: {e}")
-    else:
-        st.info("Nenhuma questão na biblioteca.")
-
-elif menu == "Gerar Modelo de Prova":
-    st.title("📄 Gerar Novo Modelo de Prova")
-    
-    # --- CONFIGURAÇÕES BÁSICAS DA PROVA ---
-    c1, c2 = st.columns([3, 1])
-    titulo = c1.text_input("Título da Prova", placeholder="Ex: 1ª Avaliação de Química - 2º Bimestre")
-    valor = c2.number_input("Valor por questão", min_value=0.1, value=1.0, step=0.1)
-    
-    # Puxa as questões do banco para podermos selecionar
-    res_q = supabase.table("questoes").select("id, serie, assunto, enunciado").order("id", desc=True).execute()
-    
-    if res_q.data:
-        df_sel = pd.DataFrame(res_q.data)
-        
-        # Função rápida para limpar o HTML do enunciado (criado pelo editor) e deixar só o texto puro no menu
-        def clean_html(raw_html):
-            if not raw_html: return ""
-            cleanr = re.compile('<.*?>')
-            cleantext = re.sub(cleanr, '', str(raw_html))
-            return cleantext[:60] + "..." if len(cleantext) > 60 else cleantext
-        
-        # Cria um dicionário para mapear o texto bonito para o ID da questão
-        opcoes_dict = {}
-        for _, row in df_sel.iterrows():
-            serie_txt = row.get('serie', 'Geral')
-            assunto_txt = row.get('assunto', '')
-            enunciado_limpo = clean_html(row.get('enunciado', ''))
-            
-            # Como a opção vai aparecer na tela para você
-            texto_exibicao = f"[{serie_txt}] {assunto_txt} | {enunciado_limpo}"
-            # Se der nomes duplicados por coincidência, adicionamos o ID invisível para diferenciar
-            texto_exibicao = f"{texto_exibicao} (ID:{row['id']})"
-            
-            opcoes_dict[texto_exibicao] = row['id']
-        
-        st.divider()
-        st.subheader("📚 Selecione as Questões")
-        
-        # Filtro opcional para limpar a tela
-        series_disponiveis = ["Todas"] + sorted(list(df_sel['serie'].dropna().unique()))
-        filtro_s = st.selectbox("Filtrar lista de seleção por Série (Opcional):", series_disponiveis)
-        
-        opcoes_exibicao = list(opcoes_dict.keys())
-        if filtro_s != "Todas":
-            opcoes_exibicao = [op for op in opcoes_exibicao if f"[{filtro_s}]" in op]
-        
-        # O campo de múltipla escolha
-        selecionadas = st.multiselect(
-            "Busque e adicione as questões para esta prova:", 
-            options=opcoes_exibicao,
-            help="Você pode digitar parte do assunto ou do texto para encontrar a questão mais rápido."
-        )
-        
-        st.info(f"Quantidade de questões selecionadas para esta prova: **{len(selecionadas)}**")
-        
-        # --- BOTÃO DE SALVAR PROVA ---
-        st.write("---")
-        if st.button("🔨 Gerar Prova e Salvar", type="primary", use_container_width=True):
-            if not titulo:
-                st.error("❌ Dê um título para a prova!")
-            elif len(selecionadas) == 0:
-                st.error("❌ Selecione pelo menos 1 questão!")
-            else:
-                # Pega os IDs reais das questões selecionadas usando nosso dicionário
-                ids_selecionados = [opcoes_dict[opt] for opt in selecionadas]
-                
-                dados_prova = {
-                    "titulo": titulo, 
-                    "questoes_ids": ids_selecionados, 
-                    "valor_questao": float(valor), 
-                    "ativa": True
-                }
-                
-                try:
-                    supabase.table("modelos_prova").insert(dados_prova).execute()
-                    st.success(f"✅ Prova '{titulo}' gerada com sucesso contendo {len(selecionadas)} questões!")
-                    st.balloons()
-                except Exception as e:
-                    st.error(f"Erro ao salvar a prova no banco: {e}")
-    else:
-        st.warning("Não há questões cadastradas no banco de dados. Vá em 'Cadastrar Questões' primeiro.")
+    mostrar_tela_biblioteca(supabase)
 
 elif menu == "Provas Elaboradas":
-    st.title("📂 Gerenciamento de Provas Elaboradas")
-    
-    # Busca todas as provas cadastradas no banco
-    res_m = supabase.table("modelos_prova").select("*").order("id", desc=True).execute()
-    
-    if res_m.data:
-        df_provas = pd.DataFrame(res_m.data)
-        st.write(f"Total de provas criadas: **{len(df_provas)}**")
-        st.divider()
-        
-        # Lista cada prova em um "cartão" (container)
-        for index, prova in df_provas.iterrows():
-            # Define cor e texto do status
-            is_ativa = prova.get('ativa', False)
-            status_texto = "🟢 ATIVA (Aberta para os alunos)" if is_ativa else "🔴 INATIVA (Fechada)"
-            
-            # Calcula dados básicos
-            qtd_questoes = len(prova.get('questoes_ids', []))
-            valor_q = prova.get('valor_questao', 0)
-            valor_total = qtd_questoes * valor_q
-            
-            with st.container(border=True):
-                c1, c2, c3 = st.columns([3, 1, 1.2])
-                
-                with c1:
-                    st.subheader(f"📝 {prova['titulo']}")
-                    st.write(f"**Quantidade:** {qtd_questoes} questões | **Por questão:** {valor_q} pts | **Total:** {valor_total:.1f} pts")
-                    st.markdown(f"**Status atual:** {status_texto}")
-                
-                with c2:
-                    st.write("") # Espaçamento
-                    # Botão para ativar/desativar a prova
-                    texto_btn = "⏸️ Desativar" if is_ativa else "▶️ Ativar"
-                    if st.button(texto_btn, key=f"tog_{prova['id']}", use_container_width=True):
-                        novo_status = not is_ativa
-                        try:
-                            supabase.table("modelos_prova").update({"ativa": novo_status}).eq("id", prova['id']).execute()
-                            time.sleep(0.5)
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Erro ao mudar status: {e}")
-                            
-                with c3:
-                    st.write("") # Espaçamento
-                    # Botão para excluir a prova
-                    if st.button("🗑️ Excluir Prova", key=f"del_p_{prova['id']}", type="primary", use_container_width=True):
-                        try:
-                            # 1. Primeiro apagamos os resultados dessa prova (se houver) para evitar erros de dependência
-                            supabase.table("resultados_provas").delete().eq("prova_id", prova['id']).execute()
-                            # 2. Depois apagamos o modelo da prova
-                            supabase.table("modelos_prova").delete().eq("id", prova['id']).execute()
-                            
-                            st.success("Prova excluída com sucesso!")
-                            time.sleep(1)
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Erro ao excluir: {e}")
-    else:
-        st.info("Nenhuma prova elaborada ainda. Vá na aba 'Gerar Modelo de Prova' para criar a primeira!")
-
+    mostrar_tela_provas_elaboradas(supabase)
 
 elif menu == "Lista de Matrículas":
-    st.title("👥 Listas por Turma (PDF)")
-    st.write("Visualize a listagem de alunos com o número de matrícula oficial.")
-
-    try:
-        # Busca os alunos
-        res_a = supabase_alunos.table("alunos").select("*").execute()
-        
-        if res_a.data:
-            df_alunos = pd.DataFrame(res_a.data)
-            
-            # --- MAPEAMENTO EXATO (Baseado no seu Supabase) ---
-            col_t = 'turma' 
-            col_n = 'nome' 
-            col_m = 'numero_matricula' # <-- Agora sim, o nome exato!
-
-            if col_t not in df_alunos.columns or col_n not in df_alunos.columns:
-                st.error("Erro técnico: Colunas 'nome' ou 'turma' não encontradas. Verifique o banco.")
-            else:
-                # Seletor de Turma
-                turmas_disponiveis = sorted(df_alunos[col_t].dropna().unique())
-                turma_selecionada = st.selectbox("Selecione a Turma:", turmas_disponiveis)
-
-                # Filtro e Ordenação por Nome
-                df_turma = df_alunos[df_alunos[col_t] == turma_selecionada].sort_values(by=col_n).reset_index(drop=True)
-                
-                # Adiciona o número de ordem (1, 2, 3...)
-                df_turma['Nº'] = df_turma.index + 1 
-                
-                # Prepara colunas para exibição na tela
-                colunas_tela = ['Nº']
-                if col_m in df_alunos.columns:
-                    colunas_tela.append(col_m)
-                colunas_tela.append(col_n)
-
-                st.write(f"Total de alunos na turma: **{len(df_turma)}**")
-                
-                # Exibe a tabela formatada (Trocando na tela para ficar bonito)
-                df_exibir = df_turma[colunas_tela].copy()
-                if col_m in df_alunos.columns:
-                    df_exibir = df_exibir.rename(columns={col_m: "Matrícula"})
-                
-                st.dataframe(df_exibir, use_container_width=False, hide_index=True)
-
-                st.divider()
-
-                # --- GERAÇÃO DO PDF ---
-                import tempfile 
-                pdf = FPDF()
-                pdf.add_page()
-                pdf.set_font('Arial', 'B', 14)
-                pdf.cell(0, 10, 'EREMPAM - LISTAGEM DE MATRICULAS', ln=True, align='C')
-                
-                t_limpa = unicodedata.normalize('NFKD', str(turma_selecionada)).encode('ASCII', 'ignore').decode('ASCII')
-                pdf.set_font('Arial', 'B', 12)
-                pdf.cell(0, 10, f'TURMA: {t_limpa}', ln=True, align='L')
-                pdf.ln(5)
-
-                # Cabeçalho do PDF
-                pdf.set_font('Arial', 'B', 10)
-                pdf.cell(12, 8, 'N', border=1, align='C')
-                
-                larg_nome = 110
-                if col_m in df_alunos.columns:
-                    pdf.cell(35, 8, 'MATRICULA', border=1, align='C')
-                    larg_nome = 95
-                    
-                pdf.cell(larg_nome, 8, 'NOME DO ALUNO', border=1, align='C')
-                pdf.cell(35, 8, 'OBSERVACAO', border=1, align='C')
-                pdf.ln()
-
-                # Linhas do PDF
-                pdf.set_font('Arial', '', 10)
-                for row in df_turma.itertuples():
-                    pdf.cell(12, 8, str(getattr(row, 'Nº')), border=1, align='C')
-                    
-                    if col_m in df_alunos.columns:
-                        # Pega o valor da matrícula diretamente
-                        val_m = str(getattr(row, col_m))
-                        pdf.cell(35, 8, val_m, border=1, align='C')
-                        
-                    nome_p = unicodedata.normalize('NFKD', str(getattr(row, col_n))).encode('ASCII', 'ignore').decode('ASCII')[:35]
-                    pdf.cell(larg_nome, 8, nome_p, border=1, align='L')
-                    pdf.cell(35, 8, '', border=1, align='C')
-                    pdf.ln()
-
-                # Download
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                    pdf.output(tmp.name)
-                    with open(tmp.name, "rb") as f:
-                        pdf_bytes = f.read()
-
-                st.download_button(
-                    label="📥 Baixar PDF da Turma",
-                    data=pdf_bytes,
-                    file_name=f"Matriculas_{t_limpa.replace(' ', '_')}.pdf",
-                    mime="application/pdf",
-                    type="primary",
-                    use_container_width=True
-                )
-        else:
-            st.warning("Nenhum dado encontrado na tabela de alunos.")
-
-    except Exception as e:
-        st.error(f"Erro ao processar matrículas: {e}")
+    mostrar_tela_lista_matriculas(supabase_alunos)
 
 elif menu == "Central de Avisos":
     st.title("📲 Disparador de WhatsApp")
@@ -598,70 +288,8 @@ elif menu == "Central de Avisos":
         st.warning("Biblioteca 'pywhatkit' não instalada para disparos.")
     # Lógica de envio em massa...
 
-
 elif menu == "Diagnósticos IA":
-    st.title("🤖 Importar Diagnósticos Pedagógicos")
-    st.write("Vincule feedbacks gerados por Inteligência Artificial aos alunos após uma prova.")
-    
-    # Puxa as provas para o professor selecionar
-    res_provas = supabase.table("modelos_prova").select("id, titulo").order("id", desc=True).execute()
-    
-    if res_provas.data:
-        c1, c2 = st.columns([1, 1.5], gap="large")
-        
-        # ==========================================
-        # LADO ESQUERDO: SELEÇÃO E INSTRUÇÕES
-        # ==========================================
-        with c1:
-            st.subheader("1️⃣ Selecione a Prova")
-            # Cria dicionário para o selectbox associar o Título ao ID
-            provas_dict = {p['titulo']: p['id'] for p in res_provas.data}
-            prova_selecionada = st.selectbox("Vincular feedbacks à qual prova?", list(provas_dict.keys()))
-            prova_id = provas_dict[prova_selecionada]
-            
-            st.divider()
-            st.markdown("**Como usar?**")
-            st.write("1. Exporte a planilha de notas e erros para o ChatGPT/Gemini.")
-            st.write("2. Peça para a IA gerar um diagnóstico curto para cada aluno em formato JSON.")
-            st.write("3. O formato **obrigatório** deve ser:")
-            st.code('{\n  "123": "O aluno precisa revisar o assunto X.",\n  "124": "Excelente desempenho!"\n}', language="json")
-            st.caption("*Onde '123' e '124' são os IDs ou Matrículas dos alunos.*")
-            
-        # ==========================================
-        # LADO DIREITO: SALVAR NO BANCO
-        # ==========================================
-        with c2:
-            st.subheader("2️⃣ Importar Diagnósticos")
-            json_input = st.text_area("Cole o JSON da IA aqui:", height=250, placeholder='{\n  "ID_DO_ALUNO": "Feedback gerado pela IA..."\n}')
-            
-            if st.button("💾 Salvar Feedbacks no Banco", type="primary", use_container_width=True):
-                if not json_input.strip():
-                    st.warning("⚠️ Cole o código JSON antes de tentar salvar.")
-                else:
-                    try:
-                        dados_ia = json.loads(json_input)
-                        count = 0
-                        
-                        with st.spinner("Salvando feedbacks no banco de dados..."):
-                            for al_id, txt in dados_ia.items():
-                                supabase.table("feedback_ia_alunos").insert({
-                                    "aluno_id": str(al_id), # CORREÇÃO: Força string para evitar erro de tipo
-                                    "prova_id": str(prova_id),
-                                    "diagnostico_pedagogico": txt,
-                                    "revisado_professor": True
-                                }).execute()
-                                count += 1
-                                
-                        st.success(f"✅ {count} feedbacks salvos na tabela 'feedback_ia_alunos' para a prova '{prova_selecionada}'!")
-                        st.balloons()
-                        
-                    except json.JSONDecodeError:
-                        st.error("❌ Erro: O texto colado não é um JSON válido. Verifique se faltam aspas, vírgulas ou chaves ({}).")
-                    except Exception as e:
-                        st.error("❌ Erro ao salvar no banco. Mensagem:")
-                        st.code(str(e))
-    else:
-        st.warning("Nenhuma prova encontrada. Crie uma prova primeiro na aba 'Gerar Modelo de Prova'.")
+    mostrar_tela_diagnosticos(supabase)
 
 elif menu == "Boletim Final SIEPE":
     mostrar_tela_boletim(supabase, supabase_alunos)
