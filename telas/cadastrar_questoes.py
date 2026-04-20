@@ -88,9 +88,48 @@ def mostrar_tela_cadastrar_questoes(supabase):
 
     with tab2:
         st.subheader("⚡ Importador Flash")
-        json_input = st.text_area("JSON de Questões:")
-        if st.button("🚀 Iniciar Importação"):
-            try:
-                for q in json.loads(json_input): supabase.table("questoes").insert(q).execute()
-                st.success("Importado!")
-            except: st.error("Erro JSON")
+        
+        # Dica visual para você (ou outros professores) saberem o formato exato
+        with st.expander("💡 Ver formato de JSON exigido pelo banco"):
+            st.code('''[
+  {
+    "enunciado": "Qual é a capital de Pernambuco?",
+    "materia": "Geografia",
+    "assunto": "Capitais",
+    "alternativas": {
+      "A": {"texto": "Recife", "imagem": ""},
+      "B": {"texto": "Olinda", "imagem": ""},
+      "C": {"texto": "Caruaru", "imagem": ""},
+      "D": {"texto": "Petrolina", "imagem": ""},
+      "E": {"texto": "Paulista", "imagem": ""}
+    },
+    "correta": "A",
+    "revisada": true
+  }
+]''', language="json")
+
+        json_input = st.text_area("Cole aqui o array de Questões em JSON:", height=300)
+        
+        if st.button("🚀 Iniciar Importação", use_container_width=True):
+            if not json_input.strip():
+                st.warning("⚠️ Cole o texto JSON antes de clicar em importar!")
+            else:
+                try:
+                    # 1. Tenta decodificar o texto
+                    dados_json = json.loads(json_input)
+                    
+                    # 2. Garante que seja uma lista para iterar/inserir
+                    if isinstance(dados_json, dict):
+                        dados_json = [dados_json]
+                        
+                    # 3. Insere em lote no Supabase (mais rápido e seguro que o loop)
+                    with st.spinner(f"Processando {len(dados_json)} questões..."):
+                        supabase.table("questoes").insert(dados_json).execute()
+                        st.success(f"✅ {len(dados_json)} questões importadas com sucesso!")
+                        
+                except json.JSONDecodeError as e:
+                    # Agora o sistema vai "caguetar" exatamente onde o JSON está errado
+                    st.error(f"❌ Erro de sintaxe no JSON. Verifique aspas, vírgulas ou chaves faltando.\n\nDetalhe técnico: {e}")
+                except Exception as e:
+                    # Erros do Supabase (ex: faltou alguma coluna obrigatória)
+                    st.error(f"❌ Erro na integração com o Banco de Dados:\n\n{e}")
