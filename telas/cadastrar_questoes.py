@@ -193,3 +193,39 @@ def mostrar_tela_cadastrar_questoes(supabase):
                             
                             if img_atual: c_img.image(img_atual, width=100, caption="Img Atual")
                             else: c_img.write("Sem imagem")
+                        
+                        # 👇 O RESTANTE QUE ESTAVA FALTANDO COMEÇA AQUI 👇
+                        st.divider()
+                        resp_atual = q_data.get("resposta_correta", "A")
+                        idx_resp = ["A", "B", "C", "D", "E"].index(resp_atual) if resp_atual in ["A", "B", "C", "D", "E"] else 0
+                        correta_edit = st.radio("Resposta Correta:", ["A", "B", "C", "D", "E"], index=idx_resp, horizontal=True)
+                        
+                        marcar_revisada = st.checkbox("✅ Marcar como Revisada (Tirar pendência)", value=True)
+                        
+                        # O famigerado botão agora bem alinhado dentro do form!
+                        btn_salvar_edicao = st.form_submit_button("💾 Salvar Alterações", type="primary")
+                        
+                        if btn_salvar_edicao:
+                            with st.spinner("Atualizando questão..."):
+                                alts_novas = {}
+                                for letra in ["A", "B", "C", "D", "E"]:
+                                    # Se subiu arquivo novo, atualiza. Senão, mantém a imagem que já estava lá
+                                    nova_url = upload_imagem(arquivos_alts_edit[letra]) if arquivos_alts_edit[letra] else urls_existentes[letra]
+                                    alts_novas[letra] = {"texto": textos_alts_edit[letra], "imagem": nova_url}
+                                
+                                update_dados = {
+                                    "enunciado": enunc_edit,
+                                    "serie": serie_edit,
+                                    "assunto": assunto_edit,
+                                    "alternativas": alts_novas,
+                                    "resposta_correta": correta_edit,
+                                    "revisada": marcar_revisada
+                                }
+                                
+                                try:
+                                    supabase.table("questoes").update(update_dados).eq("id", id_q).execute()
+                                    st.success("✅ Questão atualizada e revisada com sucesso!")
+                                    time.sleep(1)
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro ao atualizar: {e}")
