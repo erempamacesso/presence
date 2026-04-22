@@ -47,27 +47,27 @@ def mostrar_tela_gerar_modelo(supabase):
 
         # --- LISTA DE SELEÇÃO (FORMATO SANFONA) ---
         st.write(f"### 📝 Questões Encontradas ({len(df_filtrado)})")
-        st.info("Selecione as questões marcando o checkbox à esquerda. Clique no título para expandir o enunciado completo.")
+        st.info("Selecione as questões marcando o checkbox à esquerda. Clique no assunto para expandir o enunciado completo.")
 
-        # Criamos uma lista para armazenar os IDs selecionados
+        # Lista para armazenar os IDs selecionados
         ids_selecionados = []
 
-        # Área de rolagem para não esticar a página infinitamente
         container_questoes = st.container()
         
         with container_questoes:
             for _, row in df_filtrado.iterrows():
-                # Layout: Checkbox pequeno e Expander grande ao lado
+                # Layout: Checkbox pequeno e Expander grande
                 col_check, col_exp = st.columns([0.05, 0.95])
                 
-                # O checkbox usa o ID da questão como chave única
+                # Checkbox oculto visualmente apenas com o ID interno
                 selecionada = col_check.checkbox("", key=f"sel_{row['id']}")
                 
                 if selecionada:
                     ids_selecionados.append(row['id'])
                 
-                # Expander com o enunciado
-                with col_exp.expander(f"ID: {row['id']} | {row['assunto']} | {clean_html(row['enunciado'])}"):
+                # Expander SEM o ID no título, apenas Assunto e Resumo do Enunciado
+                titulo_expander = f"📌 {row['assunto']} | {clean_html(row['enunciado'])}"
+                with col_exp.expander(titulo_expander):
                     st.markdown(row['enunciado'], unsafe_allow_html=True)
         
         st.divider()
@@ -82,7 +82,7 @@ def mostrar_tela_gerar_modelo(supabase):
             else:
                 dados_prova = {
                     "titulo": titulo, 
-                    "questoes_ids": ids_selecionados, # Agora enviamos direto a lista de IDs
+                    "questoes_ids": ids_selecionados, 
                     "valor_questao": float(valor), 
                     "ativa": True
                 }
@@ -91,7 +91,6 @@ def mostrar_tela_gerar_modelo(supabase):
                     supabase.table("modelos_prova").insert(dados_prova).execute()
                     st.success(f"✅ Prova '{titulo}' gerada com sucesso contendo {len(ids_selecionados)} questões!")
                     st.balloons()
-                    # Pequeno delay para o usuário ver o sucesso antes de resetar se necessário
                 except Exception as e:
                     st.error(f"Erro ao salvar a prova no banco: {e}")
     else:
