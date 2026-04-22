@@ -31,7 +31,7 @@ def mostrar_tela_provas_elaboradas(supabase):
             # Buscando datas e tempo do banco (ou definindo vazios/padrões)
             d_inicio_str = prova.get('data_inicio')
             d_fim_str = prova.get('data_limite')
-            tempo_max = prova.get('tempo_maximo', 60) # Padrão de 60 minutos se não houver
+            tempo_max = prova.get('tempo_duracao', 60) # Padrão de 60 minutos se não houver
             
             # Convertendo strings do banco para objetos de data para exibir no Streamlit
             try:
@@ -108,7 +108,7 @@ def mostrar_tela_provas_elaboradas(supabase):
                                 "valor_questao": float(novo_valor),
                                 "data_inicio": nova_d_inicio.strftime("%Y-%m-%d"), # Supabase precisa do formato Ano-Mes-Dia
                                 "data_limite": nova_d_fim.strftime("%Y-%m-%d"),
-                                "tempo_maximo": novo_tempo
+                                "tempo_duracao": novo_tempo
                             }
                             try:
                                 supabase.table("modelos_prova").update(dados_update).eq("id", prova['id']).execute()
