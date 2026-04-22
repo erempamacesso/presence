@@ -47,9 +47,9 @@ def mostrar_tela_provas_elaboradas(supabase):
             except:
                 tempo_max = 60
             
-            # Aplicando a função robusta de conversão
-            d_inicio_obj = converter_data(prova.get('data_inicio'))
-            d_fim_obj = converter_data(prova.get('data_fim'))
+            # CORREÇÃO AQUI: Lendo 'data_de_inicio' e 'data_de_fim' exatamente como no Supabase
+            d_inicio_obj = converter_data(prova.get('data_de_inicio'))
+            d_fim_obj = converter_data(prova.get('data_de_fim'))
 
             # Formatação BR para exibição no Card
             str_inicio_br = d_inicio_obj.strftime("%d/%m/%Y") if d_inicio_obj else "Não definida"
@@ -104,7 +104,6 @@ def mostrar_tela_provas_elaboradas(supabase):
                         
                         col_d1, col_d2, col_d3 = st.columns(3)
                         
-                        # Agora ele tenta exibir o objeto da data do banco, se não achar, usa a data atual
                         nova_d_inicio = col_d1.date_input("Data de Início", value=d_inicio_obj if d_inicio_obj else hoje, format="DD/MM/YYYY")
                         nova_d_fim = col_d2.date_input("Data de Fim", value=d_fim_obj if d_fim_obj else hoje, format="DD/MM/YYYY")
                         novo_tempo = col_d3.number_input("Tempo Máx (minutos)", min_value=10, value=tempo_max, step=5)
@@ -112,11 +111,12 @@ def mostrar_tela_provas_elaboradas(supabase):
                         submit_edit = st.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True)
                         
                         if submit_edit:
+                            # CORREÇÃO AQUI: Mandando para o Supabase com as colunas reais 'data_de_inicio' e 'data_de_fim'
                             dados_update = {
                                 "titulo": novo_titulo,
                                 "valor_questao": float(novo_valor),
-                                "data_inicio": nova_d_inicio.strftime("%Y-%m-%d"),
-                                "data_fim": nova_d_fim.strftime("%Y-%m-%d"),
+                                "data_de_inicio": nova_d_inicio.strftime("%Y-%m-%d"),
+                                "data_de_fim": nova_d_fim.strftime("%Y-%m-%d"),
                                 "tempo_maximo": novo_tempo
                             }
                             try:
