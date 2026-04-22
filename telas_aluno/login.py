@@ -66,16 +66,24 @@ def mostrar_tela_login(db_alunos):
 
         /* CORREÇÃO DO TEXTO DO INPUT (BRANCO NO FUNDO ESCURO) */
         div[data-baseweb="input"] {{
-            background-color: rgba(255, 255, 255, 0.1) !important;
-            border: 1px solid rgba(255, 255, 255, 0.2) !important;
+            background-color: rgba(255, 255, 255, 0.9) !important; /* Fundo quase branco para destacar o texto preto */
+            border: 1px solid rgba(0, 0, 0, 0.2) !important;
             border-radius: 10px !important;
         }}
-
+        
         div[data-baseweb="input"] input {{
-            color: #ffffff !important;
-            -webkit-text-fill-color: #ffffff !important;
-            text-align: center !important;
+            background-color: transparent !important;
+            color: #000000 !important; /* COR DA FONTE: PRETO */
+            -webkit-text-fill-color: #000000 !important; /* FORÇA PRETO NO CHROME/SAFARI */
             font-size: 18px !important;
+            text-align: center !important;
+            letter-spacing: 2px;
+            font-weight: bold;
+        }}
+        
+        div[data-baseweb="input"] input::placeholder {{
+            color: rgba(0, 0, 0, 0.4) !important; /* Placeholder em cinza escuro */
+            -webkit-text-fill-color: rgba(0, 0, 0, 0.4) !important;
         }}
 
         /* Botão */
