@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import time
+from datetime import datetime
 
 def mostrar_tela_provas_elaboradas(supabase):
     st.title("📂 Gerenciamento de Provas Elaboradas")
@@ -13,33 +14,58 @@ def mostrar_tela_provas_elaboradas(supabase):
         st.write(f"Total de provas criadas: **{len(df_provas)}**")
         st.divider()
         
+        hoje = datetime.now().date()
+        
         # Lista cada prova em um "cartão" (container)
         for index, prova in df_provas.iterrows():
-            # Define cor e texto do status
+            # Status e Cores
             is_ativa = prova.get('ativa', False)
             status_texto = "🟢 ATIVA (Aberta para os alunos)" if is_ativa else "🔴 INATIVA (Fechada)"
             
-            # Calcula dados básicos
+            # Cálculos básicos
             questoes_ids = prova.get('questoes_ids')
-            # Garante que seja uma lista para contar, mesmo se vier None do banco
             qtd_questoes = len(questoes_ids) if isinstance(questoes_ids, list) else 0 
-            
             valor_q = float(prova.get('valor_questao', 0))
             valor_total = qtd_questoes * valor_q
             
+            # Buscando datas e tempo do banco (ou definindo vazios/padrões)
+            d_inicio_str = prova.get('data_inicio')
+            d_fim_str = prova.get('data_fim')
+            tempo_max = prova.get('tempo_maximo', 60) # Padrão de 60 minutos se não houver
+            
+            # Convertendo strings do banco para objetos de data para exibir no Streamlit
+            try:
+                d_inicio_obj = datetime.strptime(d_inicio_str, "%Y-%m-%d").date() if d_inicio_str else None
+            except: d_inicio_obj = None
+            
+            try:
+                d_fim_obj = datetime.strptime(d_fim_str, "%Y-%m-%d").date() if d_fim_str else None
+            except: d_fim_obj = None
+
+            # Formatação BR para exibição
+            str_inicio_br = d_inicio_obj.strftime("%d/%m/%Y") if d_inicio_obj else "Não definida"
+            str_fim_br = d_fim_obj.strftime("%d/%m/%Y") if d_fim_obj else "Não definida"
+
             with st.container(border=True):
-                c1, c2, c3 = st.columns([3, 1, 1.2])
+                st.subheader(f"📝 {prova['titulo']}")
+                
+                # Exibição de Informações
+                c_info1, c_info2 = st.columns(2)
+                with c_info1:
+                    st.write(f"**Status:** {status_texto}")
+                    st.write(f"**Questões:** {qtd_questoes}  |  **Valor de cada:** {valor_q:.2f}  |  **Valor Total:** {valor_total:.2f}")
+                with c_info2:
+                    st.write(f"📅 **Início:** {str_inicio_br}")
+                    st.write(f"📅 **Fim:** {str_fim_br}")
+                    st.write(f"⏱️ **Tempo Máximo:** {tempo_max} minutos")
+
+                # Botões de Ação Rápida
+                c1, c2, c3 = st.columns(3)
                 
                 with c1:
-                    st.subheader(f"📝 {prova['titulo']}")
-                    st.write(f"**Quantidade:** {qtd_questoes} questões | **Por questão:** {valor_q} pts | **Total:** {valor_total:.1f} pts")
-                    st.markdown(f"**Status atual:** {status_texto}")
-                
-                with c2:
-                    st.write("") # Espaçamento
-                    # Botão para ativar/desativar a prova
-                    texto_btn = "⏸️ Desativar" if is_ativa else "▶️ Ativar"
-                    if st.button(texto_btn, key=f"tog_{prova['id']}", use_container_width=True):
+                    st.write("") 
+                    btn_status = "🔴 Desativar Prova" if is_ativa else "🟢 Ativar Prova"
+                    if st.button(btn_status, key=f"btn_s_{prova['id']}", use_container_width=True):
                         novo_status = not is_ativa
                         try:
                             supabase.table("modelos_prova").update({"ativa": novo_status}).eq("id", prova['id']).execute()
@@ -48,20 +74,48 @@ def mostrar_tela_provas_elaboradas(supabase):
                         except Exception as e:
                             st.error(f"Erro ao mudar status: {e}")
                             
-                with c3:
-                    st.write("") # Espaçamento
-                    # Botão para excluir a prova
+                with c2:
+                    st.write("") 
                     if st.button("🗑️ Excluir Prova", key=f"del_p_{prova['id']}", type="primary", use_container_width=True):
                         try:
-                            # 1. Primeiro apagamos os resultados dessa prova (se houver) para evitar erros de dependência
                             supabase.table("resultados_provas").delete().eq("prova_id", prova['id']).execute()
-                            # 2. Depois apagamos o modelo da prova
                             supabase.table("modelos_prova").delete().eq("id", prova['id']).execute()
-                            
                             st.success("Prova excluída com sucesso!")
                             time.sleep(1)
                             st.rerun()
                         except Exception as e:
                             st.error(f"Erro ao excluir: {e}")
+                
+                # --- ÁREA DE EDIÇÃO (SANFONA) ---
+                with st.expander("✏️ Editar Configurações da Prova"):
+                    with st.form(f"form_edit_{prova['id']}"):
+                        # Campos Título e Valor
+                        col_t1, col_t2 = st.columns([3, 1])
+                        novo_titulo = col_t1.text_input("Título da Prova", value=prova.get('titulo', ''))
+                        novo_valor = col_t2.number_input("Valor por Questão", min_value=0.1, value=valor_q, step=0.1)
+                        
+                        # Campos Datas e Tempo
+                        col_d1, col_d2, col_d3 = st.columns(3)
+                        nova_d_inicio = col_d1.date_input("Data de Início", value=d_inicio_obj if d_inicio_obj else hoje, format="DD/MM/YYYY")
+                        nova_d_fim = col_d2.date_input("Data de Fim", value=d_fim_obj if d_fim_obj else hoje, format="DD/MM/YYYY")
+                        novo_tempo = col_d3.number_input("Tempo Máx (minutos)", min_value=10, value=int(tempo_max), step=5)
+                        
+                        submit_edit = st.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True)
+                        
+                        if submit_edit:
+                            dados_update = {
+                                "titulo": novo_titulo,
+                                "valor_questao": float(novo_valor),
+                                "data_inicio": nova_d_inicio.strftime("%Y-%m-%d"), # Supabase precisa do formato Ano-Mes-Dia
+                                "data_fim": nova_d_fim.strftime("%Y-%m-%d"),
+                                "tempo_maximo": novo_tempo
+                            }
+                            try:
+                                supabase.table("modelos_prova").update(dados_update).eq("id", prova['id']).execute()
+                                st.success("✅ Configurações atualizadas com sucesso!")
+                                time.sleep(1)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro ao atualizar: {e}")
     else:
         st.info("Nenhuma prova elaborada ainda. Vá na aba 'Gerar Modelo de Prova' para criar a primeira!")
