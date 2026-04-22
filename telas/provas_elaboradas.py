@@ -47,9 +47,8 @@ def mostrar_tela_provas_elaboradas(supabase):
             except:
                 tempo_max = 60
             
-            # CORREÇÃO AQUI: Lendo 'data_de_inicio' e 'data_de_fim' exatamente como no Supabase
-            d_inicio_obj = converter_data(prova.get('data_de_inicio'))
-            d_fim_obj = converter_data(prova.get('data_de_fim'))
+                d_inicio_obj = converter_data(prova.get('data_inicio'))
+            d_fim_obj = converter_data(prova.get('data_limite'))
 
             # Formatação BR para exibição no Card
             str_inicio_br = d_inicio_obj.strftime("%d/%m/%Y") if d_inicio_obj else "Não definida"
@@ -111,12 +110,12 @@ def mostrar_tela_provas_elaboradas(supabase):
                         submit_edit = st.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True)
                         
                         if submit_edit:
-                            # CORREÇÃO AQUI: Mandando para o Supabase com as colunas reais 'data_de_inicio' e 'data_de_fim'
+                           
                             dados_update = {
                                 "titulo": novo_titulo,
                                 "valor_questao": float(novo_valor),
-                                "data_de_inicio": nova_d_inicio.strftime("%Y-%m-%d"),
-                                "data_de_fim": nova_d_fim.strftime("%Y-%m-%d"),
+                                "data_inicio": nova_d_inicio.strftime("%Y-%m-%d"),
+                                "data_limite": nova_d_fim.strftime("%Y-%m-%d"),
                                 "tempo_maximo": novo_tempo
                             }
                             try:
