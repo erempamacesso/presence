@@ -56,9 +56,9 @@ def mostrar_tela_login(db_alunos):
         
         /* CORREÇÃO AQUI: Chaves duplas colocadas para o Python não quebrar */
         .logo-img {{
-            width: 50px !important;    /* Força o tamanho pequeno */
+            width: 80px !important;    /* Força o tamanho pequeno */
             height: auto !important;   /* Mantém a proporção */
-            max-width: 50px !important; 
+            max-width: 80px !important; 
             margin-bottom: 10px;
             filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.5));
             display: block;
