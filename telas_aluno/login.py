@@ -30,6 +30,10 @@ def mostrar_tela_login(db_alunos):
         [data-testid="stAppViewContainer"] {{
             background: linear-gradient(135deg, #0b132b, #1c2541, #0b132b);
             color: #ffffff;
+            /* Trava para forçar centralização e tirar barra de rolagem */
+            display: flex !important;
+            justify-content: center !important;
+            align-items: center !important;
         }}
         
         /* Esconde o header padrão do Streamlit para ficar limpo */
@@ -48,14 +52,18 @@ def mostrar_tela_login(db_alunos):
             border-right: 1px solid rgba(255, 255, 255, 0.1);
             padding: 40px 30px 20px 30px;
             text-align: center;
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
-            margin-top: 5vh;
         }}
         
+        /* CORREÇÃO AQUI: Chaves duplas colocadas para o Python não quebrar */
         .logo-img {{
-            max-width: 70px;
+            width: 50px !important;    /* Força o tamanho pequeno */
+            height: auto !important;   /* Mantém a proporção */
+            max-width: 50px !important; 
             margin-bottom: 10px;
             filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.5));
+            display: block;
+            margin-left: auto;
+            margin-right: auto;
         }}
         
         .titulo-login {{
@@ -129,7 +137,6 @@ def mostrar_tela_login(db_alunos):
             border-left: 1px solid rgba(255, 255, 255, 0.1);
             border-right: 1px solid rgba(255, 255, 255, 0.1);
             padding: 0px 30px 40px 30px;
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
             text-align: center;
         }}
         
@@ -146,7 +153,6 @@ def mostrar_tela_login(db_alunos):
         }}
         </style>
     """, unsafe_allow_html=True)
-
     # ==========================================\
     # ESTRUTURA DA TELA (Centralizada)
     # ==========================================\
@@ -159,7 +165,7 @@ def mostrar_tela_login(db_alunos):
         st.markdown(f"""
             <div class="glass-container">
                 {img_tag}
-                <h2 class="titulo-login">Portal do Aluno</h2>
+                <h2 style="font-size: 22px; margin-top: 10px;">Portal do Aluno</h2>
                 <p class="subtitulo-login">Acesse suas provas e resultados</p>
             </div>
         """, unsafe_allow_html=True)
