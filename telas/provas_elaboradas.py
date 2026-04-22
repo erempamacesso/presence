@@ -18,11 +18,10 @@ def mostrar_tela_provas_elaboradas(supabase):
         
         # Função ROBUSTA para converter a data vinda do banco e evitar o "Não definida"
         def converter_data(data_val):
-            # Se for vazio, nulo (NaN) ou a string "None", retorna None
             if pd.isna(data_val) or not str(data_val).strip() or str(data_val).lower() == 'none':
                 return None
             try:
-                # Força para string e pega só os primeiros 10 caracteres (YYYY-MM-DD)
+                # Pega os primeiros 10 caracteres (YYYY-MM-DD)
                 str_data = str(data_val)[:10]
                 return datetime.strptime(str_data, "%Y-%m-%d").date()
             except Exception:
@@ -30,7 +29,6 @@ def mostrar_tela_provas_elaboradas(supabase):
         
         # Lista cada prova em um "cartão" (container)
         for index, prova in df_provas.iterrows():
-            # Status e Cores
             is_ativa = prova.get('ativa', False)
             status_texto = "🟢 ATIVA (Aberta para os alunos)" if is_ativa else "🔴 INATIVA (Fechada)"
             
@@ -40,14 +38,16 @@ def mostrar_tela_provas_elaboradas(supabase):
             valor_q = float(prova.get('valor_questao', 0))
             valor_total = qtd_questoes * valor_q
             
-            # Buscando e convertendo datas e tempo de forma segura
+            # Buscando tempo máximo
             tempo_bd = prova.get('tempo_maximo', 60)
             try:
                 tempo_max = int(tempo_bd)
             except:
                 tempo_max = 60
             
-                d_inicio_obj = converter_data(prova.get('data_inicio'))
+            # --- AJUSTE DAS COLUNAS REAIS ---
+            # Lendo 'data_inicio' e 'data_limite' conforme sua tabela
+            d_inicio_obj = converter_data(prova.get('data_inicio'))
             d_fim_obj = converter_data(prova.get('data_limite'))
 
             # Formatação BR para exibição no Card
@@ -64,7 +64,7 @@ def mostrar_tela_provas_elaboradas(supabase):
                     st.write(f"**Questões:** {qtd_questoes}  |  **Valor de cada:** {valor_q:.2f}  |  **Valor Total:** {valor_total:.2f}")
                 with c_info2:
                     st.write(f"📅 **Início:** {str_inicio_br}")
-                    st.write(f"📅 **Fim:** {str_fim_br}")
+                    st.write(f"📅 **Término:** {str_fim_br}")
                     st.write(f"⏱️ **Tempo Máximo:** {tempo_max} minutos")
 
                 # Botões de Ação Rápida
@@ -104,13 +104,13 @@ def mostrar_tela_provas_elaboradas(supabase):
                         col_d1, col_d2, col_d3 = st.columns(3)
                         
                         nova_d_inicio = col_d1.date_input("Data de Início", value=d_inicio_obj if d_inicio_obj else hoje, format="DD/MM/YYYY")
-                        nova_d_fim = col_d2.date_input("Data de Fim", value=d_fim_obj if d_fim_obj else hoje, format="DD/MM/YYYY")
+                        nova_d_fim = col_d2.date_input("Data de Término", value=d_fim_obj if d_fim_obj else hoje, format="DD/MM/YYYY")
                         novo_tempo = col_d3.number_input("Tempo Máx (minutos)", min_value=10, value=tempo_max, step=5)
                         
                         submit_edit = st.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True)
                         
                         if submit_edit:
-                           
+                            # --- SALVANDO COM OS NOMES CORRETOS DAS COLUNAS ---
                             dados_update = {
                                 "titulo": novo_titulo,
                                 "valor_questao": float(novo_valor),
