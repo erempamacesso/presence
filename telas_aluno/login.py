@@ -53,7 +53,7 @@ def mostrar_tela_login(db_alunos):
         }}
         
         .logo-img {{
-            max-width: 150px;
+            max-width: 75px;
             margin-bottom: 20px;
             filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.5));
         }}
