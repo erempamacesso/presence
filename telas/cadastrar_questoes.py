@@ -118,55 +118,87 @@ def mostrar_tela_cadastrar_questoes(supabase):
                     st.error(f"❌ Erro no Banco de Dados:\n{e}")
 
     # ==========================================
-    # ABA 3: REVISÃO E EDIÇÃO (NOVA!)
+    # ABA 3: REVISÃO E EDIÇÃO (ATUALIZADA COM FILTROS!)
     # ==========================================
     with tab3:
         st.subheader("🛠️ Revisão e Atualização de Questões")
-        st.write("Selecione uma questão abaixo para adicionar imagens e aprovar sua revisão.")
+        st.write("Filtre e selecione uma questão para editar o texto ou adicionar imagens.")
         
+        # Busca todas as questões para o DataFrame de edição
         res_q = supabase.table("questoes").select("*").order("id", desc=True).execute()
         
         if res_q.data:
             df_q = pd.DataFrame(res_q.data)
+            
+            # Padronização de colunas
             if 'revisada' not in df_q.columns: df_q['revisada'] = False
             df_q['revisada'] = df_q['revisada'].fillna(False)
+            df_q['serie'] = df_q['serie'].fillna("Não definida")
+            df_q['assunto'] = df_q['assunto'].fillna("Sem assunto")
+
+            # --- BLOCO DE FILTROS ---
+            st.write("### 🔍 Filtros de Busca")
+            c_f1, c_f2, c_f3 = st.columns([1, 1, 1])
             
-            filtro_edicao = st.radio("Mostrar no menu:", ["⚠️ Apenas Não Revisadas", "Todas as Questões"], horizontal=True)
+            with c_f1:
+                status_f = st.radio("Status:", ["⚠️ Pendentes", "✅ Revisadas", "Todas"], horizontal=True)
             
-            if filtro_edicao == "⚠️ Apenas Não Revisadas":
+            # Aplica filtro de status primeiro
+            if status_f == "⚠️ Pendentes":
                 df_q = df_q[df_q['revisada'] == False]
-                
+            elif status_f == "✅ Revisadas":
+                df_q = df_q[df_q['revisada'] == True]
+
+            with c_f2:
+                series_disponiveis = sorted(df_q['serie'].unique())
+                filtro_serie_ed = st.multiselect("Filtrar por Série:", options=series_disponiveis)
+            
+            if filtro_serie_ed:
+                df_q = df_q[df_q['serie'].isin(filtro_serie_ed)]
+
+            with c_f3:
+                assuntos_disponiveis = sorted(df_q['assunto'].unique())
+                filtro_assunto_ed = st.multiselect("Filtrar por Assunto:", options=assuntos_disponiveis)
+            
+            if filtro_assunto_ed:
+                df_q = df_q[df_q['assunto'].isin(filtro_assunto_ed)]
+
+            st.divider()
+
             if df_q.empty:
-                st.success("🎉 Nenhuma questão pendente neste filtro!")
+                st.warning("🔎 Nenhuma questão encontrada com esses filtros.")
             else:
-                # Monta dicionário para o menu dropdown
+                # Monta dicionário para o menu dropdown (selectbox)
                 opcoes_dict = {}
                 for _, row in df_q.iterrows():
-                    # Limpa o HTML do enunciado para ficar bonito no menu
+                    # Limpa o HTML do enunciado para o menu
                     enunciado_limpo = re.sub('<.*?>', '', str(row.get('enunciado', '')))[:60] + "..."
                     txt_exibicao = f"[{row.get('serie', '')}] {row.get('assunto', '')} | {enunciado_limpo} (ID:{row['id']})"
                     opcoes_dict[txt_exibicao] = row
                 
-                st.divider()
                 questao_selecionada = st.selectbox("Selecione a questão para editar:", list(opcoes_dict.keys()))
                 
                 if questao_selecionada:
                     q_data = opcoes_dict[questao_selecionada]
                     id_q = q_data['id']
                     
+                    # Formulário de Edição
                     with st.form(f"form_edicao_{id_q}"):
-                        st.info(f"Editando Questão ID: {id_q}")
+                        st.info(f"✏️ Editando Questão ID: {id_q}")
                         
                         enunc_edit = st_quill(value=q_data.get('enunciado', ''), html=True, key=f"q_edit_{id_q}")
                         
-                        c1, c2 = st.columns(2)
+                        col1, col2 = st.columns(2)
                         serie_atual = q_data.get('serie', '2º ano')
-                        idx_serie = 0 if serie_atual == "2º ano" else 1
-                        serie_edit = c1.selectbox("Série", ["2º ano", "3º ano"], index=idx_serie)
-                        assunto_edit = c2.text_input("Assunto", value=q_data.get('assunto', ''))
+                        # Tenta achar o índice da série atual na lista padrão
+                        lista_series = ["2º ano", "3º ano"]
+                        idx_serie = lista_series.index(serie_atual) if serie_atual in lista_series else 0
+                        
+                        serie_edit = col1.selectbox("Série", lista_series, index=idx_serie)
+                        assunto_edit = col2.text_input("Assunto", value=q_data.get('assunto', ''))
                         
                         st.divider()
-                        st.subheader("Alternativas e Imagens")
+                        st.subheader("🖼️ Alternativas e Imagens")
                         
                         alts_existentes = q_data.get('alternativas', {})
                         if isinstance(alts_existentes, str):
@@ -188,28 +220,26 @@ def mostrar_tela_cadastrar_questoes(supabase):
                             urls_existentes[letra] = img_atual
                             
                             c_txt, c_up, c_img = st.columns([2, 1, 1])
-                            textos_alts_edit[letra] = c_txt.text_input(f"Texto da {letra})", value=txt_atual, key=f"t_edit_{letra}_{id_q}")
-                            arquivos_alts_edit[letra] = c_up.file_uploader(f"Nova Img {letra}", type=['png', 'jpg', 'jpeg'], key=f"f_edit_{letra}_{id_q}")
+                            textos_alts_edit[letra] = c_txt.text_input(f"Texto {letra})", value=txt_atual, key=f"t_edit_{letra}_{id_q}")
+                            arquivos_alts_edit[letra] = c_up.file_uploader(f"Trocar Imagem {letra}", type=['png', 'jpg', 'jpeg'], key=f"f_edit_{letra}_{id_q}")
                             
-                            if img_atual: c_img.image(img_atual, width=100, caption="Img Atual")
+                            if img_atual: c_img.image(img_atual, width=100, caption="Atual")
                             else: c_img.write("Sem imagem")
                         
-                        # 👇 O RESTANTE QUE ESTAVA FALTANDO COMEÇA AQUI 👇
                         st.divider()
                         resp_atual = q_data.get("resposta_correta", "A")
                         idx_resp = ["A", "B", "C", "D", "E"].index(resp_atual) if resp_atual in ["A", "B", "C", "D", "E"] else 0
                         correta_edit = st.radio("Resposta Correta:", ["A", "B", "C", "D", "E"], index=idx_resp, horizontal=True)
                         
-                        marcar_revisada = st.checkbox("✅ Marcar como Revisada (Tirar pendência)", value=True)
+                        marcar_revisada = st.checkbox("✅ Marcar como Revisada (Concluída)", value=True)
                         
-                        # O famigerado botão agora bem alinhado dentro do form!
-                        btn_salvar_edicao = st.form_submit_button("💾 Salvar Alterações", type="primary")
+                        btn_salvar = st.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True)
                         
-                        if btn_salvar_edicao:
-                            with st.spinner("Atualizando questão..."):
+                        if btn_salvar:
+                            with st.spinner("Atualizando no banco..."):
                                 alts_novas = {}
                                 for letra in ["A", "B", "C", "D", "E"]:
-                                    # Se subiu arquivo novo, atualiza. Senão, mantém a imagem que já estava lá
+                                    # Se enviou novo arquivo, faz upload. Se não, mantém a URL antiga.
                                     nova_url = upload_imagem(arquivos_alts_edit[letra]) if arquivos_alts_edit[letra] else urls_existentes[letra]
                                     alts_novas[letra] = {"texto": textos_alts_edit[letra], "imagem": nova_url}
                                 
@@ -224,8 +254,10 @@ def mostrar_tela_cadastrar_questoes(supabase):
                                 
                                 try:
                                     supabase.table("questoes").update(update_dados).eq("id", id_q).execute()
-                                    st.success("✅ Questão atualizada e revisada com sucesso!")
+                                    st.success("✅ Sucesso! Questão atualizada.")
                                     time.sleep(1)
                                     st.rerun()
                                 except Exception as e:
-                                    st.error(f"Erro ao atualizar: {e}")
+                                    st.error(f"Erro ao salvar: {e}")
+        else:
+            st.info("Nenhuma questão cadastrada no banco.")
