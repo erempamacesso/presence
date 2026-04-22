@@ -8,7 +8,7 @@ def mostrar_tela_login(db_alunos):
     # CARREGA LOGO EM BASE64
     # ==========================================\
     logo_lardiao_b64 = ""
-    logo_path = "logo_erempam.png"
+    logo_path = "logo_lardiao.png"
     
     if os.path.exists(logo_path):
         try:
