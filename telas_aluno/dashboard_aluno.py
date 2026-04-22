@@ -6,142 +6,172 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
     aluno = st.session_state.aluno
 
     # ==========================================
-    # CSS PARA O DASHBOARD (FUTURISTA/GLASS)
+    # CSS: MINIMALISTA & FORMAL (SEM EMOJIS)
     # ==========================================
     st.markdown(f"""
         <style>
-        /* Fundo e Centralização */
+        /* Fundo Profissional */
         [data-testid="stAppViewContainer"] {{
-            background: linear-gradient(135deg, #0b132b, #1c2541, #0b132b);
+            background: radial-gradient(circle at top right, #1c2541, #0b132b);
             color: #ffffff;
+            font-family: 'Inter', sans-serif;
         }}
         
         [data-testid="stHeader"] {{
             visibility: hidden;
         }}
 
-        /* Header de Boas-vindas */
-        .welcome-card {{
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(10px);
-            border-radius: 15px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 20px;
-            margin-bottom: 25px;
-            text-align: center;
+        /* Welcome Header Minimalista */
+        .welcome-container {{
+            padding: 40px 0 20px 0;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            margin-bottom: 30px;
+        }}
+        
+        .welcome-title {{
+            font-size: 24px;
+            font-weight: 300;
+            letter-spacing: 1px;
+            color: #ffffff;
+            margin: 0;
+            text-transform: uppercase;
+        }}
+        
+        .welcome-subtitle {{
+            font-size: 13px;
+            color: #94a3b8;
+            margin-top: 5px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
         }}
 
-        /* Estilo dos Botões do Menu */
+        /* Botões Elegantes e Formais */
         div[data-testid="stButton"] > button {{
-            background: rgba(255, 255, 255, 0.05) !important;
-            color: white !important;
-            border: 1px solid rgba(255, 255, 255, 0.2) !important;
-            border-radius: 12px !important;
-            padding: 20px !important;
-            font-size: 16px !important;
-            font-weight: 600 !important;
-            transition: all 0.3s ease !important;
-            text-transform: uppercase;
-            letter-spacing: 1px;
+            background-color: transparent !important;
+            color: #ffffff !important;
+            border: 1px solid rgba(255, 255, 255, 0.3) !important;
+            border-radius: 4px !important; /* Bordas mais retas = mais formal */
+            padding: 15px 25px !important;
+            font-size: 13px !important;
+            font-weight: 500 !important;
+            text-transform: uppercase !important;
+            letter-spacing: 2px !important;
+            transition: all 0.4s ease !important;
+            width: 100%;
+            margin-bottom: 10px;
         }}
 
         div[data-testid="stButton"] > button:hover {{
-            background: linear-gradient(90deg, #00b4d8, #0077b6) !important;
-            border: none !important;
-            transform: scale(1.02);
-            box-shadow: 0 10px 20px rgba(0, 180, 216, 0.4) !important;
+            background-color: #ffffff !important;
+            color: #0b132b !important;
+            border: 1px solid #ffffff !important;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2) !important;
         }}
 
-        /* Botão de Sair (Destaque Vermelho/Suave) */
-        .st-emotion-cache-1vt4y6f {{ 
-            margin-top: 20px;
+        /* Ajuste para o botão de Sair (Menor e mais discreto) */
+        .logout-btn div[data-testid="stButton"] > button {{
+            border: 1px solid rgba(255, 50, 50, 0.3) !important;
+            color: rgba(255, 100, 100, 0.8) !important;
+            font-size: 11px !important;
+            margin-top: 40px;
         }}
 
-        /* Containers de Simulado (Cards de Prova) */
-        [data-testid="stVerticalBlockBorderWrapper"] {{
-            background: rgba(255, 255, 255, 0.03) !important;
-            border: 1px solid rgba(255, 255, 255, 0.1) !important;
-            border-radius: 15px !important;
+        .logout-btn div[data-testid="stButton"] > button:hover {{
+            background-color: rgba(255, 50, 50, 0.1) !important;
+            color: #ff4b4b !important;
+        }}
+        
+        /* Containers de Conteúdo */
+        .section-title {{
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #94a3b8;
+            letter-spacing: 3px;
+            margin-bottom: 20px;
+            font-weight: 600;
         }}
         </style>
     """, unsafe_allow_html=True)
 
-    # --- HEADER DE IDENTIFICAÇÃO ---
+    # --- HEADER ---
     st.markdown(f"""
-        <div class="welcome-card">
-            <h3 style='margin:0; color:#00b4d8;'>Olá, {aluno["nome"]}!</h3>
-            <p style='margin:0; color:#94a3b8; font-size:14px;'>{aluno.get("turma", "Estudante")} • EREMPAM</p>
+        <div class="welcome-container">
+            <h1 class="welcome-title">{aluno["nome"]}</h1>
+            <p class="welcome-subtitle">{aluno.get("turma", "Estudante")} | EREMPAM</p>
         </div>
     """, unsafe_allow_html=True)
 
-    if "menu_ativo" not in st.session_state:
-        st.session_state.menu_ativo = "home"
+    if "menu_active" not in st.session_state:
+        st.session_state.menu_active = "home"
 
     # ---------------------------------------------------------
-    # TELA 1: MENU PRINCIPAL (HOME)
+    # TELA: MENU PRINCIPAL
     # ---------------------------------------------------------
-    if st.session_state.menu_ativo == "home":
-        st.write("### 🛠️ O que deseja fazer hoje?")
+    if st.session_state.menu_active == "home":
+        st.markdown('<p class="section-title">Navegação Principal</p>', unsafe_allow_html=True)
         
-        # Grid de botões estilizados
-        if st.button("📝 Ver Simulados Disponíveis", use_container_width=True):
-            st.session_state.menu_ativo = "provas"
+        if st.button("Simulados Disponíveis", use_container_width=True):
+            st.session_state.menu_active = "provas"
             st.rerun()
             
-        if st.button("✅ Atividades Concluídas", use_container_width=True):
-            st.session_state.menu_ativo = "historico"
+        if st.button("Atividades Concluídas", use_container_width=True):
+            st.session_state.menu_active = "historico"
             st.rerun()
             
-        if st.button("📊 Meu Desempenho e Notas", use_container_width=True):
-            st.session_state.menu_ativo = "notas"
+        if st.button("Desempenho Acadêmico", use_container_width=True):
+            st.session_state.menu_active = "notas"
             st.rerun()
 
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        if st.button("🚪 Sair da Conta", type="secondary", use_container_width=True):
+        # Botão de Sair com estilo específico
+        st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
+        if st.button("Encerrar Sessão", use_container_width=True):
             st.session_state.aluno = None
             st.session_state.etapa = "login"
             st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
     # ---------------------------------------------------------
-    # TELA 2: PROVAS DISPONÍVEIS
+    # TELA: PROVAS
     # ---------------------------------------------------------
-    elif st.session_state.menu_ativo == "provas":
-        if st.button("← Voltar ao Menu", use_container_width=True): 
-            st.session_state.menu_ativo = "home"
+    elif st.session_state.menu_active == "provas":
+        if st.button("Voltar ao Início", use_container_width=True): 
+            st.session_state.menu_active = "home"
             st.rerun()
             
-        st.write("## 📝 Simulados Disponíveis")
+        st.markdown('<p class="section-title">Simulados Disponíveis</p>', unsafe_allow_html=True)
         
         turma_aluno = str(aluno.get('turma', ''))
         serie_aluno = turma_aluno[:2] + " Ano" if len(turma_aluno) >= 2 else "1º Ano"
 
         try:
-            # Busca provas ativas para a série do aluno
             res = db_provas.table("modelos_prova").select("*").eq("serie", serie_aluno).eq("ativa", True).execute()
             if res.data:
                 for prova in res.data:
-                    with st.container(border=True):
-                        st.markdown(f"#### {prova.get('titulo')}")
-                        st.caption(f"⏱️ Tempo: {prova.get('tempo_duracao', 60)} min | 🧩 {len(prova.get('questoes_ids', []))} Questões")
+                    with st.container():
+                        st.markdown(f"""
+                            <div style="border-left: 2px solid #00b4d8; padding-left: 20px; margin-bottom: 20px;">
+                                <div style="font-size: 16px; font-weight: 500;">{prova.get('titulo')}</div>
+                                <div style="font-size: 12px; color: #94a3b8; text-transform: uppercase;">
+                                    Duração: {prova.get('tempo_duracao', 60)} min
+                                </div>
+                            </div>
+                        """, unsafe_allow_html=True)
                         
-                        if st.button(f"🚀 INICIAR AGORA", key=f"start_{prova['id']}", use_container_width=True):
+                        if st.button("Acessar Simulado", key=f"p_{prova['id']}", use_container_width=True):
                             st.session_state.prova_config = prova
                             st.session_state.etapa = "instrucoes"
                             st.rerun()
             else:
-                st.info("No momento não há simulados abertos para sua turma.")
+                st.info("Nenhuma atividade disponível para sua série no momento.")
         except Exception as e:
-            st.error(f"Erro ao buscar provas: {e}")
+            st.error(f"Erro na conexão com o servidor.")
 
     # ---------------------------------------------------------
-    # TELA 4: DESEMPENHO (CHAMA A FUNÇÃO EXISTENTE)
+    # TELA: NOTAS
     # ---------------------------------------------------------
-    elif st.session_state.menu_ativo == "notas":
-        if st.button("← Voltar ao Menu", use_container_width=True): 
-            st.session_state.menu_ativo = "home"
+    elif st.session_state.menu_active == "notas":
+        if st.button("Voltar ao Início", use_container_width=True): 
+            st.session_state.menu_active = "home"
             st.rerun()
-            
         mostrar_tela_desempenho(db_alunos, db_provas)
-
-    # (Lógica para 'historico' omitida aqui para brevidade, mas segue o mesmo padrão)
