@@ -148,4 +148,47 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # ... (Restante das telas de Provas e Notas segue a mesma lógica)
+   # ---------------------------------------------------------
+    # TELAS SECUNDÁRIAS (PROVAS / NOTAS)
+    # ---------------------------------------------------------
+    elif st.session_state.menu_active == "provas":
+        if st.button("← VOLTAR", use_container_width=True): 
+            st.session_state.menu_active = "home"
+            st.rerun()
+            
+        st.markdown('<p class="grid-label">Simulados Disponíveis</p>', unsafe_allow_html=True)
+        
+        # --- Lógica de busca de provas no Supabase ---
+        turma_aluno = str(aluno.get('turma', ''))
+        serie_aluno = turma_aluno[:2] + " Ano" if len(turma_aluno) >= 2 else "1º Ano"
+        
+        try:
+            res = db_provas.table("modelos_prova").select("*").eq("serie", serie_aluno).eq("ativa", True).execute()
+            if res.data:
+                for prova in res.data:
+                    with st.container():
+                        st.markdown(f"""
+                            <div style="border-left: 2px solid #00b4d8; padding-left: 20px; margin-bottom: 20px;">
+                                <div style="font-size: 16px; font-weight: 500;">{prova.get('titulo')}</div>
+                                <div style="font-size: 12px; color: #94a3b8; text-transform: uppercase;">
+                                    Duração: {prova.get('tempo_duracao', 60)} min
+                                </div>
+                            </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # ========================================================
+                        # AQUI ESTÁ O BOTÃO QUE DIRECIONA PARA A EXECUÇÃO DA PROVA
+                        # ========================================================
+                        if st.button("Acessar Simulado", key=f"p_{prova['id']}", use_container_width=True):
+                            # 1. Salva qual prova o aluno escolheu
+                            st.session_state.prova_config = prova 
+                            
+                            # 2. MUDA A ETAPA GERAL DO APP! (Esse é o gatilho)
+                            st.session_state.etapa = "instrucoes" 
+                            
+                            # 3. Recarrega a tela
+                            st.rerun()
+            else:
+                st.info("Nenhuma atividade disponível para sua série no momento.")
+        except Exception as e:
+            st.error(f"Erro na conexão com o servidor: {e}")
