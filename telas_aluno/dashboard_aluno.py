@@ -34,14 +34,22 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
             margin: 15px 0;
         }}
 
-        /* ESTILO DOS BOTÕES COM BORDA DEFINIDA */
-        div[data-testid="stButton"] > button {{
-            background-color: #9ca3af !important; /* Cor interna do botão */
-            color: #111827 !important; 
-            
-            /* AQUI ESTÁ A LINHA DE DELIMITAÇÃO DO BOTÃO */
-            border: 2px solid #555555 !important; /* Borda cinza escuro para marcar o limite */
-            
+        /* ============================================
+           ESTILO DOS BOTÕES - MÚLTIPLOS SELETORES
+           ============================================ */
+        
+        /* Seletor 1: Botão direto */
+        button {{
+            border: 2px solid #555555 !important;
+            border-radius: 12px !important;
+            transition: all 0.2s ease !important;
+        }}
+
+        /* Seletor 2: Botão dentro de div stButton */
+        div[data-testid="stButton"] button {{
+            background-color: #9ca3af !important;
+            color: #111827 !important;
+            border: 2px solid #555555 !important;
             border-radius: 12px !important;
             height: 65px !important;
             font-weight: 700 !important;
@@ -50,11 +58,62 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
             box-shadow: 2px 2px 5px rgba(0,0,0,0.05) !important;
         }}
 
-        /* Efeito ao Passar o Mouse ou Tocar */
-        div[data-testid="stButton"] > button:hover {{
-            background-color: #374151 !important; 
+        /* Seletor 3: Botão em estrutura profunda */
+        [data-testid="stButton"] > button {{
+            background-color: #9ca3af !important;
+            color: #111827 !important;
+            border: 2px solid #555555 !important;
+            border-radius: 12px !important;
+            height: 65px !important;
+            font-weight: 700 !important;
+            text-transform: uppercase !important;
+            transition: all 0.2s ease !important;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.05) !important;
+        }}
+
+        /* Seletor 4: Classe de botão primário do Streamlit */
+        [role="button"] {{
+            border: 2px solid #555555 !important;
+            border-radius: 12px !important;
+        }}
+
+        /* ============================================
+           EFEITO HOVER - BORDA FICA MAIS ESCURA
+           ============================================ */
+        button:hover {{
+            background-color: #374151 !important;
             color: #FFFFFF !important;
-            border-color: #000000 !important; /* Borda escurece no foco */
+            border-color: #000000 !important;
+        }}
+
+        div[data-testid="stButton"] button:hover {{
+            background-color: #374151 !important;
+            color: #FFFFFF !important;
+            border-color: #000000 !important;
+        }}
+
+        [data-testid="stButton"] > button:hover {{
+            background-color: #374151 !important;
+            color: #FFFFFF !important;
+            border-color: #000000 !important;
+        }}
+
+        /* ============================================
+           ESTADO ATIVO (PRESSIONADO)
+           ============================================ */
+        button:active {{
+            border-color: #111827 !important;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.2) !important;
+        }}
+
+        /* ============================================
+           ESTADO DESABILITADO
+           ============================================ */
+        button:disabled {{
+            background-color: #d1d5db !important;
+            color: #9ca3af !important;
+            border-color: #9ca3af !important;
+            opacity: 0.6 !important;
         }}
         
         /* Ajuste de colunas para ficar lado a lado no celular */
