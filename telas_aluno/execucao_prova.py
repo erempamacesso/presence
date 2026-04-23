@@ -3,13 +3,14 @@ import streamlit as st
 import random
 from datetime import datetime, timedelta
 import re
+import ast
 
 def render_instrucoes(db_provas):
     aluno = st.session_state.aluno
     prova = st.session_state.prova_config
-    st.header(f"👋 Preparado, {aluno['nome']}?")
+    st.header(f"👋 Preparado, {aluno.get('nome', 'Estudante')}?")
     
-    # CORREÇÃO 1: Garante que o tempo seja um número inteiro, evitando crash no timedelta
+    # Garante que o tempo seja um número inteiro
     try:
         tempo_minutos = int(prova.get('tempo_duracao', 60))
     except:
@@ -30,7 +31,13 @@ def render_instrucoes(db_provas):
             
             ids = prova.get('questoes_ids', [])
             
-            # CORREÇÃO 2: Trava para não tentar buscar questões se a prova estiver vazia
+            # PROTEÇÃO: Se o Supabase mandar os IDs como texto, converte para lista de verdade
+            if isinstance(ids, str):
+                try:
+                    ids = ast.literal_eval(ids)
+                except:
+                    ids = []
+            
             if not ids or len(ids) == 0:
                 st.error("⚠️ Esta prova ainda não tem questões vinculadas! Avise o professor.")
                 st.stop()
@@ -43,26 +50,30 @@ def render_instrucoes(db_provas):
                     pool_questoes = res_q.data
                     
                     if not pool_questoes:
-                        st.error("⚠️ Erro: Nenhuma questão encontrada no banco de dados.")
+                        st.error("⚠️ Erro: Nenhuma questão encontrada no banco para esses IDs.")
                         st.stop()
-                        
-                    random.seed(str(aluno['id']))
+                    
+                    # PROTEÇÃO: Usa o ID, se não tiver usa a matrícula, se não tiver usa um texto fixo
+                    aluno_semente = aluno.get('id', aluno.get('numero_matricula', '12345'))    
+                    random.seed(str(aluno_semente))
                     random.shuffle(pool_questoes)
                     
                     n_sorteio = prova.get('qtd_sorteio', len(pool_questoes))
                     questoes_sorteadas = pool_questoes[:n_sorteio]
                     
+                    # Salva tudo e aciona o gatilho da próxima tela!
                     st.session_state.questoes = questoes_sorteadas
                     st.session_state.etapa = "em_prova"
                     st.rerun()
+                    
                 except Exception as e:
                     st.error(f"Erro fatal na conexão com o banco de dados: {e}")
                     st.stop()
 
-# CORREÇÃO 3: Valor padrão de cor (C_PRIMARY) caso esqueça de passar na chamada
+
 def render_prova(db_provas, C_PRIMARY="#00b4d8"):
     
-    # CORREÇÃO 5: Proteção caso o aluno dê F5 (Refresh) na página
+    # Proteção caso o aluno dê F5
     if "tempo_final" not in st.session_state or "questoes" not in st.session_state:
         st.warning("⚠️ Sua sessão expirou ou foi recarregada. Volte para a tela inicial.")
         if st.button("Voltar ao Início", use_container_width=True):
@@ -91,9 +102,8 @@ def render_prova(db_provas, C_PRIMARY="#00b4d8"):
     render_cronometro()
 
     st.markdown(f"## ✍️ {st.session_state.prova_config.get('titulo', '')}")
-    st.caption(f"Aluno: {st.session_state.aluno['nome']} | Boa sorte, Bença!")
+    st.caption(f"Aluno: {st.session_state.aluno.get('nome', '')} | Boa sorte, Bença!")
 
-    # Otimização: A função fica fora do laço para não recriar na memória toda hora
     def limpar_txt(t):
         return re.sub(r'<[^>]+>', '', str(t)).strip()
 
@@ -106,11 +116,12 @@ def render_prova(db_provas, C_PRIMARY="#00b4d8"):
                 opcoes_dict = q.get('alternativas', {})
                 letras_originais = [l for l in ["A", "B", "C", "D", "E"] if opcoes_dict.get(l)]
                 
-                random.seed(f"{st.session_state.aluno['id']}-{q['id']}")
+                # Semente única por aluno e por questão para embaralhar alternativas
+                aluno_semente = st.session_state.aluno.get('id', st.session_state.aluno.get('numero_matricula', '000'))
+                random.seed(f"{aluno_semente}-{q['id']}")
                 ordem = letras_originais.copy()
                 random.shuffle(ordem)
 
-                # CORREÇÃO 4: "opts=opcoes_dict" salva a referência correta do lambda e impede alternativas repetidas
                 escolha = st.radio(
                     f"Assinale a alternativa correta para a questão {i+1}:",
                     options=ordem,
@@ -135,9 +146,12 @@ def render_prova(db_provas, C_PRIMARY="#00b4d8"):
             with st.spinner("Salvando no Pergaminho..."):
                 acertos = sum(1 for q in st.session_state.questoes if respostas_aluno.get(q['id']) == q.get('resposta_correta'))
                 lista_resultados = []
+                
+                aluno_id_db = st.session_state.aluno.get('id', 'SEM_ID')
+                
                 for q in st.session_state.questoes:
                     lista_resultados.append({
-                        "aluno_id": str(st.session_state.aluno['id']),
+                        "aluno_id": str(aluno_id_db),
                         "prova_id": st.session_state.prova_config['id'],
                         "questao_id": q['id'],
                         "resposta_aluno": respostas_aluno.get(q['id']),

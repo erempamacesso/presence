@@ -2,7 +2,7 @@ import streamlit as st
 from supabase import create_client
 
 # ==========================================
-# CONFIGURAÇÃO DE PÁGINA (DEVE SER O PRIMEIRO COMANDO)
+# CONFIGURAÇÃO DE PÁGINA
 # ==========================================
 st.set_page_config(
     page_title="Portal do Aluno | EREMPAM",
@@ -25,7 +25,7 @@ except ImportError as e:
     st.stop()
 
 # ==========================================
-# CONEXÃO COM OS DOIS PROJETOS SUPABASE
+# CONEXÃO COM O SUPABASE
 # ==========================================
 @st.cache_resource
 def init_connections():
@@ -34,109 +34,78 @@ def init_connections():
         key_alunos = st.secrets["SUPABASE_KEY_ALUNOS"]
         url_provas = st.secrets["SUPABASE_URL_PROVAS"]
         key_provas = st.secrets["SUPABASE_KEY_PROVAS"]
-        return create_client(url_alunos, key_alunos), create_client(url_provas, key_provas)
+        
+        db_alunos = create_client(url_alunos, key_alunos)
+        db_provas = create_client(url_provas, key_provas)
+        return db_alunos, db_provas
     except Exception as e:
-        st.error(f"❌ Erro ao conectar: {str(e)}")
-        st.stop()
+        st.error(f"Erro na conexão com o Banco de Dados: {e}")
+        return None, None
 
 db_alunos, db_provas = init_connections()
 
 # ==========================================
-# INICIALIZAÇÃO DO SESSION STATE
+# ESTADO DA SESSÃO (SESSION STATE)
 # ==========================================
-if 'etapa' not in st.session_state:
-    st.session_state.etapa = "login"
-
-if 'aluno' not in st.session_state:
+if "aluno" not in st.session_state:
     st.session_state.aluno = None
+if "etapa" not in st.session_state:
+    st.session_state.etapa = "home"
+if "prova_config" not in st.session_state:
+    st.session_state.prova_config = None
+if "menu_active" not in st.session_state:
+    st.session_state.menu_active = "home"
 
 # ==========================================
-# ROTEADOR DE TELAS (MÁQUINA DE ESTADOS)
+# CSS CUSTOMIZADO (DESIGN ADAPTÁVEL)
 # ==========================================
-if st.session_state.etapa == "login":
-    mostrar_tela_login(db_alunos)
-
-elif st.session_state.etapa == "ante_sala":
-    if not st.session_state.aluno:
-        st.session_state.etapa = "login"
-        st.rerun()
-    mostrar_tela_dashboard(db_alunos, db_provas)
-
-elif st.session_state.etapa == "instrucoes":
-    if not st.session_state.aluno:
-        st.session_state.etapa = "login"
-        st.rerun()
-    render_instrucoes(db_provas)
-
-elif st.session_state.etapa == "execucao":
-    if not st.session_state.aluno:
-        st.session_state.etapa = "login"
-        st.rerun()
-    render_prova(db_provas)
-
-elif st.session_state.etapa == "suspense":
-    if not st.session_state.aluno:
-        st.session_state.etapa = "login"
-        st.rerun()
-    render_suspense()
-
-elif st.session_state.etapa == "revisao":
-    if not st.session_state.aluno:
-        st.session_state.etapa = "login"
-        st.rerun()
-    render_revisao(db_provas)
-
 st.markdown("""
     <style>
-        /* Esconde Sidebar e o Header (Deploy/Running) do Streamlit */
-        [data-testid="collapsedControl"], 
-        [data-testid="stSidebar"], 
-        [data-testid="stHeader"] { 
-            display: none !important; 
-        }
+        /* Esconder Header Original do Streamlit */
+        [data-testid="stHeader"] { visibility: hidden; }
         
-        /* Margem segura no topo para não esconder nada */
+        /* Ajuste de Margens */
         .block-container {
-            padding-top: 3rem !important; 
-            padding-bottom: 2rem !important;
-            padding-left: 1.5rem !important;
-            padding-right: 1.5rem !important;
+            padding-top: 2rem !important;
             max-width: 100% !important;
         }
 
-        /* BOTÕES EM FORMATO DE LISTA (Adaptável ao Tema) */
+        /* Botões Estilizados */
         div.stButton > button {
             height: 60px !important; 
             border-radius: 10px !important;
             font-size: 16px !important;
-            font-weight: 500 !important;
-            border: 1px solid var(--secondary-background-color) !important; 
-            background-color: transparent !important;
-            color: var(--text-color) !important; /* Cor automática (Claro/Escuro) */
-            display: flex !important;
-            justify-content: flex-start !important; 
-            padding-left: 20px !important;
-            box-shadow: none !important;
             transition: all 0.2s ease;
-        }
-        
-        div.stButton > button:hover {
-            border-color: #4CAF50 !important;
-            color: #4CAF50 !important;
-        }
-
-        /* Texto do Cabeçalho (Adaptável ao Tema) */
-        .header-nome {
-            font-size: 24px !important;
-            font-weight: bold !important;
-            color: var(--text-color) !important;
-            margin-bottom: 4px !important;
-        }
-        .header-turma {
-            font-size: 14px !important;
-            color: gray !important;
-            margin-bottom: 30px !important;
         }
     </style>
 """, unsafe_allow_html=True)
 
+# ==========================================
+# ROTEAMENTO DE TELAS (O MAESTRO)
+# ==========================================
+
+# 1. Se não está logado, mostra tela de Login
+if st.session_state.aluno is None:
+    mostrar_tela_login(db_alunos)
+
+# 2. Se logado, verifica em qual etapa o aluno está
+else:
+    # TELA 0: Dashboard (Menu Principal)
+    if st.session_state.etapa == "home":
+        mostrar_tela_dashboard(db_alunos, db_provas)
+
+    # TELA 1: Instruções antes da Prova
+    elif st.session_state.etapa == "instrucoes":
+        render_instrucoes(db_provas)
+
+    # TELA 2: Execução da Prova (Onde o cronômetro roda)
+    elif st.session_state.etapa == "em_prova":
+        render_prova(db_provas)
+
+    # TELA 3: Tela de Transição/Resultado (Parabéns/Nota)
+    elif st.session_state.etapa == "resultado_final":
+        render_suspense(db_provas)
+
+    # TELA 4: Revisão da Prova (Ver o que errou/acertou)
+    elif st.session_state.etapa == "revisao":
+        render_revisao(db_provas)
