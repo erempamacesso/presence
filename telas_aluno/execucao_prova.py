@@ -9,36 +9,67 @@ def render_instrucoes(db_provas):
     prova = st.session_state.prova_config
     st.header(f"👋 Preparado, {aluno['nome']}?")
     
+    # CORREÇÃO 1: Garante que o tempo seja um número inteiro, evitando crash no timedelta
+    try:
+        tempo_minutos = int(prova.get('tempo_duracao', 60))
+    except:
+        tempo_minutos = 60
+        
     with st.container(border=True):
-        st.subheader(f"📝 {prova['titulo']}")
-        st.write(f"Série: {prova['serie']} | Tempo de Execução: **{prova['tempo_duracao']} minutos**")
+        st.subheader(f"📝 {prova.get('titulo', 'Sem Título')}")
+        st.write(f"Série: {prova.get('serie', 'N/A')} | Tempo de Execução: **{tempo_minutos} minutos**")
         
         st.markdown(f"""
             **Instruções Importantes Pro:**
-            1. Você terá estatisticamente {prova['tempo_duracao']} minutos para concluir após clicar no botão abaixo.
+            1. Você terá estatisticamente {tempo_minutos} minutos para concluir após clicar no botão abaixo.
             2. Não atualize ou feche o navegador AVALARDIAO durante a prova, ou seu progresso será perdido.
             3. Responda todas as questões e clique em 'Enviar' ao final.
         """)
         
         if st.button("ESTOU PRONTO, INICIAR PROVA AGORA", type="primary", use_container_width=True, key="btn_start"):
+            
+            ids = prova.get('questoes_ids', [])
+            
+            # CORREÇÃO 2: Trava para não tentar buscar questões se a prova estiver vazia
+            if not ids or len(ids) == 0:
+                st.error("⚠️ Esta prova ainda não tem questões vinculadas! Avise o professor.")
+                st.stop()
+                
             with st.spinner("Gerando sua avaliação única e randomizada..."):
-                st.session_state.tempo_final = datetime.now() + timedelta(minutes=prova['tempo_duracao'])
+                st.session_state.tempo_final = datetime.now() + timedelta(minutes=tempo_minutos)
                 
-                ids = prova.get('questoes_ids', [])
-                res_q = db_provas.table("questoes").select("*").in_("id", ids).execute()
-                pool_questoes = res_q.data
-                
-                random.seed(str(aluno['id']))
-                random.shuffle(pool_questoes)
-                
-                n_sorteio = prova.get('qtd_sorteio', len(pool_questoes))
-                questoes_sorteadas = pool_questoes[:n_sorteio]
-                
-                st.session_state.questoes = questoes_sorteadas
-                st.session_state.etapa = "em_prova"
-                st.rerun()
+                try:
+                    res_q = db_provas.table("questoes").select("*").in_("id", ids).execute()
+                    pool_questoes = res_q.data
+                    
+                    if not pool_questoes:
+                        st.error("⚠️ Erro: Nenhuma questão encontrada no banco de dados.")
+                        st.stop()
+                        
+                    random.seed(str(aluno['id']))
+                    random.shuffle(pool_questoes)
+                    
+                    n_sorteio = prova.get('qtd_sorteio', len(pool_questoes))
+                    questoes_sorteadas = pool_questoes[:n_sorteio]
+                    
+                    st.session_state.questoes = questoes_sorteadas
+                    st.session_state.etapa = "em_prova"
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro fatal na conexão com o banco de dados: {e}")
+                    st.stop()
 
-def render_prova(db_provas, C_PRIMARY):
+# CORREÇÃO 3: Valor padrão de cor (C_PRIMARY) caso esqueça de passar na chamada
+def render_prova(db_provas, C_PRIMARY="#00b4d8"):
+    
+    # CORREÇÃO 5: Proteção caso o aluno dê F5 (Refresh) na página
+    if "tempo_final" not in st.session_state or "questoes" not in st.session_state:
+        st.warning("⚠️ Sua sessão expirou ou foi recarregada. Volte para a tela inicial.")
+        if st.button("Voltar ao Início", use_container_width=True):
+            st.session_state.etapa = "home"
+            st.rerun()
+        st.stop()
+
     @st.fragment(run_every="1s")
     def render_cronometro():
         restante = st.session_state.tempo_final - datetime.now()
@@ -59,14 +90,18 @@ def render_prova(db_provas, C_PRIMARY):
 
     render_cronometro()
 
-    st.markdown(f"## ✍️ {st.session_state.prova_config['titulo']}")
+    st.markdown(f"## ✍️ {st.session_state.prova_config.get('titulo', '')}")
     st.caption(f"Aluno: {st.session_state.aluno['nome']} | Boa sorte, Bença!")
+
+    # Otimização: A função fica fora do laço para não recriar na memória toda hora
+    def limpar_txt(t):
+        return re.sub(r'<[^>]+>', '', str(t)).strip()
 
     with st.form("form_prova", clear_on_submit=False):
         for i, q in enumerate(st.session_state.questoes):
             with st.container(border=True):
                 st.markdown(f"### 📝 QUESTÃO {i+1}")
-                st.markdown(f"<div style='font-size:1.1rem;'>{q['enunciado']}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='font-size:1.1rem;'>{q.get('enunciado', '')}</div>", unsafe_allow_html=True)
                 
                 opcoes_dict = q.get('alternativas', {})
                 letras_originais = [l for l in ["A", "B", "C", "D", "E"] if opcoes_dict.get(l)]
@@ -75,13 +110,11 @@ def render_prova(db_provas, C_PRIMARY):
                 ordem = letras_originais.copy()
                 random.shuffle(ordem)
 
-                def limpar_txt(t):
-                    return re.sub(r'<[^>]+>', '', str(t)).strip()
-
+                # CORREÇÃO 4: "opts=opcoes_dict" salva a referência correta do lambda e impede alternativas repetidas
                 escolha = st.radio(
                     f"Assinale a alternativa correta para a questão {i+1}:",
                     options=ordem,
-                    format_func=lambda x: f"({x}) {limpar_txt(opcoes_dict.get(x, ''))}",
+                    format_func=lambda x, opts=opcoes_dict: f"({x}) {limpar_txt(opts.get(x, ''))}",
                     index=None,
                     key=f"radio_q_{q['id']}" 
                 )
@@ -100,7 +133,7 @@ def render_prova(db_provas, C_PRIMARY):
             st.warning("⚠️ Bença, responda todas as questões antes de enviar!")
         else:
             with st.spinner("Salvando no Pergaminho..."):
-                acertos = sum(1 for q in st.session_state.questoes if respostas_aluno.get(q['id']) == q['resposta_correta'])
+                acertos = sum(1 for q in st.session_state.questoes if respostas_aluno.get(q['id']) == q.get('resposta_correta'))
                 lista_resultados = []
                 for q in st.session_state.questoes:
                     lista_resultados.append({
@@ -108,7 +141,7 @@ def render_prova(db_provas, C_PRIMARY):
                         "prova_id": st.session_state.prova_config['id'],
                         "questao_id": q['id'],
                         "resposta_aluno": respostas_aluno.get(q['id']),
-                        "acertou": (respostas_aluno.get(q['id']) == q['resposta_correta']),
+                        "acertou": (respostas_aluno.get(q['id']) == q.get('resposta_correta')),
                         "acertos": acertos
                     })
                 
@@ -117,4 +150,4 @@ def render_prova(db_provas, C_PRIMARY):
                     st.session_state.etapa = "resultado_final"
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Erro ao salvar: {e}")
+                    st.error(f"Erro ao salvar suas respostas: {e}")
