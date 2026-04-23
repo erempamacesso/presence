@@ -28,8 +28,6 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
 
         /* Linhas de Limite da Área de Comandos */
         .area-comandos {
-            border-top: 1px solid #888888;
-            border-bottom: 1px solid #888888;
             padding: 20px 0;
             margin: 15px 0;
         }
