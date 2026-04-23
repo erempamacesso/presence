@@ -33,6 +33,34 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
         }
 
         /* ============================================
+           REMOVER LINHAS HORIZONTAIS INDESEJADAS
+           ============================================ */
+        /* Esconder todas as tags hr */
+        hr {
+            display: none !important;
+            visibility: hidden !important;
+            height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: none !important;
+        }
+
+        /* Esconder linhas em blocos horizontais */
+        [data-testid="stHorizontalBlock"] hr {
+            display: none !important;
+        }
+
+        /* Esconder divisores do streamlit */
+        [data-testid="stMarkdownContainer"] hr {
+            display: none !important;
+        }
+
+        /* Remove gaps/espaços que deixam linhas visíveis */
+        .stHorizontalBlock > div > div:not(:last-child)::after {
+            content: none !important;
+        }
+
+        /* ============================================
            WRAPPER DE BORDA PARA BOTÕES
            (Solução alternativa quando CSS direto não funciona)
            ============================================ */
