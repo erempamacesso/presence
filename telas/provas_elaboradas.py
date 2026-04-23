@@ -39,7 +39,7 @@ def mostrar_tela_provas_elaboradas(supabase):
             valor_total = qtd_questoes * valor_q
             
             # Buscando tempo máximo
-            tempo_bd = prova.get('tempo_maximo', 60)
+            tempo_bd = prova.get('tempo_duracao', 60)
             try:
                 tempo_max = int(tempo_bd)
             except:
@@ -116,7 +116,7 @@ def mostrar_tela_provas_elaboradas(supabase):
                                 "valor_questao": float(novo_valor),
                                 "data_inicio": nova_d_inicio.strftime("%Y-%m-%d"),
                                 "data_limite": nova_d_fim.strftime("%Y-%m-%d"),
-                                "tempo_maximo": novo_tempo
+                                "tempo_duracao": novo_tempo
                             }
                             try:
                                 supabase.table("modelos_prova").update(dados_update).eq("id", prova['id']).execute()
