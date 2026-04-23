@@ -1,17 +1,17 @@
 import streamlit as st
-from telas_aluno.desempenho import mostrar_tela_desempenho
 
 def mostrar_tela_dashboard(db_alunos, db_provas):
     aluno = st.session_state.aluno
 
     # ==========================================
-    # CSS: MOLDURA FINA E GRID ORGANIZADO
+    # CSS: LIGHT MODE (#E0E0E0) E GRID CENTRALIZADO
     # ==========================================
     st.markdown(f"""
         <style>
+        /* Fundo geral da tela: Cinza Claro #E0E0E0 */
         [data-testid="stAppViewContainer"] {{
-            background: radial-gradient(circle at top right, #1c2541, #0b132b);
-            color: #ffffff;
+            background-color: #E0E0E0;
+            color: #333333;
             font-family: 'Inter', sans-serif;
         }}
         
@@ -19,70 +19,93 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
             visibility: hidden;
         }}
 
-        /* Header (Matrícula amarela e Nome) */
+        /* Header (Matrícula e Nome) */
         .welcome-container {{
             padding: 10px 0 20px 0;
-            text-align: left;
-            margin-bottom: 10px;
+            text-align: center; /* Centralizado */
+            margin-bottom: 20px;
         }}
         
         .welcome-title {{
-            font-size: 13px;
-            font-weight: 700;
-            color: #facc15; 
+            font-size: 16px;
+            font-weight: 800;
+            color: #d97706; /* Um laranja escuro/dourado para ler bem no claro */
             margin: 0;
-            text-transform: uppercase;
-        }}
-        
-        .welcome-subtitle {{
-            font-size: 11px;
-            color: #ffffff; 
-            opacity: 0.7;
-            margin-top: 4px;
             text-transform: uppercase;
             letter-spacing: 1px;
         }}
-
-        /* A MOLDURA (Container que delimita os botões) */
-        .main-frame {{
-            border: 1px solid rgba(255, 255, 255, 0.15); /* Linha fina cinza claro */
-            border-radius: 20px;
-            padding: 20px;
-            background: rgba(255, 255, 255, 0.02);
-            margin-bottom: 20px;
+        
+        .welcome-subtitle {{
+            font-size: 12px;
+            color: #64748b; /* Cinza médio */
+            margin-top: 4px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
         }}
 
-        /* Botões com borda de 1px (Mais fininha) */
+        /* A MOLDURA (Container Branco centralizado com sombra) */
+        .main-frame {{
+            background-color: #ffffff; /* Fundo branco para destacar no cinza */
+            border: 1px solid #d1d5db;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05); /* Sombra elegante */
+            margin: 0 auto 20px auto;
+            max-width: 700px; /* Trava o tamanho para ficar no centro */
+        }}
+
+        /* Botões Estilo Moderno Claro */
         div[data-testid="stButton"] > button {{
-            background-color: transparent !important;
-            color: #ffffff !important;
-            border: 1px solid rgba(255, 255, 255, 0.4) !important; /* Borda fina */
+            background-color: #f8fafc !important; /* Cinza super claro no botão */
+            color: #334155 !important; /* Letra cinza escuro */
+            border: 1px solid #cbd5e1 !important; /* Borda fininha */
             border-radius: 12px !important;
             padding: 15px 5px !important; 
-            font-size: 11px !important;
-            font-weight: 500 !important;
+            font-size: 12px !important;
+            font-weight: 600 !important;
             text-transform: uppercase !important;
             letter-spacing: 1px !important;
-            height: 80px;
+            height: 85px;
             transition: all 0.3s ease !important;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02) !important;
         }}
 
+        /* Efeito ao passar o mouse */
         div[data-testid="stButton"] > button:hover {{
-            background-color: rgba(255, 255, 255, 0.1) !important;
-            border: 1px solid #ffffff !important;
+            background-color: #ffffff !important;
+            border: 1px solid #00b4d8 !important; /* Borda azul ao focar */
+            color: #00b4d8 !important;
+            transform: translateY(-2px); /* Botão levanta um pouquinho */
+            box-shadow: 0 6px 12px rgba(0,0,0,0.08) !important;
+        }}
+
+        /* Títulos internos do painel */
+        .grid-label {{
+            font-size: 18px;
+            font-weight: 700;
+            color: #1e293b;
+            text-align: center;
+            margin-bottom: 25px;
+            text-transform: uppercase;
         }}
 
         /* Botão Sair Estilo Link */
         .logout-btn div[data-testid="stButton"] > button {{
             border: none !important;
             background: transparent !important;
-            color: rgba(255, 255, 255, 0.6) !important;
+            color: #ef4444 !important; /* Vermelho suave */
             font-size: 12px !important;
+            box-shadow: none !important;
             height: auto;
             margin-top: 10px;
         }}
+        .logout-btn div[data-testid="stButton"] > button:hover {{
+            background: transparent !important;
+            transform: none;
+            text-decoration: underline;
+        }}
 
-        /* Ajuste Mobile para manter 2 colunas na moldura */
         @media (max-width: 600px) {{
             div[data-testid="stHorizontalBlock"] {{
                 flex-direction: row !important;
@@ -97,7 +120,7 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
         </style>
     """, unsafe_allow_html=True)
 
-    # --- HEADER ---
+    # --- HEADER CENTRALIZADO ---
     matricula = aluno.get("numero_matricula", "0000000")
     st.markdown(f"""
         <div class="welcome-container">
@@ -109,13 +132,13 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
     if "menu_active" not in st.session_state:
         st.session_state.menu_active = "home"
 
-    # ---------------------------------------------------------
-    # MENU COM MOLDURA
-    # ---------------------------------------------------------
+    # =========================================================
+    # ÁREA CENTRAL (A MOLDURA BRANCA)
+    # =========================================================
+    st.markdown('<div class="main-frame">', unsafe_allow_html=True)
+    
     if st.session_state.menu_active == "home":
-        
-        # Início da Moldura
-        st.markdown('<div class="main-frame">', unsafe_allow_html=True)
+        st.markdown('<p class="grid-label">Terminal de Acesso</p>', unsafe_allow_html=True)
         
         col1, col2 = st.columns(2)
         with col1:
@@ -136,29 +159,17 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
         with col5:
             st.button("Suporte\nTécnico", disabled=True, use_container_width=True)
         with col6:
-            st.button("", disabled=True, use_container_width=True) # Botão vazio
+            st.button("", disabled=True, use_container_width=True)
 
-        st.markdown('</div>', unsafe_allow_html=True) # Fim da Moldura
-
-        # Botão Sair fora da moldura
-        st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
-        if st.button("ENCERRAR SESSÃO", use_container_width=True):
-            st.session_state.aluno = None
-            st.session_state.etapa = "login"
-            st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-
-   # ---------------------------------------------------------
-    # TELAS SECUNDÁRIAS (PROVAS / NOTAS)
+    # ---------------------------------------------------------
+    # TELA SECUNDÁRIA: SIMULADOS ABERTOS
     # ---------------------------------------------------------
     elif st.session_state.menu_active == "provas":
-        if st.button("← VOLTAR", use_container_width=True): 
-            st.session_state.menu_active = "home"
-            st.rerun()
+        if st.button("← VOLTAR AO MENU", use_container_width=True): 
+            st.session_state.menu_active = "home"; st.rerun()
             
         st.markdown('<p class="grid-label">Simulados Disponíveis</p>', unsafe_allow_html=True)
         
-        # --- Lógica de busca de provas no Supabase ---
         turma_aluno = str(aluno.get('turma', ''))
         serie_aluno = turma_aluno[:2] + " Ano" if len(turma_aluno) >= 2 else "1º Ano"
         
@@ -166,29 +177,46 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
             res = db_provas.table("modelos_prova").select("*").eq("serie", serie_aluno).eq("ativa", True).execute()
             if res.data:
                 for prova in res.data:
-                    with st.container():
-                        st.markdown(f"""
-                            <div style="border-left: 2px solid #00b4d8; padding-left: 20px; margin-bottom: 20px;">
-                                <div style="font-size: 16px; font-weight: 500;">{prova.get('titulo')}</div>
-                                <div style="font-size: 12px; color: #94a3b8; text-transform: uppercase;">
-                                    Duração: {prova.get('tempo_duracao', 60)} min
-                                </div>
+                    # Cartão da prova com visual claro
+                    st.markdown(f"""
+                        <div style="background-color: #f8fafc; border-left: 4px solid #00b4d8; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                            <div style="font-size: 16px; font-weight: 700; color: #1e293b;">{prova.get('titulo')}</div>
+                            <div style="font-size: 12px; color: #64748b; margin-top: 5px;">
+                                ⏱️ Duração: {prova.get('tempo_duracao', 60)} minutos
                             </div>
-                        """, unsafe_allow_html=True)
-                        
-                        # ========================================================
-                        # AQUI ESTÁ O BOTÃO QUE DIRECIONA PARA A EXECUÇÃO DA PROVA
-                        # ========================================================
-                        if st.button("Acessar Simulado", key=f"p_{prova['id']}", use_container_width=True):
-                            # 1. Salva qual prova o aluno escolheu
-                            st.session_state.prova_config = prova 
-                            
-                            # 2. MUDA A ETAPA GERAL DO APP! (Esse é o gatilho)
-                            st.session_state.etapa = "instrucoes" 
-                            
-                            # 3. Recarrega a tela
-                            st.rerun()
+                        </div>
+                    """, unsafe_allow_html=True)
+                    
+                    if st.button("Acessar Simulado", key=f"p_{prova['id']}", use_container_width=True):
+                        st.session_state.prova_config = prova 
+                        st.session_state.etapa = "instrucoes" # GATILHO QUE CONSERTAMOS!
+                        st.rerun()
             else:
                 st.info("Nenhuma atividade disponível para sua série no momento.")
         except Exception as e:
             st.error(f"Erro na conexão com o servidor: {e}")
+
+    # ---------------------------------------------------------
+    # OUTRAS TELAS (Apenas espaço reservado para manter a estrutura)
+    # ---------------------------------------------------------
+    elif st.session_state.menu_active == "historico":
+        if st.button("← VOLTAR AO MENU", use_container_width=True): 
+            st.session_state.menu_active = "home"; st.rerun()
+        st.markdown('<p class="grid-label">Atividades Concluídas</p>', unsafe_allow_html=True)
+        st.info("O histórico será exibido aqui.")
+        
+    elif st.session_state.menu_active == "notas":
+        if st.button("← VOLTAR AO MENU", use_container_width=True): 
+            st.session_state.menu_active = "home"; st.rerun()
+        st.markdown('<p class="grid-label">Painel de Desempenho</p>', unsafe_allow_html=True)
+        st.info("O desempenho do aluno será exibido aqui.")
+
+    st.markdown('</div>', unsafe_allow_html=True) # FIM DA MOLDURA BRANCA
+
+    # Botão de Sair fora da moldura e centralizado
+    st.markdown('<div class="logout-btn" style="text-align: center;">', unsafe_allow_html=True)
+    if st.button("ENCERRAR SESSÃO", use_container_width=True):
+        st.session_state.aluno = None
+        st.session_state.etapa = "login"
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
