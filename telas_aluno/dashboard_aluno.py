@@ -45,19 +45,34 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
             border: none !important;
         }
 
-        /* Esconder linhas em blocos horizontais */
-        [data-testid="stHorizontalBlock"] hr {
-            display: none !important;
+        /* Remover linhas de divisão em colunas */
+        [data-testid="column"] {
+            border: none !important;
+            border-top: none !important;
+            border-bottom: none !important;
         }
 
-        /* Esconder divisores do streamlit */
-        [data-testid="stMarkdownContainer"] hr {
-            display: none !important;
+        /* Remover bordas e linhas no container horizontal */
+        [data-testid="stHorizontalBlock"] {
+            border: none !important;
+            border-top: none !important;
+            border-bottom: none !important;
         }
 
-        /* Remove gaps/espaços que deixam linhas visíveis */
-        .stHorizontalBlock > div > div:not(:last-child)::after {
-            content: none !important;
+        /* Remover linhas dos blocos internos */
+        [data-testid="stHorizontalBlock"] > div {
+            border: none !important;
+            border-top: none !important;
+            border-bottom: none !important;
+        }
+
+        /* Remove pseudo-elementos que criam linhas */
+        [data-testid="stHorizontalBlock"]::before,
+        [data-testid="stHorizontalBlock"]::after,
+        [data-testid="column"]::before,
+        [data-testid="column"]::after {
+            display: none !important;
+            border: none !important;
         }
 
         /* ============================================
