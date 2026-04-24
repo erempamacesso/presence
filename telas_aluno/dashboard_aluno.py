@@ -1,4 +1,5 @@
 import streamlit as st
+from telas_aluno.desempenho import mostrar_tela_desempenho
 
 def mostrar_tela_dashboard(db_alunos, db_provas):
     aluno = st.session_state.aluno
@@ -130,47 +131,60 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
         with c6:
             st.button("⚙️\nPerfil", disabled=True, use_container_width=True)
 
-    # --- TELA DE PROVAS (COM BANCO DE DADOS RESTAURADO) ---
+    # =========================================================
+    # BLOCO 3: ROTEAMENTO DAS TELAS (PROVAS E NOTAS)
+    # =========================================================
+
+    # --- TELA DE PROVAS ---
     elif st.session_state.menu_active == "provas":
         if st.button("⬅ VOLTAR AO MENU", use_container_width=True):
-            st.session_state.menu_active = "home"; st.rerun()
+            st.session_state.menu_active = "home"
+            st.rerun()
             
         st.markdown('<p style="text-align:center; font-weight:800; color:#333; margin-top:15px;">SIMULADOS DISPONÍVEIS</p>', unsafe_allow_html=True)
         
-        # Filtra a série do aluno para buscar apenas as provas dele
+        # Filtra a série do aluno
         turma_aluno = str(aluno.get('turma', ''))
         serie_aluno = turma_aluno[:2] + " Ano" if len(turma_aluno) >= 2 else "1º Ano"
         
         try:
-            # Busca de verdade no Supabase!
             res = db_provas.table("modelos_prova").select("*").eq("serie", serie_aluno).eq("ativa", True).execute()
             
-            if res.data and len(res.data) > 0:
+            if res.data:
                 for prova in res.data:
-                    # O "Card" visual da prova
-                    st.markdown(f"""
-                        <div style="background-color: #ffffff; border-left: 5px solid #10b981; border-radius: 8px; padding: 15px; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-                            <div style="font-size: 15px; font-weight: 800; color: #1e293b;">{prova.get('titulo', 'Simulado')}</div>
-                            <div style="font-size: 12px; color: #64748b; margin-top: 5px; margin-bottom: 10px;">
-                                ⏱️ Tempo: {prova.get('tempo_duracao', 60)} min | 🧩 {len(prova.get('questoes_ids', []))} Questões
+                    with st.container(border=True):
+                        st.markdown(f"""
+                            <div style="padding: 5px;">
+                                <div style="font-size: 16px; font-weight: 800; color: #1e293b;">{prova.get('titulo', 'Simulado')}</div>
+                                <div style="font-size: 13px; color: #64748b; margin-bottom: 10px;">
+                                    ⏱️ {prova.get('tempo_duracao', 60)} min | 🧩 {len(prova.get('questoes_ids', []))} Questões
+                                </div>
                             </div>
-                        </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # O Botão Verde de Iniciar
-                    st.markdown('<div class="btn-iniciar">', unsafe_allow_html=True)
-                    if st.button("INICIAR AGORA", key=f"start_prova_{prova['id']}", use_container_width=True):
-                        st.session_state.prova_config = prova
-                        st.session_state.etapa = "instrucoes" # Dispara o gatilho da prova
-                        st.rerun()
-                    st.markdown('</div>', unsafe_allow_html=True)
+                        """, unsafe_allow_html=True)
+                        
+                        # Botão de Iniciar Estilizado
+                        if st.button("INICIAR AGORA", key=f"start_prova_{prova['id']}", type="primary", use_container_width=True):
+                            st.session_state.prova_config = prova
+                            st.session_state.etapa = "instrucoes"
+                            st.rerun()
             else:
-                st.info(f"Nenhum simulado aberto no momento para o {serie_aluno}.")
+                st.info(f"Nenhum simulado aberto para o {serie_aluno}.")
                 
         except Exception as e:
             st.error("Erro ao conectar com o banco de dados das provas.")
 
-    st.markdown('</div>', unsafe_allow_html=True) # Fim da área de comandos
+    # --- TELA DE NOTAS (DESEMPENHO) ---
+    elif st.session_state.menu_active == "notas":
+        if st.button("⬅ VOLTAR AO MENU", use_container_width=True):
+            st.session_state.menu_active = "home"
+            st.rerun()
+        
+        st.write("---")
+        # CHAMA A FUNÇÃO DO ARQUIVO desempenho.py
+        from telas_aluno.desempenho import mostrar_tela_desempenho
+        mostrar_tela_desempenho(db_alunos, db_provas)
+
+    st.markdown('</div>', unsafe_allow_html=True) # Fecha area-comandos
 
     # =========================================================
     # BLOCO 4: RODAPÉ E SAÍDA
