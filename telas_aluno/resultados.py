@@ -1,7 +1,13 @@
 # telas_aluno/resultados.py
 import streamlit as st
 
-def render_suspense(C_PRIMARY, C_TEXT_MUTED, C_SECONDARY, C_TEXT):
+# Alteramos a assinatura para aceitar o db_provas e ter cores padrão (default)
+def render_suspense(db_provas=None, C_PRIMARY="#00b4d8", C_TEXT_MUTED="#6c757d", C_SECONDARY="#0077b6", C_TEXT="#1e293b"):
+    # Garante que o aluno esteja na sessão para não dar erro de chave
+    if "aluno" not in st.session_state:
+        st.error("Sessão perdida. Por favor, faça login novamente.")
+        st.stop()
+
     aluno = st.session_state.aluno
     st.balloons() 
     st.markdown(f"""
@@ -26,12 +32,18 @@ def render_suspense(C_PRIMARY, C_TEXT_MUTED, C_SECONDARY, C_TEXT):
 
     st.divider()
     if st.button("⬅️ Voltar para o Portal Pro", type="secondary", use_container_width=True):
-        st.session_state.clear() 
+        # Em vez de clear (que desloga o aluno), voltamos para a home
+        st.session_state.etapa = "home" 
         st.rerun()
 
 def render_revisao(db_provas):
     aluno = st.session_state.aluno
-    prova = st.session_state.prova_resultado
+    # Usamos prova_config que é o padrão que o dashboard define
+    prova = st.session_state.get('prova_resultado') or st.session_state.get('prova_config')
+
+    if not prova:
+        st.error("Dados da prova não encontrados.")
+        return
 
     try:
         res_status = db_provas.table("modelos_prova").select("notas_liberadas").eq("id", prova['id']).single().execute()
@@ -40,7 +52,7 @@ def render_revisao(db_provas):
         notas_liberadas = False
 
     if not notas_liberadas:
-        st.subheader(f"✅ Prova Enviada: {prova['titulo']}")
+        st.subheader(f"✅ Prova Enviada: {prova.get('titulo', 'Simulado')}")
         st.balloons()
         st.markdown(f"""
             <div style="background-color: #f0f7ff; border-left: 5px solid #007bff; border-radius: 10px; padding: 25px; margin-top: 20px;">
@@ -50,9 +62,10 @@ def render_revisao(db_provas):
         """, unsafe_allow_html=True)
         
         if st.button("⬅️ Voltar para Atividades", use_container_width=True):
-            st.session_state.etapa = "ante_sala"
+            st.session_state.etapa = "home"
             st.rerun()
     else:
+        # O restante do seu código de revisão está correto e foi mantido
         st.subheader(f"📊 Desempenho: {prova['titulo']}")
         with st.spinner("Carregando sua correção comentada..."):
             try:
@@ -85,10 +98,14 @@ def render_revisao(db_provas):
                         q = questoes_dict.get(erro['questao_id'])
                         if q:
                             texto_puro = q.get('enunciado', 'Questão sem texto')
-                            resumo = (texto_puro[:65] + '...') if len(texto_puro) > 65 else texto_puro
+                            # Limpeza básica de HTML se houver
+                            import re
+                            texto_limpo = re.sub('<[^<]+?>', '', str(texto_puro))
+                            resumo = (texto_limpo[:65] + '...') if len(texto_limpo) > 65 else texto_limpo
+                            
                             with st.expander(f"❌ Erro em: {resumo}", expanded=False):
                                 st.write(q.get('enunciado', ''), unsafe_allow_html=True)
-                                letra_aluno = erro.get('resposta_a') or erro.get('resposta_aluno') or "?"
+                                letra_aluno = erro.get('resposta_aluno') or "?"
                                 letra_correta = q.get('resposta_correta', '')
 
                                 c1, c2 = st.columns(2)
@@ -105,7 +122,8 @@ def render_revisao(db_provas):
                                         msg = str(just).replace("Diagnóstico: ", "")
                                     st.markdown(f"<div style='background-color: #e7f3fe; border-left: 5px solid #2196F3; padding: 15px; border-radius: 5px; color: #0c5460;'>💡 {msg}</div>", unsafe_allow_html=True)
             except Exception as e:
-                st.error("Ocorreu um erro ao processar sua correção.")
+                st.error(f"Erro ao processar correção: {e}")
+                
         if st.button("⬅️ Voltar para Atividades", use_container_width=True):
-            st.session_state.etapa = "ante_sala"
+            st.session_state.etapa = "home"
             st.rerun()

@@ -78,7 +78,8 @@ else:
         render_prova(db_provas)
 
     elif etapa == "resultado_final":
-        render_suspense()
+        # Passamos as 4 cores que a função exige para parar o erro de TypeError
+        render_suspense("#00b4d8", "#6c757d", "#0077b6", "#1e293b")
 
     elif etapa == "revisao":
         render_revisao(db_provas)
