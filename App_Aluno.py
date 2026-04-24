@@ -78,7 +78,7 @@ else:
         render_prova(db_provas)
 
     elif etapa == "resultado_final":
-        render_suspense(db_provas)
+        render_suspense()
 
     elif etapa == "revisao":
         render_revisao(db_provas)
