@@ -16,22 +16,20 @@ def limpar_conteudo(dado):
 def gerar_prova_word(titulo_prova, questoes):
     """
     Função (Motor) que cria o documento Word em memória usando as questões do banco.
-    Não possui nenhuma interface do Streamlit (st.button, st.write, etc).
     """
     doc = Document()
     
-    # Criando o Cabeçalho da Prova
+    # ==========================================
+    # 1. CABEÇALHO E QUESTÕES DA PROVA
+    # ==========================================
     doc.add_heading(f'Avaliação: {titulo_prova}', 0)
     doc.add_paragraph('Nome: __________________________________________________ Turma: _______')
-    doc.add_paragraph('\n') # Adiciona uma linha em branco
+    doc.add_paragraph('\n') 
 
-    # Lendo as questões e escrevendo no documento
     for i, q in enumerate(questoes, 1):
-        # Escreve o Enunciado limpo
         enunciado = limpar_conteudo(q.get('enunciado', ''))
         doc.add_paragraph(f"{i}) {enunciado}")
         
-        # Puxa as Alternativas (A, B, C, D, E)
         opcoes = q.get('alternativas') or q.get('opcoes') or {} 
         
         if opcoes:
@@ -40,10 +38,28 @@ def gerar_prova_word(titulo_prova, questoes):
                     texto_alt = limpar_conteudo(opcoes[letra])
                     doc.add_paragraph(f"    ({letra}) {texto_alt}")
         
-        # Adiciona um espaço extra entre uma questão e outra
         doc.add_paragraph('\n') 
 
-    # Salva o documento na memória RAM (não cria lixo no seu computador/servidor)
+    # ==========================================
+    # 2. GABARITO (PÁGINA SEPARADA)
+    # ==========================================
+    doc.add_page_break() # Força o Word a pular para uma página nova
+    doc.add_heading('Gabarito - Uso Exclusivo da Coordenação/Professor', 1)
+    doc.add_paragraph('\n')
+
+    for i, q in enumerate(questoes, 1):
+        # ATENÇÃO: O código tenta achar a resposta correta pelos nomes mais comuns de banco de dados.
+        # Se no seu Supabase a coluna se chamar diferente, basta trocar aqui!
+        resposta_correta = q.get('resposta_correta') or q.get('gabarito') or q.get('resposta') or "Não informada no banco"
+        
+        # Adiciona a linha do gabarito em negrito
+        p = doc.add_paragraph()
+        p.add_run(f"Questão {i}: ").bold = True
+        p.add_run(f"Alternativa {resposta_correta}")
+
+    # ==========================================
+    # 3. SALVAMENTO EM MEMÓRIA
+    # ==========================================
     buffer = BytesIO()
     doc.save(buffer)
     buffer.seek(0)
