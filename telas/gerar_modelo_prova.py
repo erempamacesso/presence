@@ -3,18 +3,6 @@ import pandas as pd
 import re
 import time
 
-# --- CAÇADOR DE ERROS DO MOTOR WORD ---
-erro_motor = None
-try:
-    from exportador import gerar_prova_word
-except ImportError as e1:
-    try:
-        from telas.exportador import gerar_prova_word
-    except Exception as e2:
-        erro_motor = f"Erro local: {e1} | Erro na pasta: {e2}"
-except Exception as e3:
-    erro_motor = f"Erro fatal: {e3}"
-
 def mostrar_tela_gerar_modelo(supabase):
     st.title("📄 Gerar Novo Modelo de Prova")
 
@@ -27,8 +15,8 @@ def mostrar_tela_gerar_modelo(supabase):
     titulo = c1.text_input("Título da Prova", placeholder="Ex: 1ª Avaliação de Química - 2º Bimestre")
     valor = c2.number_input("Valor por questão", min_value=0.1, value=1.0, step=0.1)
     
-    # ATENÇÃO: Mudamos para select("*") para o Word conseguir ler as alternativas (A, B, C...)
-    res_q = supabase.table("questoes").select("*").order("id", desc=True).execute()
+    # Busca as questões no banco
+    res_q = supabase.table("questoes").select("id, serie, assunto, enunciado").order("id", desc=True).execute()
     
     if res_q.data:
         df_base = pd.DataFrame(res_q.data)
@@ -92,62 +80,29 @@ def mostrar_tela_gerar_modelo(supabase):
         total_selecionadas = len(st.session_state.ids_persistentes)
         st.info(f"Total de questões selecionadas (acumulado): **{total_selecionadas}**")
         
-        # ==========================================
-        # BOTÕES DE AÇÃO (SALVAR ONLINE VS IMPRIMIR)
-        # ==========================================
-        st.write("### 🚀 O que deseja fazer com essas questões?")
-        
-        col_b1, col_b2 = st.columns(2)
-        
-        # BOTÃO 1: Salvar no Banco (Para os alunos fazerem online)
-        with col_b1:
-            if st.button("💾 Salvar como Atividade Online", type="primary", use_container_width=True):
-                if not titulo:
-                    st.error("❌ Dê um título para a prova!")
-                elif total_selecionadas == 0:
-                    st.error("❌ Selecione pelo menos 1 questão!")
-                else:
-                    dados_prova = {
-                        "titulo": titulo, 
-                        "questoes_ids": list(st.session_state.ids_persistentes), 
-                        "valor_questao": float(valor), 
-                        "ativa": True
-                    }
-                    try:
-                        supabase.table("modelos_prova").insert(dados_prova).execute()
-                        st.success(f"✅ Prova '{titulo}' gerada com {total_selecionadas} questões!")
-                        st.session_state.ids_persistentes = set()
-                        st.balloons()
-                        time.sleep(2)
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao salvar a prova: {e}")
-
-        # BOTÃO 2: Gerar Word (Não salva no banco, apenas baixa)
-        with col_b2:
-            if total_selecionadas > 0:
-                # Filtra os dados reais das questões selecionadas para enviar ao Word
-                questoes_para_word = df_base[df_base['id'].isin(st.session_state.ids_persistentes)].to_dict('records')
-                
-                if 'gerar_prova_word' in globals():
-                    try:
-                        nome_arquivo = titulo if titulo else "Prova_Fisica"
-                        arquivo_docx = gerar_prova_word(nome_arquivo, questoes_para_word)
-                        
-                        st.download_button(
-                            label="📄 Baixar Word (Apenas Impressão)",
-                            data=arquivo_docx,
-                            file_name=f"{nome_arquivo}.docx",
-                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                            use_container_width=True,
-                            help="Baixa o documento Word sem disponibilizar a prova no portal dos alunos."
-                        )
-                    except Exception as e:
-                        st.error(f"Erro na conversão: {e}")
-                else:
-                    st.error("⚠️ Sistema de Word não carregado. Verifique a instalação do python-docx.")
+        # --- BOTÃO DE SALVAR PROVA (APENAS ONLINE) ---
+        if st.button("🚀 Gerar Atividade e Salvar no Portal", type="primary", use_container_width=True):
+            if not titulo:
+                st.error("❌ Dê um título para a prova!")
+            elif total_selecionadas == 0:
+                st.error("❌ Selecione pelo menos 1 questão!")
             else:
-                st.button("📄 Baixar Word (Apenas Impressão)", disabled=True, use_container_width=True)
+                dados_prova = {
+                    "titulo": titulo, 
+                    "questoes_ids": list(st.session_state.ids_persistentes), 
+                    "valor_questao": float(valor), 
+                    "ativa": True
+                }
+                
+                try:
+                    supabase.table("modelos_prova").insert(dados_prova).execute()
+                    st.success(f"✅ Prova '{titulo}' gerada com {total_selecionadas} questões!")
+                    st.session_state.ids_persistentes = set()
+                    st.balloons()
+                    time.sleep(2)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao salvar a prova: {e}")
 
     else:
         st.warning("Não há questões cadastradas.")
