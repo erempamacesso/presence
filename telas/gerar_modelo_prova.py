@@ -3,14 +3,17 @@ import pandas as pd
 import re
 import time
 
-# Tenta importar o motor do Word
+# --- CAÇADOR DE ERROS DO MOTOR WORD ---
+erro_motor = None
 try:
     from exportador import gerar_prova_word
-except ImportError:
+except ImportError as e1:
     try:
         from telas.exportador import gerar_prova_word
-    except:
-        pass # Ignora aqui, tratamos no botão
+    except Exception as e2:
+        erro_motor = f"Erro local: {e1} | Erro na pasta: {e2}"
+except Exception as e3:
+    erro_motor = f"Erro fatal: {e3}"
 
 def mostrar_tela_gerar_modelo(supabase):
     st.title("📄 Gerar Novo Modelo de Prova")
