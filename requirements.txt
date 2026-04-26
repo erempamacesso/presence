@@ -20,3 +20,4 @@ xlsxwriter
 PyGithub
 xlrd>=2.0.1
 openpyxl
+python-docx
