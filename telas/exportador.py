@@ -111,37 +111,36 @@ def mostrar_tela_provas_elaboradas(supabase):
                     st.write("")
                     if qtd_questoes > 0:
                         try:
+                            # 1. Puxa as questões do banco
                             res_q = supabase.table("questoes").select("*").in_("id", questoes_ids).execute()
                             
-                            # Verifica se o motor foi importado com sucesso
-                            if res_q.data and 'gerar_prova_word' in globals():
-                                arquivo_docx = gerar_prova_word(prova.get('titulo', 'Prova'), res_q.data)
-                                st.download_button(
-                                    label="📄 Baixar Prova (.docx)",
-                                    data=arquivo_docx,
-                                    file_name=f"Prova_{prova.get('titulo', 'Impressao')}.docx",
-                                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                                    key=f"down_word_{prova['id']}",
-                                    use_container_width=True
-                                )
+                            if not res_q.data:
+                                st.error("Erro: Nenhuma questão encontrada no banco.")
+                                st.button("📄 Baixar Prova", disabled=True, key=f"d_vaz_{prova['id']}", use_container_width=True)
                             else:
-                                # MOSTRA O ERRO EXATO SE O MOTOR FALHAR
-                                if erro_gerador:
-                                    st.error(f"Erro no código: {erro_gerador}")
-                                st.button("📄 Baixar Prova", disabled=True, key=f"d_err_{prova['id']}", use_container_width=True)
+                                # 2. Tenta forçar a importação bem na hora de criar o botão
+                                try:
+                                    try:
+                                        from telas.exportador import gerar_prova_word
+                                    except ImportError:
+                                        from exportador import gerar_prova_word
+                                        
+                                    arquivo_docx = gerar_prova_word(prova.get('titulo', 'Prova'), res_q.data)
+                                    
+                                    st.download_button(
+                                        label="📄 Baixar Prova (.docx)",
+                                        data=arquivo_docx,
+                                        file_name=f"Prova_{prova.get('titulo', 'Impressao')}.docx",
+                                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                        key=f"down_word_{prova['id']}",
+                                        use_container_width=True
+                                    )
+                                except Exception as erro_fatal:
+                                    # SE DER ERRO NO MOTOR, VAI FICAR VERMELHO AQUI!
+                                    st.error(f"Erro fatal no motor: {erro_fatal}")
+                                    st.button("📄 Baixar Prova", disabled=True, key=f"d_err_{prova['id']}", use_container_width=True)
+                                    
                         except Exception as e:
-                            st.caption(f"Falha de banco de dados: {e}")
+                            st.error(f"Falha no Supabase: {e}")
                     else:
-                        st.button("📄 Baixar Prova", disabled=True, key=f"d_vaz_{prova['id']}", help="Adicione questões a esta prova primeiro.", use_container_width=True)
-                
-                # --- ÁREA DE EDIÇÃO (SANFONA) ---
-                with st.expander("✏️ Editar Configurações da Prova"):
-                    with st.form(f"form_edit_{prova['id']}"):
-                        col_t1, col_t2 = st.columns([3, 1])
-                        novo_titulo = col_t1.text_input("Título da Prova", value=prova.get('titulo', ''))
-                        novo_valor = col_t2.number_input("Valor por Questão", min_value=0.1, value=valor_q, step=0.1)
-                        
-                        col_d1, col_d2, col_d3 = st.columns(3)
-                        
-                        nova_d_inicio = col_d1.date_input("Data de Início", value=d_inicio_obj if d_inicio_obj else hoje, format="DD/MM/YYYY")
-                        nova_d_fim = col_d2.date_input("Data de
+                        st.button("📄 Baixar Prova", disabled=True, key=f"d_sem_q_{prova['id']}", help="Prova sem questões.", use_container_width=True)
