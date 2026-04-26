@@ -1,21 +1,53 @@
 from docx import Document
+from docx.shared import Inches
 from io import BytesIO
 import re
+import base64
+import urllib.request
 
-def limpar_conteudo(dado):
+def processar_texto_e_imagem(dado, doc, prefixo=""):
     """
-    Limpa dicionários ou tags HTML para o Word ficar perfeito e sem sujeiras.
+    Caça imagens no HTML, limpa o texto e insere ambos no Word.
+    Funciona tanto para Enunciados quanto para as Alternativas.
     """
     if isinstance(dado, dict):
-        return dado.get('texto', list(dado.values())[0] if dado else "")
+        texto_bruto = dado.get('texto', list(dado.values())[0] if dado else "")
+    else:
+        texto_bruto = str(dado)
+        
+    # 1. Caçador de Imagens: Puxa tudo que estiver dentro de um src="..." na tag <img>
+    img_tags = re.findall(r'<img[^>]+src=["\']([^"\']+)["\']', texto_bruto)
     
-    # Remove as tags HTML (como <p>, <b>, etc)
-    texto_limpo = re.sub(r'<[^>]+>', '', str(dado))
-    return texto_limpo.strip()
+    # 2. Limpa o HTML para o texto ficar bonito (sem apagar a ordem lógica)
+    texto_limpo = re.sub(r'<[^>]+>', '', texto_bruto).strip()
+    
+    # 3. Escreve o texto no documento (se houver texto)
+    if texto_limpo or prefixo.strip():
+        doc.add_paragraph(f"{prefixo}{texto_limpo}")
+        
+    # 4. Processa e desenha as imagens logo abaixo do texto
+    for src in img_tags:
+        try:
+            if src.startswith('data:image'):
+                # Caso A: Imagem colada direto no editor (Base64)
+                imgstr = src.split(';base64,')[1]
+                img_data = base64.b64decode(imgstr)
+                img_stream = BytesIO(img_data)
+                # Adiciona no Word com tamanho máximo de 3.5 polegadas para não quebrar a folha
+                doc.add_picture(img_stream, width=Inches(3.5)) 
+                
+            elif src.startswith('http'):
+                # Caso B: Imagem vinda de um link de internet
+                req = urllib.request.Request(src, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req) as response:
+                    img_stream = BytesIO(response.read())
+                    doc.add_picture(img_stream, width=Inches(3.5))
+        except Exception as e:
+            doc.add_paragraph(" [Aviso: Uma imagem não pôde ser carregada no Word]")
 
 def gerar_prova_word(titulo_prova, questoes):
     """
-    Função (Motor) que cria o documento Word em memória usando as questões do banco.
+    Função (Motor) que cria o documento Word em memória, com imagens e Gabarito.
     """
     doc = Document()
     
@@ -27,32 +59,40 @@ def gerar_prova_word(titulo_prova, questoes):
     doc.add_paragraph('\n') 
 
     for i, q in enumerate(questoes, 1):
-        enunciado = limpar_conteudo(q.get('enunciado', ''))
-        doc.add_paragraph(f"{i}) {enunciado}")
+        # Processa o enunciado (com texto e possíveis imagens)
+        enunciado_bruto = q.get('enunciado', '')
+        processar_texto_e_imagem(enunciado_bruto, doc, prefixo=f"{i}) ")
         
+        # Processa as alternativas
         opcoes = q.get('alternativas') or q.get('opcoes') or {} 
-        
         if opcoes:
             for letra in ["A", "B", "C", "D", "E"]:
                 if letra in opcoes:
-                    texto_alt = limpar_conteudo(opcoes[letra])
-                    doc.add_paragraph(f"    ({letra}) {texto_alt}")
+                    processar_texto_e_imagem(opcoes[letra], doc, prefixo=f"    ({letra}) ")
         
+        # BÔNUS: Se a sua tabela tiver uma coluna SEPARADA só para imagem chamada 'imagem_url' ou 'imagem'
+        url_extra = q.get('imagem_url') or q.get('imagem')
+        if url_extra and str(url_extra).startswith('http'):
+            try:
+                req = urllib.request.Request(url_extra, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req) as response:
+                    doc.add_picture(BytesIO(response.read()), width=Inches(3.5))
+            except:
+                pass
+                
         doc.add_paragraph('\n') 
 
     # ==========================================
     # 2. GABARITO (PÁGINA SEPARADA)
     # ==========================================
-    doc.add_page_break() # Força o Word a pular para uma página nova
+    doc.add_page_break() 
     doc.add_heading('Gabarito - Uso Exclusivo da Coordenação/Professor', 1)
     doc.add_paragraph('\n')
 
     for i, q in enumerate(questoes, 1):
-        # ATENÇÃO: O código tenta achar a resposta correta pelos nomes mais comuns de banco de dados.
-        # Se no seu Supabase a coluna se chamar diferente, basta trocar aqui!
-        resposta_correta = q.get('resposta_correta') or q.get('gabarito') or q.get('resposta') or "Não informada no banco"
+        # Ajuste o nome da coluna caso seja diferente no seu banco!
+        resposta_correta = q.get('resposta_correta') or q.get('gabarito') or q.get('resposta') or "Não informada"
         
-        # Adiciona a linha do gabarito em negrito
         p = doc.add_paragraph()
         p.add_run(f"Questão {i}: ").bold = True
         p.add_run(f"Alternativa {resposta_correta}")
