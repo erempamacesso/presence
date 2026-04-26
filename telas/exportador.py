@@ -104,7 +104,7 @@ def mostrar_tela_provas_elaboradas(supabase):
                         except Exception as e:
                             st.error(f"Erro ao excluir: {e}")
                 
-                # ==========================================
+               # ==========================================
                 # BOTÃO DE DOWNLOAD (.DOCX) - COLUNA 3
                 # ==========================================
                 with c3:
