@@ -127,19 +127,41 @@ def render_prova(supabase):
         if len(st.session_state.respostas_aluno) < len(questoes):
             st.warning(f"⚠️ Você respondeu apenas {len(st.session_state.respostas_aluno)} de {len(questoes)} questões. Tem certeza que quer enviar?")
             
-        with st.spinner("Enviando respostas..."):
-            dados_resultado = {
-                "aluno_id": aluno['id'],
-                "prova_id": prova['id'],
-                "respostas": st.session_state.respostas_aluno,
-                "data_envio": datetime.now().isoformat()
-            }
+        with st.spinner("Corrigindo e enviando respostas..."):
+            
+            # Cria uma lista para salvar cada resposta separadamente, como o banco exige
+            dados_insercao = []
+            
+            for q in questoes:
+                id_questao = str(q['id'])
+                letra_marcada = st.session_state.respostas_aluno.get(id_questao)
+                
+                # Descobre qual era a resposta certa para avaliar se o aluno acertou
+                gabarito = q.get('resposta_correta') or q.get('gabarito') or q.get('resposta')
+                acertou = False
+                
+                # Compara a resposta do aluno com o gabarito
+                if letra_marcada and gabarito:
+                    if str(letra_marcada).strip().upper() == str(gabarito).strip().upper():
+                        acertou = True
+                
+                # Monta a "linha" exata de dados que a tabela resultados_provas espera
+                linha = {
+                    "aluno_id": str(aluno['id']),
+                    "prova_id": str(prova['id']),
+                    "questao_id": id_questao,
+                    "resposta_aluno": letra_marcada if letra_marcada else None,
+                    "acertou": acertou
+                }
+                dados_insercao.append(linha)
             
             try:
-                supabase.table("resultados_alunos").insert(dados_resultado).execute()
+                # Salva todas as respostas de uma vez na tabela correta
+                supabase.table("resultados_provas").insert(dados_insercao).execute()
+                
                 st.session_state.etapa = "resultado_final"
                 st.balloons()
-                time.sleep(1)
+                time.sleep(1.5)
                 st.rerun()
             except Exception as e:
-                st.error(f"Erro ao salvar: {e}")
+                st.error(f"Erro ao salvar no banco de dados: {e}")
