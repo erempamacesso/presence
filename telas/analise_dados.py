@@ -35,9 +35,7 @@ def mostrar_tela_analise(supabase, supabase_alunos):
         # ---------------------------------------------------------
         # ESPAÇO PARA GRÁFICOS (Largura Total)
         # ---------------------------------------------------------
-        # ---------------------------------------------------------
-        # ESPAÇO PARA GRÁFICOS (Agora com Lógica Real)
-        # ---------------------------------------------------------
+        
         st.markdown("---")
         container_graficos = st.container()
         with container_graficos:
