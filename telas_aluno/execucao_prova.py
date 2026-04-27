@@ -3,6 +3,7 @@ import time
 from datetime import datetime
 import re
 import random
+import ast
 
 def limpar_html(html):
     """Remove tags HTML e limpa o texto para exibição pura."""
@@ -11,6 +12,27 @@ def limpar_html(html):
     # Remove as tags, mas mantém o conteúdo entre elas
     texto_limpo = re.sub(r'<[^>]+>', '', str(html))
     return texto_limpo.strip()
+
+def extrair_texto_alternativa(conteudo):
+    """Descasca o dicionário do banco para pegar só o texto limpo da alternativa"""
+    # 1. Se o banco já entregou como um dicionário Python real
+    if isinstance(conteudo, dict):
+        return str(conteudo.get('texto', conteudo))
+    
+    # 2. Se o banco entregou como um texto com "cara" de dicionário
+    if isinstance(conteudo, str):
+        conteudo = conteudo.strip()
+        if conteudo.startswith("{") and "'texto'" in conteudo:
+            try:
+                # Converte o texto no formato de código de volta para dicionário
+                dict_convertido = ast.literal_eval(conteudo)
+                if isinstance(dict_convertido, dict):
+                    return str(dict_convertido.get('texto', ''))
+            except Exception:
+                pass
+                
+    # 3. Se for apenas um texto normal (sem dicionário)
+    return str(conteudo)
 
 def render_instrucoes(supabase):
     """Tela de orientações antes de começar o cronômetro"""
@@ -27,7 +49,7 @@ def render_instrucoes(supabase):
     ### ⚠️ Regras da Avaliação:
     * **Questões:** Esta prova contém {len(prova['questoes_ids'])} questões.
     * **Randomização:** As alternativas aparecem em ordem aleatória para cada tentativa.
-    * **Envio:** Uma vez iniciado, você deve concluir a prova.
+    * **Envio:** Uma vez iniciada, você deve concluir a prova.
     """)
 
     if st.button("🚀 INICIAR PROVA AGORA", type="primary", use_container_width=True):
@@ -56,31 +78,36 @@ def render_prova(supabase):
     for i, q in enumerate(questoes, 1):
         st.subheader(f"Questão {i}")
         
-        # EXIBIÇÃO DO ENUNCIADO (Mantendo imagens mas limpando o resto)
-        # Usamos unsafe_allow_html=True para que as IMAGENS apareçam
+        # EXIBIÇÃO DO ENUNCIADO (Mantendo as imagens)
         st.markdown(q['enunciado'], unsafe_allow_html=True)
         
-        # 3. TRATAMENTO DAS ALTERNATIVAS (Sem letras A, B, C fixas)
+        # 3. TRATAMENTO DAS ALTERNATIVAS
         opcoes_originais = q.get('alternativas') or q.get('opcoes') or {}
         
-        # Criamos uma lista apenas com o conteúdo limpo de cada alternativa
-        # O dicionário abaixo guarda o 'Texto Limpo' -> 'Letra Original' para sabermos o que ele marcou
         mapeamento_alternativas = {}
         lista_para_exibir = []
 
-        for letra, texto in opcoes_originais.items():
-            texto_puro = limpar_html(texto)
-            lista_para_exibir.append(texto_puro)
-            mapeamento_alternativas[texto_puro] = letra
+        for letra, conteudo in opcoes_originais.items():
+            # PASSO A: Retira o texto de dentro de {'texto': '...', 'imagem': ''}
+            texto_extraido = extrair_texto_alternativa(conteudo)
+            
+            # PASSO B: Limpa qualquer HTML (<p>, <b>, etc) que tenha sobrado
+            texto_puro = limpar_html(texto_extraido)
+            
+            # Evita adicionar opções totalmente em branco
+            if texto_puro:
+                lista_para_exibir.append(texto_puro)
+                mapeamento_alternativas[texto_puro] = letra
 
         # RANDOMIZAÇÃO: Embaralha as alternativas para o aluno
-        if f"random_{q['id']}" not in st.session_state:
+        chave_random = f"random_{q['id']}"
+        if chave_random not in st.session_state:
             random.shuffle(lista_para_exibir)
-            st.session_state[f"random_{q['id']}"] = lista_para_exibir
+            st.session_state[chave_random] = lista_para_exibir
         
-        opcoes_embaralhadas = st.session_state[f"random_{q['id']}"]
+        opcoes_embaralhadas = st.session_state[chave_random]
 
-        # Interface de marcação (Radio Button)
+        # Interface de marcação
         escolha_texto = st.radio(
             "Escolha a alternativa correta:",
             options=opcoes_embaralhadas,
@@ -97,6 +124,9 @@ def render_prova(supabase):
 
     # 4. Botão de Finalizar
     if st.button("🏁 FINALIZAR E ENVIAR PROVA", type="primary", use_container_width=True):
+        if len(st.session_state.respostas_aluno) < len(questoes):
+            st.warning(f"⚠️ Você respondeu apenas {len(st.session_state.respostas_aluno)} de {len(questoes)} questões. Tem certeza que quer enviar?")
+            
         with st.spinner("Enviando respostas..."):
             dados_resultado = {
                 "aluno_id": aluno['id'],
