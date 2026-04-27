@@ -60,19 +60,15 @@ def mostrar_tela_analise(supabase, supabase_alunos):
                 st.info("Gráficos ficarão disponíveis assim que houver dados de alunos.")
         st.markdown("---")
 
-        # ---------------------------------------------------------
-        # DIVISÃO EM COLUNAS (Notas vs Monitoramento)
-        # ---------------------------------------------------------
-        col_tabela, col_monitor = st.columns([2, 1], gap="large")
-
-        # Busca dados de resultados para a prova selecionada
+        # 1. Busca dados de resultados para a prova selecionada
         res_res = supabase.table("resultados_provas").select("*").eq("prova_id", id_prova).execute()
         
+        # SÓ ENTRA AQUI SE TIVER DADOS NO BANCO
         if res_res.data and res_alunos_base.data:
             df_res = pd.DataFrame(res_res.data)
             df_alunos = pd.DataFrame(res_alunos_base.data)
             
-            # Garantindo que IDs sejam strings para o merge
+            # Garantindo que IDs sejam strings para o merge não falhar
             df_res['aluno_id'] = df_res['aluno_id'].astype(str)
             df_alunos['id'] = df_alunos['id'].astype(str)
 
@@ -82,8 +78,29 @@ def mostrar_tela_analise(supabase, supabase_alunos):
             df_notas = df_res.groupby('aluno_id').agg(total_acertos=('pontos', 'sum')).reset_index()
             df_notas['nota_final'] = (df_notas['total_acertos'] * valor_q).apply(arredondar_siepe)
             
-            # Cruzamento Final
+            # Cruzamento Final (Aqui nasce o df_final!)
             df_final = pd.merge(df_alunos, df_notas, left_on="id", right_on="aluno_id")
+
+            # --- [NOVO] ESPAÇO PARA GRÁFICOS (Largura Total) ---
+            # Colocamos aqui para garantir que o df_final já existe!
+            st.markdown("---")
+            if not df_final.empty:
+                st.subheader("📈 Desempenho Comparativo")
+                g1, g2 = st.columns(2)
+                with g1:
+                    media_notas = df_final.groupby('turma')['nota_final'].mean().reset_index()
+                    st.bar_chart(data=media_notas, x='turma', y='nota_final', color="#2b83ba")
+                    st.caption("Média de Notas por Turma")
+                with g2:
+                    participacao = df_final.groupby('turma').size().reset_index(name='qtd')
+                    st.bar_chart(data=participacao, x='turma', y='qtd', color="#abdda4")
+                    st.caption("Total de Envios por Turma")
+            st.markdown("---")
+
+            # ---------------------------------------------------------
+            # DIVISÃO EM COLUNAS (Só agora criamos o layout de baixo)
+            # ---------------------------------------------------------
+            col_tabela, col_monitor = st.columns([2, 1], gap="large")
 
             # COLUNA ESQUERDA: NOTAS DETALHADAS
             with col_tabela:
@@ -100,7 +117,7 @@ def mostrar_tela_analise(supabase, supabase_alunos):
                     }
                 )
                 
-                # Botão de Relatório logo abaixo da tabela
+                # Exportação Excel
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                     for turma in sorted(df_final['turma'].unique()):
@@ -116,13 +133,10 @@ def mostrar_tela_analise(supabase, supabase_alunos):
 
             # COLUNA DIREITA: MONITORAMENTO DE PARTICIPAÇÃO
             with col_monitor:
-                st.subheader("👥 Monitoramento por Turma")
-                
-                # Agrupa por turma para contar participantes únicos
+                st.subheader("👥 Por Turma")
                 df_participantes = df_final.drop_duplicates(subset=['aluno_id'])
                 stats_turma = df_participantes.groupby('turma').size().reset_index(name='qtd')
                 
-                # Estilização da lista de turmas
                 for _, row in stats_turma.iterrows():
                     st.markdown(f"""
                         <div style="border-bottom: 1px solid #e6e9ef; padding: 10px 0;">
@@ -130,12 +144,9 @@ def mostrar_tela_analise(supabase, supabase_alunos):
                             <span style="font-size: 24px; font-weight: bold;">{row['qtd']} Alunos</span>
                         </div>
                     """, unsafe_allow_html=True)
-                
-                if stats_turma.empty:
-                    st.info("Nenhum registro encontrado.")
-
         else:
-            st.info("Aguardando envios de alunos para esta prova...")
+            # Se cair aqui, o df_final nunca foi criado, e o código não tenta acessar ele
+            st.info("ℹ️ Nenhuma resposta enviada para esta prova ainda.")
 
     except Exception as e:
         st.error(f"Erro ao carregar o layout: {e}")
