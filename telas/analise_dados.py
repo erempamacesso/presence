@@ -35,19 +35,31 @@ def mostrar_tela_analise(supabase, supabase_alunos):
         # ---------------------------------------------------------
         # ESPAÇO PARA GRÁFICOS (Largura Total)
         # ---------------------------------------------------------
+        # ---------------------------------------------------------
+        # ESPAÇO PARA GRÁFICOS (Agora com Lógica Real)
+        # ---------------------------------------------------------
         st.markdown("---")
         container_graficos = st.container()
         with container_graficos:
-            # Criando um fundo cinza claro para o placeholder igual à imagem
-            st.markdown(
-                """
-                <div style="background-color: #f0f2f6; padding: 50px; border-radius: 10px; text-align: center;">
-                    <h1 style="color: #5f6368;">COLOCAR GRAFICOS AQUI</h1>
-                    <p style="color: #5f6368;">(Sugestão: Gráfico de Barras de Média por Turma)</p>
-                </div>
-                """, 
-                unsafe_allow_html=True
-            )
+            if not df_final.empty:
+                st.subheader("📈 Desempenho Comparativo entre Turmas")
+                
+                # Criamos duas colunas para os gráficos ficarem lado a lado
+                g1, g2 = st.columns(2)
+                
+                with g1:
+                    # Gráfico 1: Média de Nota Final por Turma
+                    media_notas = df_final.groupby('turma')['nota_final'].mean().reset_index()
+                    st.write("**Média de Notas (0 a 10)**")
+                    st.bar_chart(data=media_notas, x='turma', y='nota_final', color="#2b83ba")
+                
+                with g2:
+                    # Gráfico 2: Média de Acertos por Turma
+                    media_acertos = df_final.groupby('turma')['total_acertos'].mean().reset_index()
+                    st.write("**Média de Acertos (Quantidade)**")
+                    st.area_chart(data=media_acertos, x='turma', y='total_acertos', color="#abdda4")
+            else:
+                st.info("Gráficos ficarão disponíveis assim que houver dados de alunos.")
         st.markdown("---")
 
         # ---------------------------------------------------------
