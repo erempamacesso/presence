@@ -152,54 +152,77 @@ def mostrar_tela_busca_ativa(supabase, supabase_alunos):
             data_ini = f"{ano_ref}-{mes_ref:02d}-01"
             data_fim = f"{ano_ref}-{mes_ref:02d}-{ultimo_dia}"
             
-            res_m = supabase.table("chamada").select("aluno_id, data_presenca")\
-                .filter("data_presenca", "gte", data_ini)\
-                .filter("data_presenca", "lte", data_fim).execute()
-
-            # Mapeamento rápido de presenças {(aluno_id, dia): True}
-            p_map = set()
-            if res_m.data:
-                for r in res_m.data:
-                    dia_r = r['data_presenca'].split("-")[2]
-                    p_map.add((str(r['aluno_id']), dia_r))
-
-            # Montagem da Matriz de Dados
-            alunos_t = df_al[df_al['turma'] == turma_mapa].sort_values('nome')
-            
-            if not alunos_t.empty:
-                matriz_frequencia = []
-                for _, al_row in alunos_t.iterrows():
-                    linha = {"Estudante": al_row['nome']}
-                    for d in dias_mes:
-                        if (str(al_row['id']), d) in p_map:
-                            linha[d] = "✅"
-                        else:
-                            # Só marca falta (X) se o dia já passou ou é hoje
-                            data_col = datetime(ano_ref, mes_ref, int(d)).date()
-                            if data_col <= hoje.date():
-                                linha[d] = "❌"
+            try:
+                res_m = supabase.table("chamada").select("aluno_id, data_presenca").execute()
+                
+                # Mapeamento rápido de presenças {(aluno_id, dia): True}
+                p_map = set()
+                if res_m.data:
+                    for r in res_m.data:
+                        try:
+                            # Trata diferentes formatos de data
+                            data_str = str(r['data_presenca'])
+                            if 'T' in data_str:  # Formato ISO com hora
+                                data_str = data_str.split('T')[0]
+                            
+                            # Extrai o dia
+                            dia_r = data_str.split("-")[2]
+                            ano_r = int(data_str.split("-")[0])
+                            mes_r = int(data_str.split("-")[1])
+                            
+                            # Só adiciona se for do mês de referência
+                            if ano_r == ano_ref and mes_r == mes_ref:
+                                p_map.add((int(r['aluno_id']), dia_r))
+                        except (ValueError, IndexError):
+                            # Ignora registros com formato inválido
+                            continue
+                
+                # Montagem da Matriz de Dados
+                alunos_t = df_al[df_al['turma'] == turma_mapa].sort_values('nome')
+                
+                if not alunos_t.empty:
+                    matriz_frequencia = []
+                    for _, al_row in alunos_t.iterrows():
+                        linha = {"Estudante": al_row['nome']}
+                        for d in dias_mes:
+                            if (int(al_row['id']), d) in p_map:
+                                linha[d] = "✅"
                             else:
-                                linha[d] = " " # Futuro fica vazio
-                    matriz_frequencia.append(linha)
+                                # Só marca falta (X) se o dia já passou ou é hoje
+                                try:
+                                    data_col = datetime(ano_ref, mes_ref, int(d)).date()
+                                    if data_col <= hoje.date():
+                                        linha[d] = "❌"
+                                    else:
+                                        linha[d] = " "  # Futuro fica vazio
+                                except ValueError:
+                                    linha[d] = " "
 
-                df_final_mapa = pd.DataFrame(matriz_frequencia)
+                        matriz_frequencia.append(linha)
 
-                # Configuração de Colunas para evitar barra lateral
-                # Cada coluna de dia fica bem pequena (35px)
-                conf_cols = {d: st.column_config.TextColumn(d, width=35) for d in dias_mes}
-                conf_cols["Estudante"] = st.column_config.TextColumn("Estudante", width=250, pinned=True)
+                    df_final_mapa = pd.DataFrame(matriz_frequencia)
 
-                st.dataframe(
-                    df_final_mapa,
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config=conf_cols,
-                    height=500
-                )
-                st.caption("✅ Presença | ❌ Falta ou Sem Registro | Coluna Fixa: Estudante")
-            else:
-                st.warning("Selecione uma turma para carregar o mapa.")
+                    # Configuração de Colunas para evitar barra lateral
+                    # Cada coluna de dia fica bem pequena (35px)
+                    conf_cols = {d: st.column_config.TextColumn(d, width=35) for d in dias_mes}
+                    conf_cols["Estudante"] = st.column_config.TextColumn("Estudante", width=250, pinned=True)
+
+                    st.dataframe(
+                        df_final_mapa,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config=conf_cols,
+                        height=500
+                    )
+                    st.caption("✅ Presença | ❌ Falta ou Sem Registro | Coluna Fixa: Estudante")
+                else:
+                    st.warning("Selecione uma turma para carregar o mapa.")
+                    
+            except Exception as e:
+                st.error(f"Erro ao carregar dados de frequência: {e}")
+                # Descomente a linha abaixo para debug
+                # traceback.print_exc()
 
     except Exception as e:
         st.error(f"Erro ao carregar Busca Ativa: {e}")
-        # traceback.print_exc() # Útil para debug no terminal
+        traceback.print_exc()  # Útil para debug no terminal
