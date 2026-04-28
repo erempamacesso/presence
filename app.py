@@ -139,7 +139,7 @@ if st.session_state.pagina == 'cenario':
     exibir_cenario(supabase)
 
 elif st.session_state.pagina == 'busca_ativa':
-    exibir_busca_ativa(supabase)
+    exibir_busca_ativa(supabase, supabase)  # ✅ CORRIGIDO: Agora passa 2 parâmetros (supabase, supabase_alunos)
     
 elif st.session_state.pagina == 'fotograma':
     exibir_fotograma(supabase)
@@ -175,4 +175,4 @@ elif st.session_state.pagina == 'importacao':
     exibir_importacao(supabase)
 
 elif st.session_state.pagina == 'gestao_feira':
-    exibir_gestao_feira(supabase)  
+    exibir_gestao_feira(supabase)
