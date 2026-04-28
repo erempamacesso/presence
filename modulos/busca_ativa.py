@@ -40,7 +40,7 @@ def carregar_fotos_github_busca_ativa():
 # ==========================================
 # 2. TELA PRINCIPAL
 # ==========================================
-def mostrar_tela_busca_ativa(supabase, supabase_alunos):
+def exibir_busca_ativa(supabase, supabase_alunos):
     st.title("🕵️ Busca Ativa e Gestão de Frequência")
 
     # Configuração de fuso horário
