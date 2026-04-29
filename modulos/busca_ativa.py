@@ -114,14 +114,14 @@ def exibir_busca_ativa(supabase, supabase_alunos):
                 res_ev = supabase.table("evasoes")\
                     .select("*")\
                     .eq("turma", turma_sel)\
-                    .eq("data_evasao", data_busca.strftime('%Y-%m-%d'))\
+                    .eq("criado_em", data_busca.strftime('%Y-%m-%d'))\
                     .order("data_registro", desc=True).execute()
                 
                 df_ev_raw = pd.DataFrame(res_ev.data) if res_ev.data else pd.DataFrame()
 
                 if not df_ev_raw.empty:
                     # Formatação brasileira para exibição
-                    df_ev_raw['Data'] = pd.to_datetime(df_ev_raw['data_evasao']).dt.strftime('%d/%m/%Y')
+                    df_ev_raw['Data'] = pd.to_datetime(df_ev_raw['criado_em']).dt.strftime('%d/%m/%Y')
                     df_ev_raw['Estudante'] = df_ev_raw['aluno_nome']
                     df_ev_raw['Aula/Período'] = df_ev_raw['aula_periodo']
                     df_ev_raw['Ação'] = "🗑️ Pendente"
