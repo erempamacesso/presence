@@ -6,7 +6,7 @@ import unicodedata
 import calendar
 
 # ==========================================
-# 1. FUNÇÃO DE PADRONIZAÇÃO
+# 1. FUNÇÃO DE PADRONIZAÇÃO (A BASE DO FUNCIONAMENTO)
 # ==========================================
 def normalizar(nome):
     if not nome: return ""
@@ -14,9 +14,6 @@ def normalizar(nome):
     nome_limpo = "".join([c for c in nfkd if not unicodedata.combining(c)]).upper()
     return " ".join(nome_limpo.split())
 
-# ==========================================
-# 2. TELA PRINCIPAL
-# ==========================================
 def exibir_busca_ativa(supabase, supabase_alunos):
     st.title("🕵️ Busca Ativa e Gestão de Frequência")
 
@@ -47,14 +44,11 @@ def exibir_busca_ativa(supabase, supabase_alunos):
             turmas_lista = sorted(df_al['turma'].dropna().unique().tolist())
             turma_sel = st.selectbox("Selecione a Turma:", turmas_lista)
 
-        # --- BUSCA DE DADOS (Puxamos TODAS as presenças 'P' históricas para o Risco de Abandono) ---
+        # --- BUSCA DE DADOS HISTÓRICOS (Para Presença Zero) ---
         res_p_historico = supabase.table("frequencia").select("aluno_nome").eq("status", "P").execute()
-        nomes_com_presenca_historica = set()
-        if res_p_historico.data:
-            for r in res_p_historico.data:
-                nomes_com_presenca_historica.add(normalizar(r['aluno_nome']))
+        nomes_com_presenca_historica = {normalizar(r['aluno_nome']) for r in res_p_historico.data} if res_p_historico.data else set()
 
-        # --- BUSCA DE DADOS MENSAL (Para o Diário e Ranking) ---
+        # --- BUSCA DE DADOS MENSAL (Para Diário e Ranking) ---
         ultimo_dia = calendar.monthrange(ano_sel, mes_num)[1]
         data_ini = f"{ano_sel}-{mes_num:02d}-01"
         data_fim = f"{ano_sel}-{mes_num:02d}-{ultimo_dia}"
@@ -75,8 +69,15 @@ def exibir_busca_ativa(supabase, supabase_alunos):
                 dia = str(row['data_chamada']).split("-")[2]
                 presencas_mes_set.add((row['nome_limpo'], dia))
 
-        # --- ABAS ---
-        abas = st.tabs(["📊 Ranking de Faltas", "❌ Presença Zero", "🚨 Ocorrências", "📅 Diário de Frequência"])
+        # --- DEFINIÇÃO DAS ABAS ---
+        abas = st.tabs([
+            "📊 Ranking de Faltas", 
+            "❌ Presença Zero", 
+            "🚩 Evasão Interna (Gazeando)", 
+            "🚨 Ocorrências", 
+            "📅 Diário de Frequência"
+        ])
+        
         df_t = df_al[df_al['turma'] == turma_sel].copy()
 
         # --- ABA 1: RANKING ---
@@ -84,42 +85,63 @@ def exibir_busca_ativa(supabase, supabase_alunos):
             st.subheader(f"Assiduidade Mensal: {turma_sel}")
             contagem = df_p_mes.groupby('nome_limpo').size().reset_index(name='presencas') if not df_p_mes.empty else pd.DataFrame(columns=['nome_limpo', 'presencas'])
             df_rank = pd.merge(df_t, contagem, on='nome_limpo', how='left').fillna(0)
-            dias_com_aula = df_p_mes['data_chamada'].nunique() if not df_p_mes.empty else 0
-            df_rank['faltas'] = dias_com_aula - df_rank['presencas']
+            dias_letivos = df_p_mes['data_chamada'].nunique() if not df_p_mes.empty else 0
+            df_rank['faltas'] = dias_letivos - df_rank['presencas']
             st.dataframe(df_rank[['nome', 'presencas', 'faltas']].sort_values('faltas', ascending=False), use_container_width=True, hide_index=True)
 
-        # --- ABA 2: PRESENÇA ZERO (O QUE VOCÊ PEDIU) ---
+        # --- ABA 2: PRESENÇA ZERO (HISTÓRICO) ---
         with abas[1]:
             st.subheader("⚠️ Alunos que NUNCA registraram presença")
-            # Filtra alunos da turma que NÃO estão no set histórico de presenças 'P'
             df_presenca_zero = df_t[~df_t['nome_limpo'].isin(nomes_com_presenca_historica)]
-            
             if not df_presenca_zero.empty:
-                st.error(f"Atenção: Detectamos {len(df_presenca_zero)} alunos na turma {turma_sel} sem histórico de presença.")
+                st.error(f"Detectamos {len(df_presenca_zero)} alunos na turma {turma_sel} sem histórico de presença 'P'.")
                 st.dataframe(df_presenca_zero[['nome', 'turma']], use_container_width=True, hide_index=True)
             else:
-                st.success(f"Parabéns! Todos os alunos da turma {turma_sel} já registraram presença ao menos uma vez.")
+                st.success("Todos os alunos desta turma já vieram pelo menos uma vez!")
 
-        # --- ABA 3: OCORRÊNCIAS ---
+        # --- ABA 3: EVASÃO INTERNA (GAZEANDO) ---
         with abas[2]:
-            st.subheader("🚨 Registrar Ação de Busca Ativa")
-            nome_oc = st.selectbox("Selecione o Estudante:", df_t['nome'].tolist(), key="sb_oc")
+            st.subheader("🚩 Registro de Evasão em Tempo Real")
+            with st.form("form_evasao"):
+                aluno_ev = st.selectbox("Estudante Localizado fora de sala:", df_t['nome'].tolist())
+                disciplina = st.text_input("Aula que está gazeando (ex: Biologia):")
+                intervencao = st.multiselect("Intervenção Realizada:", [
+                    "Retorno imediato à sala", "Escuta Pedagógica", 
+                    "Advertência Oral", "Convocação de Pais", "Termo de Ocorrência"
+                ])
+                obs = st.text_area("Observações da abordagem:")
+                responsavel = st.text_input("Registrado por:")
+                
+                if st.form_submit_button("✅ Gravar Evasão"):
+                    if responsavel and disciplina:
+                        id_al = df_t[df_t['nome'] == aluno_ev]['id'].values[0]
+                        supabase.table("evasoes").insert({
+                            "aluno_id": str(id_al), "aluno_nome": aluno_ev, "turma": turma_sel,
+                            "disciplina": disciplina, "intervencao": ", ".join(intervencao),
+                            "detalhes": obs, "quem_registrou": responsavel, "data_evasao": hoje.strftime('%Y-%m-%d')
+                        }).execute()
+                        st.success("Evasão registrada!")
+
+        # --- ABA 4: OCORRÊNCIAS ---
+        with abas[3]:
+            st.subheader("🚨 Ocorrências Disciplinares")
+            nome_oc = st.selectbox("Estudante:", df_t['nome'].tolist(), key="sb_oc")
             with st.form("form_oc"):
-                tipo = st.selectbox("Ação:", ["Ligação", "Visita", "Advertência", "Conselho Tutelar"])
+                tipo = st.selectbox("Tipo:", ["Ligação", "Visita", "Conselho Tutelar"])
                 relato = st.text_area("Relato:")
-                resp = st.text_input("Responsável:")
-                if st.form_submit_button("✅ Salvar"):
-                    if relato and resp:
+                resp_oc = st.text_input("Responsável:")
+                if st.form_submit_button("💾 Salvar"):
+                    if relato:
                         id_al = df_t[df_t['nome'] == nome_oc]['id'].values[0]
                         supabase.table("ocorrencias_disciplinares").insert({
                             "aluno_id": str(id_al), "aluno_nome": nome_oc, "turma": turma_sel,
-                            "tipo_ocorrencia": tipo, "motivo": relato, "quem_registrou": resp,
+                            "tipo_ocorrencia": tipo, "motivo": relato, "quem_registrou": resp_oc,
                             "data_registro": hoje.strftime('%Y-%m-%d')
                         }).execute()
-                        st.success("Ocorrência registrada!")
+                        st.success("Ocorrência salva!")
 
-        # --- ABA 4: DIÁRIO ---
-        with abas[3]:
+        # --- ABA 5: DIÁRIO ---
+        with abas[4]:
             st.subheader(f"📅 Mapa Mensal: {turma_sel}")
             dias_lista = [f"{d:02d}" for d in range(1, ultimo_dia + 1)]
             matriz = []
@@ -134,6 +156,7 @@ def exibir_busca_ativa(supabase, supabase_alunos):
                         elif dt_dia.weekday() >= 5: linha[d] = "-"
                         else: linha[d] = "❌"
                 matriz.append(linha)
+            
             df_mapa = pd.DataFrame(matriz)
             config_cols = {d: st.column_config.TextColumn(d, width=35) for d in dias_lista}
             config_cols["Estudante"] = st.column_config.TextColumn("Estudante", width=220, pinned=True)
