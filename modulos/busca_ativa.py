@@ -99,67 +99,71 @@ def exibir_busca_ativa(supabase, supabase_alunos):
             else:
                 st.success("Todos os alunos desta turma já vieram pelo menos uma vez!")
 
-        # --- ABA: EVASÃO INTERNA (VISUALIZAÇÃO E EXCLUSÃO) ---
+        # --- ABA 3: EVASÃO INTERNA (VISUALIZAÇÃO E EXCLUSÃO) ---
        
         with abas[2]:
-            st.subheader("🚩 Registros de Evasão Interna (Gazeando)")
+            st.subheader("🚩 Gestão de Evasões Internas (Gazeando)")
             
+            # 1. SELETOR DE DATA PARA FILTRO (PADRÃO PT-BR)
+            col_filtro, col_vazia = st.columns([2, 2])
+            with col_filtro:
+                data_busca = st.date_input("Filtrar registros por dia:", hoje, format="DD/MM/YYYY")
+
             try:
-                # Busca registros da tabela 'evasoes' filtrando pela turma selecionada
-                res_ev = supabase.table("evasoes").select("*").eq("turma", turma_sel).order("data_registro", desc=True).execute()
+                # Busca registros da tabela 'evasoes' para a data e turma selecionadas
+                res_ev = supabase.table("evasoes")\
+                    .select("*")\
+                    .eq("turma", turma_sel)\
+                    .eq("data_evasao", data_busca.strftime('%Y-%m-%d'))\
+                    .order("data_registro", desc=True).execute()
+                
                 df_ev_raw = pd.DataFrame(res_ev.data) if res_ev.data else pd.DataFrame()
 
                 if not df_ev_raw.empty:
-                    # Formatação da data para o padrão brasileiro
-                    df_ev_raw['Data'] = pd.to_datetime(df_ev_raw['data_registro']).dt.strftime('%d/%m/%Y')
-                    
-                    # Preparamos as colunas para exibição amigável
+                    # Formatação brasileira para exibição
+                    df_ev_raw['Data'] = pd.to_datetime(df_ev_raw['data_evasao']).dt.strftime('%d/%m/%Y')
                     df_ev_raw['Estudante'] = df_ev_raw['aluno_nome']
                     df_ev_raw['Aula/Período'] = df_ev_raw['aula_periodo']
-                    
-                    # Criamos uma coluna visual com o link de exclusão
-                    df_ev_raw['Ação'] = "🗑️ Excluir"
+                    df_ev_raw['Ação'] = "🗑️ Pendente"
 
-                    st.write(f"Lista de evasões para a turma {turma_sel}:")
+                    st.info(f"Exibindo {len(df_ev_raw)} registro(s) para o dia {data_busca.strftime('%d/%m/%Y')}:")
 
-                    # Configuração para exibir a tabela sem rolagens internas e com link clicável
-                    # O 'height' ajustado dinamicamente garante que todos os alunos apareçam de uma vez
+                    # Tabela com altura dinâmica para evitar rolagens
                     st.data_editor(
                         df_ev_raw[['Data', 'Estudante', 'Aula/Período', 'Ação']],
                         use_container_width=True,
                         hide_index=True,
-                        key="editor_evasoes",
-                        disabled=['Data', 'Estudante', 'Aula/Período'], # Protege os dados
-                        height=(len(df_ev_raw) + 1) * 36, # Ajuste automático de altura
-                        column_config={
-                            "Ação": st.column_config.LinkColumn(
-                                "Ação",
-                                help="Clique para remover este registro",
-                                validate=None,
-                            )
-                        }
+                        key="editor_ev_dia",
+                        disabled=['Data', 'Estudante', 'Aula/Período', 'Ação'],
+                        height=(len(df_ev_raw) + 1) * 38 
                     )
 
-                    # --- Lógica de Exclusão Simplificada ---
+                    # 2. CENTRAL DE EXCLUSÃO (Focada nos registros do dia selecionado)
                     st.divider()
-                    with st.expander("🛠️ Central de Exclusão Rápida"):
-                        # Usamos um botão de confirmação com base na seleção para evitar acidentes
-                        selecao = st.selectbox(
-                            "Selecione o registro acima que deseja remover definitivamente:",
-                            options=df_ev_raw['id'].tolist(),
-                            format_func=lambda x: f"{df_ev_raw[df_ev_raw['id'] == x]['Data'].values[0]} - {df_ev_raw[df_ev_raw['id'] == x]['aluno_nome'].values[0]}"
+                    with st.expander(f"🗑️ Excluir registro de {data_busca.strftime('%d/%m/%Y')}"):
+                        opcoes_del = {
+                            f"{row['aluno_nome']} ({row['aula_periodo']})": row['id'] 
+                            for _, row in df_ev_raw.iterrows()
+                        }
+                        
+                        alvo_del = st.selectbox(
+                            "Selecione o registro para apagar:",
+                            options=list(opcoes_del.keys()),
+                            index=None,
+                            placeholder="Escolha o estudante..."
                         )
                         
-                        if st.button("🗑️ Confirmar Exclusão Selecionada", type="primary"):
-                            supabase.table("evasoes").delete().eq("id", selecao).execute()
-                            st.success("Registro removido com sucesso!")
-                            st.rerun()
-
+                        if alvo_del:
+                            if st.button("Confirmar Exclusão Permanente", type="primary"):
+                                id_para_deletar = opcoes_del[alvo_del]
+                                supabase.table("evasoes").delete().eq("id", id_para_deletar).execute()
+                                st.success("Registro removido com sucesso!")
+                                st.rerun()
                 else:
-                    st.info(f"Nenhum registro de evasão encontrado para a turma {turma_sel}.")
+                    st.warning(f"Nenhum registro de evasão encontrado em {data_busca.strftime('%d/%m/%Y')}.")
 
             except Exception as e:
-                st.error(f"Erro ao carregar evasões: {e}")
+                st.error(f"Erro ao acessar base de evasões: {e}")
 
         # --- ABA 4: OCORRÊNCIAS ---
         with abas[3]:
