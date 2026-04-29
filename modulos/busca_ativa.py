@@ -101,34 +101,38 @@ def exibir_busca_ativa(supabase, supabase_alunos):
 
         # --- ABA 3: EVASÃO INTERNA (VISUALIZAÇÃO E EXCLUSÃO) ---
        
+        # --- ABA: EVASÃO INTERNA (VISUALIZAÇÃO FILTRADA E EXCLUSÃO) ---
         with abas[2]:
             st.subheader("🚩 Gestão de Evasões Internas (Gazeando)")
             
             # 1. SELETOR DE DATA PARA FILTRO (PADRÃO PT-BR)
-            col_filtro, col_vazia = st.columns([2, 2])
+            col_filtro, _ = st.columns([2, 2])
             with col_filtro:
+                # O calendário ajudará a filtrar a coluna 'registro de dados'
                 data_busca = st.date_input("Filtrar registros por dia:", hoje, format="DD/MM/YYYY")
 
             try:
-                # Busca registros da tabela 'evasoes' para a data e turma selecionadas
+                # BUSCA CORRIGIDA: Usando o nome exato da coluna 'registro de dados'
+                # conforme visto na estrutura da sua tabela no Supabase
                 res_ev = supabase.table("evasoes")\
                     .select("*")\
                     .eq("turma", turma_sel)\
-                    .eq("criado_em", data_busca.strftime('%Y-%m-%d'))\
-                    .order("data_registro", desc=True).execute()
+                    .eq("registro de dados", data_busca.strftime('%Y-%m-%d'))\
+                    .execute()
                 
                 df_ev_raw = pd.DataFrame(res_ev.data) if res_ev.data else pd.DataFrame()
 
                 if not df_ev_raw.empty:
-                    # Formatação brasileira para exibição
-                    df_ev_raw['Data'] = pd.to_datetime(df_ev_raw['criado_em']).dt.strftime('%d/%m/%Y')
+                    # Formatação brasileira para exibição das colunas existentes
+                    # Usamos 'registro de dados' para a data e 'período_de_aula' para o horário/aula
+                    df_ev_raw['Data'] = pd.to_datetime(df_ev_raw['registro de dados']).dt.strftime('%d/%m/%Y')
                     df_ev_raw['Estudante'] = df_ev_raw['aluno_nome']
-                    df_ev_raw['Aula/Período'] = df_ev_raw['aula_periodo']
+                    df_ev_raw['Aula/Período'] = df_ev_raw['período_de_aula'] # Nome da coluna no seu print
                     df_ev_raw['Ação'] = "🗑️ Pendente"
 
                     st.info(f"Exibindo {len(df_ev_raw)} registro(s) para o dia {data_busca.strftime('%d/%m/%Y')}:")
 
-                    # Tabela com altura dinâmica para evitar rolagens
+                    # Tabela com altura dinâmica para mostrar todos os alunos de uma vez
                     st.data_editor(
                         df_ev_raw[['Data', 'Estudante', 'Aula/Período', 'Ação']],
                         use_container_width=True,
@@ -138,11 +142,12 @@ def exibir_busca_ativa(supabase, supabase_alunos):
                         height=(len(df_ev_raw) + 1) * 38 
                     )
 
-                    # 2. CENTRAL DE EXCLUSÃO (Focada nos registros do dia selecionado)
+                    # 2. CENTRAL DE EXCLUSÃO
                     st.divider()
                     with st.expander(f"🗑️ Excluir registro de {data_busca.strftime('%d/%m/%Y')}"):
+                        # Criamos as opções usando o UUID (coluna 'eu ia') para deletar com precisão
                         opcoes_del = {
-                            f"{row['aluno_nome']} ({row['aula_periodo']})": row['id'] 
+                            f"{row['aluno_nome']} ({row['período_de_aula']})": row['eu ia'] 
                             for _, row in df_ev_raw.iterrows()
                         }
                         
@@ -156,7 +161,8 @@ def exibir_busca_ativa(supabase, supabase_alunos):
                         if alvo_del:
                             if st.button("Confirmar Exclusão Permanente", type="primary"):
                                 id_para_deletar = opcoes_del[alvo_del]
-                                supabase.table("evasoes").delete().eq("id", id_para_deletar).execute()
+                                # Deleta usando a coluna de ID correta: 'eu ia'
+                                supabase.table("evasoes").delete().eq("eu ia", id_para_deletar).execute()
                                 st.success("Registro removido com sucesso!")
                                 st.rerun()
                 else:
