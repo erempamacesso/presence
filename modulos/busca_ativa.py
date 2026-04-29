@@ -99,28 +99,54 @@ def exibir_busca_ativa(supabase, supabase_alunos):
             else:
                 st.success("Todos os alunos desta turma já vieram pelo menos uma vez!")
 
-        # --- ABA 3: EVASÃO INTERNA (GAZEANDO) ---
+        # --- ABA: EVASÃO INTERNA (VISUALIZAÇÃO E EXCLUSÃO) ---
         with abas[2]:
-            st.subheader("🚩 Registro de Evasão em Tempo Real")
-            with st.form("form_evasao"):
-                aluno_ev = st.selectbox("Estudante Localizado fora de sala:", df_t['nome'].tolist())
-                disciplina = st.text_input("Aula que está gazeando (ex: Biologia):")
-                intervencao = st.multiselect("Intervenção Realizada:", [
-                    "Retorno imediato à sala", "Escuta Pedagógica", 
-                    "Advertência Oral", "Convocação de Pais", "Termo de Ocorrência"
-                ])
-                obs = st.text_area("Observações da abordagem:")
-                responsavel = st.text_input("Registrado por:")
-                
-                if st.form_submit_button("✅ Gravar Evasão"):
-                    if responsavel and disciplina:
-                        id_al = df_t[df_t['nome'] == aluno_ev]['id'].values[0]
-                        supabase.table("evasoes").insert({
-                            "aluno_id": str(id_al), "aluno_nome": aluno_ev, "turma": turma_sel,
-                            "disciplina": disciplina, "intervencao": ", ".join(intervencao),
-                            "detalhes": obs, "quem_registrou": responsavel, "data_evasao": hoje.strftime('%Y-%m-%d')
-                        }).execute()
-                        st.success("Evasão registrada!")
+            st.subheader("🚩 Registros de Evasão Interna (Gazeando)")
+            
+            # 1. BUSCA DADOS DA TABELA 'evasoes'
+            try:
+                res_ev = supabase.table("evasoes").select("*").eq("turma", turma_sel).order("data_registro", desc=True).execute()
+                df_ev_raw = pd.DataFrame(res_ev.data) if res_ev.data else pd.DataFrame()
+
+                if not df_ev_raw.empty:
+                    # Formatação de data em Português para exibição
+                    df_ev_raw['data_formatada'] = pd.to_datetime(df_ev_raw['data_registro']).dt.strftime('%d/%m/%Y')
+                    
+                    # Seleção de colunas para o usuário ver
+                    df_display = df_ev_raw[['data_formatada', 'aluno_nome', 'aula_periodo']].copy()
+                    df_display.columns = ['Data', 'Estudante', 'Aula/Período']
+                    
+                    st.write(f"Lista de evasões registradas para a turma {turma_sel}:")
+                    st.dataframe(df_display, use_container_width=True, hide_index=True)
+
+                    # 2. FUNCIONALIDADE DE EXCLUSÃO
+                    st.divider()
+                    st.markdown("### 🗑️ Excluir Registro por Engano")
+                    
+                    # Criamos uma lista de opções amigável para o selectbox
+                    opcoes_excluir = {
+                        f"{row['data_formatada']} - {row['aluno_nome']} ({row['aula_periodo']})": row['id'] 
+                        for _, row in df_ev_raw.iterrows()
+                    }
+                    
+                    selecionado_para_excluir = st.selectbox(
+                        "Selecione o registro para remover:", 
+                        options=list(opcoes_excluir.keys()),
+                        index=None,
+                        placeholder="Escolha um registro..."
+                    )
+
+                    if selecionado_para_excluir:
+                        if st.button("Confirmar Exclusão Permanente", type="primary"):
+                            id_alvo = opcoes_excluir[selecionado_para_excluir]
+                            supabase.table("evasoes").delete().eq("id", id_alvo).execute()
+                            st.success("Registro excluído com sucesso! Atualizando...")
+                            st.rerun()
+                else:
+                    st.info(f"Nenhuma evasão registrada para a turma {turma_sel}.")
+
+            except Exception as e:
+                st.error(f"Erro ao carregar ou excluir evasões: {e}")
 
         # --- ABA 4: OCORRÊNCIAS ---
         with abas[3]:
