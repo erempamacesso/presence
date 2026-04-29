@@ -99,8 +99,8 @@ def exibir_busca_ativa(supabase, supabase_alunos):
             else:
                 st.success("Todos os alunos desta turma já vieram pelo menos uma vez!")
 
-        # --- ABA: EVASÃO INTERNA (VISUALIZAÇÃO E EXCLUSÃO) ---
-       
+     
+       # --- ABA: EVASÃO INTERNA (VISUALIZAÇÃO E EXCLUSÃO) ---
         with abas[2]:
             st.subheader("🚩 Registros de Evasão Interna (Gazeando)")
             
@@ -113,45 +113,36 @@ def exibir_busca_ativa(supabase, supabase_alunos):
                     # Formatação da data para o padrão brasileiro
                     df_ev_raw['Data'] = pd.to_datetime(df_ev_raw['data_registro']).dt.strftime('%d/%m/%Y')
                     
-                    # Preparamos as colunas para exibição amigável
-                    df_ev_raw['Estudante'] = df_ev_raw['aluno_nome']
-                    df_ev_raw['Aula/Período'] = df_ev_raw['aula_periodo']
+                    # Preparamos o DataFrame para exibição
+                    df_display = df_ev_raw[['Data', 'aluno_nome', 'aula_periodo']].copy()
+                    df_display.columns = ['Data', 'Estudante', 'Aula/Período']
                     
-                    # Criamos uma coluna visual com o link de exclusão
-                    df_ev_raw['Ação'] = "🗑️ Excluir"
+                    st.warning("⚠️ Para apagar um registro: Selecione a linha e aperte 'Delete' no teclado ou use a lixeira que aparecerá ao lado.")
 
-                    st.write(f"Lista de evasões para a turma {turma_sel}:")
-
-                    # Configuração para exibir a tabela sem rolagens internas e com link clicável
-                    # O 'height' ajustado dinamicamente garante que todos os alunos apareçam de uma vez
-                    st.data_editor(
-                        df_ev_raw[['Data', 'Estudante', 'Aula/Período', 'Ação']],
+                    # O editor de dados agora permite deletar linhas diretamente
+                    # O 'num_rows="dynamic"' habilita a lixeira nativa do Streamlit
+                    event = st.data_editor(
+                        df_display,
                         use_container_width=True,
                         hide_index=True,
                         key="editor_evasoes",
-                        disabled=['Data', 'Estudante', 'Aula/Período'], # Protege os dados
-                        height=(len(df_ev_raw) + 1) * 36, # Ajuste automático de altura
-                        column_config={
-                            "Ação": st.column_config.LinkColumn(
-                                "Ação",
-                                help="Clique para remover este registro",
-                                validate=None,
-                            )
-                        }
+                        disabled=['Data', 'Estudante', 'Aula/Período'], 
+                        height=(len(df_display) + 1) * 36,
+                        num_rows="dynamic" # ISSO ATIVA A LIXEIRA
                     )
 
-                    # --- Lógica de Exclusão Simplificada ---
-                    st.divider()
-                    with st.expander("🛠️ Central de Exclusão Rápida"):
-                        # Usamos um botão de confirmação com base na seleção para evitar acidentes
-                        selecao = st.selectbox(
-                            "Selecione o registro acima que deseja remover definitivamente:",
-                            options=df_ev_raw['id'].tolist(),
-                            format_func=lambda x: f"{df_ev_raw[df_ev_raw['id'] == x]['Data'].values[0]} - {df_ev_raw[df_ev_raw['id'] == x]['aluno_nome'].values[0]}"
-                        )
+                    # Lógica para detectar se o usuário apagou algo na tabela
+                    if len(event) < len(df_display):
+                        # Descobrimos qual item sumiu comparando os índices
+                        indices_atuais = event.index.tolist()
+                        indices_originais = df_display.index.tolist()
+                        index_removido = list(set(indices_originais) - set(indices_atuais))[0]
                         
-                        if st.button("🗑️ Confirmar Exclusão Selecionada", type="primary"):
-                            supabase.table("evasoes").delete().eq("id", selecao).execute()
+                        # Pegamos o ID real do banco para deletar
+                        id_para_deletar = df_ev_raw.iloc[index_removido]['id']
+                        
+                        with st.spinner("Excluindo registro..."):
+                            supabase.table("evasoes").delete().eq("id", id_para_deletar).execute()
                             st.success("Registro removido com sucesso!")
                             st.rerun()
 
@@ -159,7 +150,7 @@ def exibir_busca_ativa(supabase, supabase_alunos):
                     st.info(f"Nenhum registro de evasão encontrado para a turma {turma_sel}.")
 
             except Exception as e:
-                st.error(f"Erro ao carregar evasões: {e}")
+                st.error(f"Erro ao carregar evasões: {e}")        
 
         # --- ABA 4: OCORRÊNCIAS ---
         with abas[3]:
