@@ -100,53 +100,66 @@ def exibir_busca_ativa(supabase, supabase_alunos):
                 st.success("Todos os alunos desta turma já vieram pelo menos uma vez!")
 
         # --- ABA: EVASÃO INTERNA (VISUALIZAÇÃO E EXCLUSÃO) ---
+       
         with abas[2]:
             st.subheader("🚩 Registros de Evasão Interna (Gazeando)")
             
-            # 1. BUSCA DADOS DA TABELA 'evasoes'
             try:
+                # Busca registros da tabela 'evasoes' filtrando pela turma selecionada
                 res_ev = supabase.table("evasoes").select("*").eq("turma", turma_sel).order("data_registro", desc=True).execute()
                 df_ev_raw = pd.DataFrame(res_ev.data) if res_ev.data else pd.DataFrame()
 
                 if not df_ev_raw.empty:
-                    # Formatação de data em Português para exibição
-                    df_ev_raw['data_formatada'] = pd.to_datetime(df_ev_raw['data_registro']).dt.strftime('%d/%m/%Y')
+                    # Formatação da data para o padrão brasileiro
+                    df_ev_raw['Data'] = pd.to_datetime(df_ev_raw['data_registro']).dt.strftime('%d/%m/%Y')
                     
-                    # Seleção de colunas para o usuário ver
-                    df_display = df_ev_raw[['data_formatada', 'aluno_nome', 'aula_periodo']].copy()
-                    df_display.columns = ['Data', 'Estudante', 'Aula/Período']
+                    # Preparamos as colunas para exibição amigável
+                    df_ev_raw['Estudante'] = df_ev_raw['aluno_nome']
+                    df_ev_raw['Aula/Período'] = df_ev_raw['aula_periodo']
                     
-                    st.write(f"Lista de evasões registradas para a turma {turma_sel}:")
-                    st.dataframe(df_display, use_container_width=True, hide_index=True)
+                    # Criamos uma coluna visual com o link de exclusão
+                    df_ev_raw['Ação'] = "🗑️ Excluir"
 
-                    # 2. FUNCIONALIDADE DE EXCLUSÃO
-                    st.divider()
-                    st.markdown("### 🗑️ Excluir Registro por Engano")
-                    
-                    # Criamos uma lista de opções amigável para o selectbox
-                    opcoes_excluir = {
-                        f"{row['data_formatada']} - {row['aluno_nome']} ({row['aula_periodo']})": row['id'] 
-                        for _, row in df_ev_raw.iterrows()
-                    }
-                    
-                    selecionado_para_excluir = st.selectbox(
-                        "Selecione o registro para remover:", 
-                        options=list(opcoes_excluir.keys()),
-                        index=None,
-                        placeholder="Escolha um registro..."
+                    st.write(f"Lista de evasões para a turma {turma_sel}:")
+
+                    # Configuração para exibir a tabela sem rolagens internas e com link clicável
+                    # O 'height' ajustado dinamicamente garante que todos os alunos apareçam de uma vez
+                    st.data_editor(
+                        df_ev_raw[['Data', 'Estudante', 'Aula/Período', 'Ação']],
+                        use_container_width=True,
+                        hide_index=True,
+                        key="editor_evasoes",
+                        disabled=['Data', 'Estudante', 'Aula/Período'], # Protege os dados
+                        height=(len(df_ev_raw) + 1) * 36, # Ajuste automático de altura
+                        column_config={
+                            "Ação": st.column_config.LinkColumn(
+                                "Ação",
+                                help="Clique para remover este registro",
+                                validate=None,
+                            )
+                        }
                     )
 
-                    if selecionado_para_excluir:
-                        if st.button("Confirmar Exclusão Permanente", type="primary"):
-                            id_alvo = opcoes_excluir[selecionado_para_excluir]
-                            supabase.table("evasoes").delete().eq("id", id_alvo).execute()
-                            st.success("Registro excluído com sucesso! Atualizando...")
+                    # --- Lógica de Exclusão Simplificada ---
+                    st.divider()
+                    with st.expander("🛠️ Central de Exclusão Rápida"):
+                        # Usamos um botão de confirmação com base na seleção para evitar acidentes
+                        selecao = st.selectbox(
+                            "Selecione o registro acima que deseja remover definitivamente:",
+                            options=df_ev_raw['id'].tolist(),
+                            format_func=lambda x: f"{df_ev_raw[df_ev_raw['id'] == x]['Data'].values[0]} - {df_ev_raw[df_ev_raw['id'] == x]['aluno_nome'].values[0]}"
+                        )
+                        
+                        if st.button("🗑️ Confirmar Exclusão Selecionada", type="primary"):
+                            supabase.table("evasoes").delete().eq("id", selecao).execute()
+                            st.success("Registro removido com sucesso!")
                             st.rerun()
+
                 else:
-                    st.info(f"Nenhuma evasão registrada para a turma {turma_sel}.")
+                    st.info(f"Nenhum registro de evasão encontrado para a turma {turma_sel}.")
 
             except Exception as e:
-                st.error(f"Erro ao carregar ou excluir evasões: {e}")
+                st.error(f"Erro ao carregar evasões: {e}")
 
         # --- ABA 4: OCORRÊNCIAS ---
         with abas[3]:
