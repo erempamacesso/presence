@@ -32,8 +32,12 @@ def mostrar_tela_analise(supabase, supabase_alunos):
         id_prova = prova_obj['id']
 
         # 2. BUSCA DE RESULTADOS (Cálculo antes de mostrar qualquer gráfico)
-        res_res = supabase.table("resultados_provas").select("*").eq("prova_id", id_prova).execute()
         
+        # ↓↓ INÍCIO DA ALTERAÇÃO 1 ↓↓
+        # Trocamos o "*" por "aluno_id, questao_id, acertou" para garantir que teremos a ID da questão
+        res_res = supabase.table("resultados_provas").select("aluno_id, questao_id, acertou").eq("prova_id", id_prova).execute()
+        # ↑↑ FIM DA ALTERAÇÃO 1 ↑↑
+
         if not res_res.data or not res_alunos_base.data:
             st.info("ℹ️ Ainda não existem envios para esta prova.")
             return
@@ -62,7 +66,7 @@ def mostrar_tela_analise(supabase, supabase_alunos):
             return
 
         # ---------------------------------------------------------
-        # 3. ÁREA DE GRÁFICOS (Agora funciona sem erro!)
+        # 3. ÁREA DE GRÁFICOS
         # ---------------------------------------------------------
         st.markdown("---")
         st.subheader("📈 Desempenho e Progresso por Turma")
@@ -84,6 +88,60 @@ def mostrar_tela_analise(supabase, supabase_alunos):
             st.caption("Quantidade de alunos que concluíram a prova.")
 
         st.markdown("---")
+
+        # ↓↓ INÍCIO DO NOVO COMANDO: RAIO-X PEDAGÓGICO ↓↓
+        st.subheader("🧠 Raio-X Pedagógico (Onde a turma precisa de ajuda?)")
+        
+        try:
+            # Pega os IDs de todas as questões que apareceram nesses resultados
+            if 'questao_id' in df_res.columns:
+                ids_questoes_feitas = df_res['questao_id'].dropna().unique().tolist()
+                
+                if ids_questoes_feitas:
+                    # Busca na tabela de questões qual é o 'assunto' de cada questão
+                    res_assuntos = supabase.table("questoes").select("id, assunto").in_("id", ids_questoes_feitas).execute()
+                    
+                    if res_assuntos.data:
+                        df_questoes = pd.DataFrame(res_assuntos.data)
+                        df_questoes = df_questoes.rename(columns={"id": "questao_id"})
+                        
+                        # Preenche assuntos vazios com 'Sem classificação'
+                        df_questoes['assunto'] = df_questoes['assunto'].fillna("Assunto não categorizado")
+                        
+                        # Cruza quem acertou/errou com o assunto da questão
+                        df_cruzado = pd.merge(df_res, df_questoes, on="questao_id", how="left")
+                        
+                        # Calcula a PORCENTAGEM de acerto por assunto
+                        df_desempenho_assunto = df_cruzado.groupby("assunto")['pontos'].mean().reset_index()
+                        df_desempenho_assunto['taxa_acerto'] = df_desempenho_assunto['pontos'] * 100
+                        
+                        # Separa os assuntos críticos (menos de 50% de acerto) dos dominados
+                        df_desempenho_assunto = df_desempenho_assunto.sort_values(by="taxa_acerto", ascending=True)
+                        
+                        st.write("Porcentagem de acertos da turma em cada competência avaliada:")
+                        
+                        # Exibe o gráfico de barras
+                        st.bar_chart(
+                            data=df_desempenho_assunto, 
+                            x="taxa_acerto", 
+                            y="assunto", 
+                            color="#f46d43"
+                        )
+                        
+                        # Alertar o professor sobre os tópicos mais fracos
+                        assuntos_criticos = df_desempenho_assunto[df_desempenho_assunto['taxa_acerto'] < 50]['assunto'].tolist()
+                        if assuntos_criticos:
+                            st.error(f"🚨 **Alerta de Revisão!** A turma teve menos de 50% de aproveitamento nos seguintes assuntos: **{', '.join(assuntos_criticos)}**")
+                        else:
+                            st.success("✨ Excelente! A turma teve mais de 50% de aproveitamento em todos os assuntos avaliados.")
+            else:
+                st.info("A coluna 'questao_id' não foi encontrada para gerar o gráfico.")
+                        
+        except Exception as e:
+            st.info(f"Para ver o gráfico, certifique-se de que a tabela 'questoes' possui a coluna 'assunto'. (Detalhe: {e})")
+            
+        st.markdown("---")
+        # ↑↑ FIM DO NOVO COMANDO: RAIO-X PEDAGÓGICO ↑↑
 
         # ---------------------------------------------------------
         # 4. DIVISÃO EM COLUNAS (Tabela vs Monitoramento Lateral)
