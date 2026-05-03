@@ -56,7 +56,8 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                             df_turma = df_turma.rename(columns={"id": "aluno_id"})
                             ano_ref = "2º ano" if "2º" in turma_sel else ("3º ano" if "3º" in turma_sel else "")
                             
-                            def buscar_nota_simulado(termo_simulado):
+                            # Adicionamos um parâmetro 'limite_nota' com padrão 10.0
+                            def buscar_nota_simulado(termo_simulado, limite_nota=10.0):
                                 mapa_notas = {}
                                 if ano_ref:
                                     res_p = supabase.table("modelos_prova").select("id, valor_questao")\
@@ -65,31 +66,42 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                                     if res_p.data:
                                         p_id = res_p.data[0]['id']
                                         
-                                        # Proteção anti-crash igual fizemos na Análise de Dados
+                                        # Proteção anti-crash
                                         v_q_raw = res_p.data[0].get('valor_questao')
                                         v_q = float(v_q_raw) if v_q_raw is not None else 1.0
                                         
+                                        # REVERTIDO: Buscamos apenas o que temos certeza que existe no seu banco
                                         res_r = supabase.table("resultados_provas").select("aluno_id, acertou")\
                                             .eq("prova_id", p_id).execute()
                                         
                                         if res_r.data:
                                             df_r = pd.DataFrame(res_r.data)
                                             df_r['pts'] = df_r['acertou'].apply(lambda x: 1 if x is True else 0)
+                                            
+                                            # Soma todos os acertos encontrados (mesmo que haja duplicidade de envios)
                                             df_c = df_r.groupby('aluno_id')['pts'].sum().reset_index()
                                             
-                                            # 1. Calcula a nota bruta
+                                            # 1. Calcula a nota bruta (Acertos x Valor da Questão)
                                             df_c['nota_bruta'] = df_c['pts'] * v_q
                                             
-                                            # 2. Aplica a função do SIEPE direto na coluna
+                                            # 2. SOLUÇÃO: Trava de Segurança (Teto Matemático)
+                                            # O comando .clip(upper=X) garante que nenhum valor ultrapasse o limite estabelecido.
+                                            # Se o aluno fez 12 pontos num teste que vale 4.0, a nota é cortada e travada em 4.0.
+                                            df_c['nota_bruta'] = df_c['nota_bruta'].clip(upper=limite_nota)
+                                            
+                                            # 3. Aplica a função do SIEPE direto na coluna
                                             df_c['nota_arredondada'] = df_c['nota_bruta'].apply(arredondar_siepe)
                                             
-                                            # 3. Monta o dicionário final para a tabela
+                                            # 4. Monta o dicionário final para a tabela
                                             mapa_notas = dict(zip(df_c['aluno_id'].astype(str), df_c['nota_arredondada']))
                                             
                                 return mapa_notas
 
-                            mapa_at1 = buscar_nota_simulado("1º Simulado")
-                            mapa_at2 = buscar_nota_simulado("2º Simulado")
+                            # CHAMADA DA FUNÇÃO CORRIGIDA:
+                            # Aqui informamos explicitamente que o limite máximo para AT1 e AT2 é 4.0
+                            mapa_at1 = buscar_nota_simulado("1º Simulado", limite_nota=4.0)
+                            mapa_at2 = buscar_nota_simulado("2º Simulado", limite_nota=4.0)
+
 
                             df_base = df_turma[['aluno_id', col_n]].copy().rename(columns={col_n: 'nome'})
                             df_base['AT1'] = df_base['aluno_id'].astype(str).map(mapa_at1).fillna(0.0)
