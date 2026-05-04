@@ -144,31 +144,33 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                     st.session_state[state_key]['Média Final'] = media_bruta.apply(arredondar_siepe)
 
                     # --- DATA EDITOR COM ALTURA DINÂMICA ---
-                 # --- DATA EDITOR COM ESTILO E CORES ---
+                    # --- DATA EDITOR COM ESTILO E CORES ---
                     st.subheader(f"Planilha de Notas - {turma_sel}")
                     
                     def aplicar_cores(val):
                         try:
-                            # Se a nota for maior que 0, azul e negrito. Se for 0, cinza.
-                            if float(val) > 0:
+                            val_f = float(val)
+                            if val_f > 0:
+                                # Azul para notas lançadas
                                 return 'color: #1d4ed8; font-weight: bold;'
+                            # Cinza para zeros
                             return 'color: #9ca3af;'
                         except:
                             return ''
 
-                    # ADICIONADO: N1 e Média Final na lista de colunas para colorir
-                    # Como elas são bloqueadas para edição, o azul vai funcionar nelas!
+                    # Aplicamos o estilo nas colunas de Simulado e nos Resultados Finais
+                    # (Colunas que o professor NÃO digita)
                     df_estilizado = st.session_state[state_key].style.map(
                         aplicar_cores, 
-                        subset=['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N2', 'N1', 'Média Final']
+                        subset=['AT1', 'AT2', 'N1', 'Média Final']
                     )
 
                     config_cols = {
                         "aluno_id": None, 
                         "nome": st.column_config.TextColumn("Estudante", disabled=True, width="medium"),
-                        # Note que mantivemos os nomes internos N1 e Média Final aqui
-                        "N1": st.column_config.NumberColumn("Σ N1", disabled=True, width="small", format="%.1f"),
-                        "Média Final": st.column_config.NumberColumn("Média", disabled=True, width="small", format="%.1f"),
+                        # Σ N1 e Média agora vão brilhar em azul quando calculadas!
+                        "N1": st.column_config.NumberColumn("Σ N1 🔒", disabled=True, width="small", format="%.1f"),
+                        "Média Final": st.column_config.NumberColumn("Média 🔒", disabled=True, width="small", format="%.1f"),
                     }
                     
                     for c in ['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N2']:
