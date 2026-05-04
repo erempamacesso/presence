@@ -144,8 +144,23 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                     st.session_state[state_key]['Média Final'] = media_bruta.apply(arredondar_siepe)
 
                     # --- DATA EDITOR COM ALTURA DINÂMICA ---
-                    st.subheader(f"Planilha de Notas - {turma_sel}")
-                    
+                    # 1. Função que define as cores
+                    def aplicar_cores(val):
+                        try:
+                            # Se a nota for maior que 0, azul e negrito. Se for 0, cinza.
+                            if float(val) > 0:
+                                return 'color: #1d4ed8; font-weight: bold;'
+                            return 'color: #9ca3af;'
+                        except:
+                            return ''
+
+                    # 2. Aplicamos o estilo ao DataFrame que está no session_state
+                    # O subset garante que só pintamos as colunas de notas
+                    df_estilizado = st.session_state[state_key].style.applymap(
+                        aplicar_cores, 
+                        subset=['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N2']
+                    )
+
                     config_cols = {
                         "aluno_id": None, 
                         "nome": st.column_config.TextColumn("Estudante", disabled=True, width="medium"),
@@ -164,8 +179,9 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                     # Calculamos a altura
                     altura_dinamica = (len(st.session_state[state_key]) + 1) * 35 + 3
 
+                    # 3. Chamamos o editor passando o 'df_estilizado' no lugar do dataframe puro
                     st.data_editor(
-                        st.session_state[state_key],
+                        df_estilizado,
                         key=editor_key,
                         hide_index=True,
                         column_config=config_cols,
