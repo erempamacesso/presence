@@ -144,26 +144,29 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                     st.session_state[state_key]['Média Final'] = media_bruta.apply(arredondar_siepe)
 
                     # --- DATA EDITOR COM ALTURA DINÂMICA ---
+                 # --- DATA EDITOR COM ESTILO E CORES ---
                     st.subheader(f"Planilha de Notas - {turma_sel}")
                     
-                    # Função para definir as cores
                     def aplicar_cores(val):
                         try:
+                            # Se a nota for maior que 0, azul e negrito. Se for 0, cinza.
                             if float(val) > 0:
                                 return 'color: #1d4ed8; font-weight: bold;'
                             return 'color: #9ca3af;'
                         except:
                             return ''
 
-                    # CORREÇÃO AQUI: Trocado .applymap por .map
+                    # ADICIONADO: N1 e Média Final na lista de colunas para colorir
+                    # Como elas são bloqueadas para edição, o azul vai funcionar nelas!
                     df_estilizado = st.session_state[state_key].style.map(
                         aplicar_cores, 
-                        subset=['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N2']
+                        subset=['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N2', 'N1', 'Média Final']
                     )
 
                     config_cols = {
                         "aluno_id": None, 
                         "nome": st.column_config.TextColumn("Estudante", disabled=True, width="medium"),
+                        # Note que mantivemos os nomes internos N1 e Média Final aqui
                         "N1": st.column_config.NumberColumn("Σ N1", disabled=True, width="small", format="%.1f"),
                         "Média Final": st.column_config.NumberColumn("Média", disabled=True, width="small", format="%.1f"),
                     }
@@ -176,10 +179,8 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                             disabled=travada, width="small"
                         )
 
-                    # Calculamos a altura dinâmica
                     altura_dinamica = (len(st.session_state[state_key]) + 1) * 35 + 3
 
-                    # Exibimos o editor usando o dataframe estilizado
                     st.data_editor(
                         df_estilizado,
                         key=editor_key,
