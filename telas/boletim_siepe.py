@@ -102,13 +102,29 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                             mapa_at1 = buscar_nota_simulado("1º Simulado", limite_nota=4.0)
                             mapa_at2 = buscar_nota_simulado("2º Simulado", limite_nota=4.0)
 
-
                             df_base = df_turma[['aluno_id', col_n]].copy().rename(columns={col_n: 'nome'})
                             df_base['AT1'] = df_base['aluno_id'].astype(str).map(mapa_at1).fillna(0.0)
                             df_base['AT2'] = df_base['aluno_id'].astype(str).map(mapa_at2).fillna(0.0)
                             
-                            for c in ['AT3', 'AT4', 'AT5', 'N2']:
-                                df_base[c] = 0.0
+                            # --- BUSCA AS NOTAS MANUAIS JÁ SALVAS NO BANCO ---
+                            res_notas_salvas = supabase.table("notas_atividades").select("*").eq("turma", turma_sel).eq("unidade", "1º Bimestre").execute()
+                            
+                            # Dicionários para mapear as notas salvas para os IDs dos alunos
+                            mapa_at3, mapa_at4, mapa_at5, mapa_n2 = {}, {}, {}, {}
+                            
+                            if res_notas_salvas.data:
+                                for r in res_notas_salvas.data:
+                                    aid = str(r['aluno_id'])
+                                    mapa_at3[aid] = float(r.get('at3') or 0.0)
+                                    mapa_at4[aid] = float(r.get('at4') or 0.0)
+                                    mapa_at5[aid] = float(r.get('at5') or 0.0)
+                                    mapa_n2[aid]  = float(r.get('prova') or 0.0)
+                            
+                            # Aplica as notas salvas ou zero se não houver
+                            df_base['AT3'] = df_base['aluno_id'].astype(str).map(mapa_at3).fillna(0.0)
+                            df_base['AT4'] = df_base['aluno_id'].astype(str).map(mapa_at4).fillna(0.0)
+                            df_base['AT5'] = df_base['aluno_id'].astype(str).map(mapa_at5).fillna(0.0)
+                            df_base['N2']  = df_base['aluno_id'].astype(str).map(mapa_n2).fillna(0.0)
                             
                             st.session_state[state_key] = df_base.sort_values('nome').reset_index(drop=True)
 
