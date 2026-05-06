@@ -96,35 +96,49 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                             
                             st.session_state[state_key] = df_base.sort_values('nome').reset_index(drop=True)
 
-                    # --- ÁREA DE IMPORTAÇÃO CSV (NOVA LÓGICA) ---
+                    # --- ÁREA DE IMPORTAÇÃO CSV (LÓGICA ADITIVA) ---
                     st.subheader(f"Planilha de Notas - {turma_sel}")
                     
-                    with st.expander("📥 Importar Notas de Prova (N2) via CSV", expanded=False):
+                    with st.expander("📥 Importar e SOMAR Notas de Prova (N2) via CSV", expanded=False):
                         arquivo_csv = st.file_uploader("Upload do CSV (Ex: csv_3a.csv)", type="csv", key=f"up_{turma_sel}")
+                        
                         if arquivo_csv:
                             try:
-                                # Lê o CSV considerando acentuação e separadores comuns[cite: 1]
+                                # Lê o CSV considerando acentuação e separadores automáticos[cite: 1]
                                 df_csv = pd.read_csv(arquivo_csv, encoding='latin-1', sep=None, engine='python')
-                                if st.button("🚀 Aplicar Notas na Coluna N2", use_container_width=True):
+                                
+                                # Garante que a coluna 'QUÍMICA' seja tratada como número[cite: 1]
+                                if 'QUÍMICA' in df_csv.columns:
+                                    df_csv['QUÍMICA'] = pd.to_numeric(df_csv['QUÍMICA'], errors='coerce').fillna(0.0)
+                                
+                                if st.button("🚀 Somar Notas do CSV ao N2 Atual", use_container_width=True):
                                     df_atual = st.session_state[state_key].copy()
-                                    # Normaliza nomes para cruzamento
-                                    df_csv['n_match'] = df_csv['Name'].str.strip().str.lower()
-                                    df_atual['n_match'] = df_atual['nome'].str.strip().str.lower()
                                     
-                                    # Mapeia a coluna 'QUÍMICA' do CSV para o N2 do sistema
+                                    # Normalização robusta de nomes para o cruzamento
+                                    df_csv['n_match'] = df_csv['Name'].astype(str).str.strip().str.lower()
+                                    df_atual['n_match'] = df_atual['nome'].astype(str).str.strip().str.lower()
+                                    
+                                    # Cria o mapa de notas {nome: nota_csv}
                                     mapa_csv = dict(zip(df_csv['n_match'], df_csv['QUÍMICA']))
                                     
                                     count = 0
                                     for idx, row in df_atual.iterrows():
-                                        if row['n_match'] in mapa_csv:
-                                            df_atual.at[idx, 'N2'] = float(mapa_csv[row['n_match']])
+                                        nome_aluno = row['n_match']
+                                        if nome_aluno in mapa_csv:
+                                            # LÓGICA DE SOMA: Nota atual na tela + Nota vinda do CSV
+                                            valor_existente = float(row['N2']) if not pd.isna(row['N2']) else 0.0
+                                            nota_csv = float(mapa_csv[nome_aluno])
+                                            
+                                            df_atual.at[idx, 'N2'] = valor_existente + nota_csv
                                             count += 1
                                     
+                                    # Atualiza o estado global e limpa coluna temporária
                                     st.session_state[state_key] = df_atual.drop(columns=['n_match'])
-                                    st.success(f"✅ {count} notas vinculadas com sucesso!")
+                                    st.success(f"✅ {count} notas processadas e somadas com sucesso!")
                                     st.rerun()
+                                    
                             except Exception as e:
-                                st.error(f"Erro no processamento: {e}")
+                                st.error(f"Erro no processamento do CSV: {e}")
 
                     # --- CÁLCULOS DINÂMICOS E ESTILIZAÇÃO ---
                     if editor_key in st.session_state:
@@ -133,7 +147,7 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                             for col_name, valor in alteracoes.items():
                                 st.session_state[state_key].at[row_idx, col_name] = float(valor) if valor is not None else 0.0
 
-                    # Arredondamentos SIEPE[cite: 2]
+                    # Aplica arredondamentos SIEPE para visualização[cite: 2]
                     df_view = st.session_state[state_key].copy()
                     df_view['N1'] = df_view[['AT1', 'AT2', 'AT3', 'AT4', 'AT5']].sum(axis=1).apply(arredondar_siepe)
                     df_view['Média Final'] = ((df_view['N1'] + df_view['N2']) / 2).apply(arredondar_siepe)
@@ -154,21 +168,38 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                     }
                     for c in ['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N2']:
                         travada = (c in locked_cols)
-                        config_cols[c] = st.column_config.NumberColumn(f"{c} 🔒" if travada else c, min_value=0.0, max_value=10.0, step=0.1, format="%.1f", disabled=travada)
+                        config_cols[c] = st.column_config.NumberColumn(
+                            f"{c} 🔒" if travada else c, 
+                            min_value=0.0, max_value=10.0, step=0.1, format="%.1f", 
+                            disabled=travada
+                        )
 
-                    st.data_editor(df_estilizado, key=editor_key, hide_index=True, column_config=config_cols, use_container_width=True, height=(len(df_view)+1)*35+5)
+                    st.data_editor(
+                        df_estilizado, 
+                        key=editor_key, 
+                        hide_index=True, 
+                        column_config=config_cols, 
+                        use_container_width=True, 
+                        height=(len(df_view)+1)*35+5
+                    )
                     
                     # --- BOTÕES DE SALVAMENTO E EXPORTAÇÃO ---
                     col_b1, col_b2, col_b3 = st.columns([2, 2, 1])
                     with col_b1:
                         if st.button("💾 Salvar no Banco (notas_atividades)", type="primary", use_container_width=True):
-                            with st.spinner("Salvando..."):
+                            with st.spinner("Salvando no banco de dados..."):
                                 dados_upsert = []
                                 for _, r in df_view.iterrows():
                                     dados_upsert.append({
-                                        "aluno_id": r['aluno_id'], "turma": turma_sel, "unidade": "1º Bimestre",
-                                        "at1": float(r['AT1']), "at2": float(r['AT2']), "at3": float(r['AT3']),
-                                        "at4": float(r['AT4']), "at5": float(r['AT5']), "prova": float(r['N2'])
+                                        "aluno_id": r['aluno_id'], 
+                                        "turma": turma_sel, 
+                                        "unidade": "1º Bimestre",
+                                        "at1": float(r['AT1']), 
+                                        "at2": float(r['AT2']), 
+                                        "at3": float(r['AT3']),
+                                        "at4": float(r['AT4']), 
+                                        "at5": float(r['AT5']), 
+                                        "prova": float(r['N2'])
                                     })
                                 supabase.table("notas_atividades").upsert(dados_upsert, on_conflict="aluno_id, unidade").execute()
                                 st.success("✅ Notas salvas no banco!")
