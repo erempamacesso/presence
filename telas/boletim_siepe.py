@@ -31,7 +31,7 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
     st.info("AT1 e AT2: Simulados Online (Automático) | AT3, AT4 e AT5: Notas Diversas (Manual)")
 
     try:
-        # 1. Busca todos os alunos[cite: 2]
+        # 1. Busca todos os alunos
         res_a = supabase_alunos.table("alunos").select("*").execute()
         
         if res_a.data:
@@ -79,7 +79,7 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                             df_base['AT1'] = df_base['aluno_id'].astype(str).map(mapa_at1).fillna(0.0)
                             df_base['AT2'] = df_base['aluno_id'].astype(str).map(mapa_at2).fillna(0.0)
                             
-                            # Busca notas manuais[cite: 2]
+                            # Busca notas manuais
                             res_notas_salvas = supabase.table("notas_atividades").select("*").eq("turma", turma_sel).eq("unidade", "1º Bimestre").execute()
                             mapa_at3, mapa_at4, mapa_at5, mapa_n2 = {}, {}, {}, {}
                             
@@ -104,10 +104,10 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                         
                         if arquivo_csv:
                             try:
-                                # Lê o CSV considerando acentuação e separadores automáticos[cite: 1]
+                                # Lê o CSV considerando acentuação e separadores automáticos
                                 df_csv = pd.read_csv(arquivo_csv, encoding='latin-1', sep=None, engine='python')
                                 
-                                # Garante que a coluna 'QUÍMICA' seja tratada como número[cite: 1]
+                                # Garante que a coluna 'QUÍMICA' seja tratada como número
                                 if 'QUÍMICA' in df_csv.columns:
                                     df_csv['QUÍMICA'] = pd.to_numeric(df_csv['QUÍMICA'], errors='coerce').fillna(0.0)
                                 
@@ -147,7 +147,7 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                             for col_name, valor in alteracoes.items():
                                 st.session_state[state_key].at[row_idx, col_name] = float(valor) if valor is not None else 0.0
 
-                    # Aplica arredondamentos SIEPE para visualização[cite: 2]
+                    # Aplica arredondamentos SIEPE para visualização
                     df_view = st.session_state[state_key].copy()
                     df_view['N1'] = df_view[['AT1', 'AT2', 'AT3', 'AT4', 'AT5']].sum(axis=1).apply(arredondar_siepe)
                     df_view['Média Final'] = ((df_view['N1'] + df_view['N2']) / 2).apply(arredondar_siepe)
@@ -183,8 +183,9 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                         height=(len(df_view)+1)*35+5
                     )
                     
-                    # --- BOTÕES DE SALVAMENTO E EXPORTAÇÃO ---
-                    col_b1, col_b2, col_b3 = st.columns([2, 2, 1])
+                    # --- NOVO ALINHAMENTO DE QUATRO COLUNAS DE BOTÕES ---
+                    col_b1, col_b2, col_b3, col_b4 = st.columns([2, 2, 2, 1])
+                    
                     with col_b1:
                         if st.button("💾 Salvar no Banco (notas_atividades)", type="primary", use_container_width=True):
                             with st.spinner("Salvando no banco de dados..."):
@@ -205,12 +206,46 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                                 st.success("✅ Notas salvas no banco!")
 
                     with col_b2:
+                        # BOTÃO INTEGRADO DA API SIEPE
+                        if st.button("🚀 Sincronizar Direto com SIEPE", use_container_width=True):
+                            from siepe_api import SiepeClient
+                            
+                            with st.spinner("Autenticando e transmitindo notas ao SIEPE..."):
+                                client = SiepeClient()
+                                
+                                # Autenticação utilizando variáveis seguras do Streamlit (st.secrets)
+                                # Lembre-se de configurar em seu .streamlit/secrets.toml
+                                usuario = st.secrets.get("SIEPE_USER", "SEU_CPF")
+                                senha = st.secrets.get("SIEPE_PASS", "SUA_SENHA")
+                                
+                                logado, msg_log = client.fazer_login(usuario, senha)
+                                
+                                if logado:
+                                    # Dicionário extraído dinamicamente a partir da inspeção do seu payload JSON
+                                    contexto_requisicao = {
+                                        "turma_id": "2483",       # ID fixo coletado (2º Ano A)
+                                        "disciplina_id": "1132",  # ID fixo para Química
+                                        "ew_base": "122549628",
+                                        "ew_id": "126982310",
+                                        "dummy": "1778106821147",
+                                        "bimestre": "1"
+                                    }
+                                    
+                                    sucesso_envio, msg_envio = client.sincronizar_dataframe_ao_siepe(df_view, contexto_requisicao)
+                                    if sucesso_envio:
+                                        st.success(f"✅ {msg_envio}")
+                                    else:
+                                        st.error(f"❌ Falha de envio: {msg_envio}")
+                                else:
+                                    st.error(f"❌ Falha de Login no SIEPE: {msg_log}")
+
+                    with col_b3:
                         output = io.BytesIO()
                         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                             df_view.drop(columns=['aluno_id']).to_excel(writer, sheet_name="Notas", index=False)
                         st.download_button("📥 Baixar Excel", output.getvalue(), f"Notas_{turma_sel}.xlsx", use_container_width=True)
 
-                    with col_b3:
+                    with col_b4:
                         if st.button("🔄 Recarregar", use_container_width=True):
                             del st.session_state[state_key]
                             st.rerun()
