@@ -205,39 +205,38 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                                 supabase.table("notas_atividades").upsert(dados_upsert, on_conflict="aluno_id, unidade").execute()
                                 st.success("✅ Notas salvas no banco!")
 
-                    with col_b2:
-                        # BOTÃO INTEGRADO DA API SIEPE
-                        if st.button("🚀 Sincronizar Direto com SIEPE", use_container_width=True):
-                            from siepe_api import SiepeClient
+                with col_b2:
+                    if st.button("🚀 Sincronizar Direto com SIEPE", use_container_width=True):
+                        from siepe_api import SiepeClient
+                        
+                        with st.spinner("Autenticando no SIEPE..."):
+                            client = SiepeClient()
                             
-                            with st.spinner("Autenticando e transmitindo notas ao SIEPE..."):
-                                client = SiepeClient()
+                            # Busca do secrets (local ou cloud)
+                            usuario = st.secrets["SIEPE_USER"]
+                            senha = st.secrets["SIEPE_PASS"]
+                            
+                            logado, msg_log = client.fazer_login(usuario, senha)
+                            
+                            if logado:
+                                # IMPORTANTE: Verifique se esses IDs batem com o seu diário!
+                                # Se mudar de turma, esses IDs podem mudar.
+                                contexto_requisicao = {
+                                    "turma_id": "2483",       # ID da sua turma no SIEPE
+                                    "disciplina_id": "1132",  # ID de Química no SIEPE
+                                    "ew_base": "122549628",
+                                    "ew_id": "126982310",
+                                    "dummy": "1778106821147",
+                                    "bimestre": "1"
+                                }
                                 
-                                # Autenticação utilizando variáveis seguras do Streamlit (st.secrets)
-                                # Lembre-se de configurar em seu .streamlit/secrets.toml
-                                usuario = st.secrets.get("SIEPE_USER", "SEU_CPF")
-                                senha = st.secrets.get("SIEPE_PASS", "SUA_SENHA")
-                                
-                                logado, msg_log = client.fazer_login(usuario, senha)
-                                
-                                if logado:
-                                    # Dicionário extraído dinamicamente a partir da inspeção do seu payload JSON
-                                    contexto_requisicao = {
-                                        "turma_id": "2483",       # ID fixo coletado (2º Ano A)
-                                        "disciplina_id": "1132",  # ID fixo para Química
-                                        "ew_base": "122549628",
-                                        "ew_id": "126982310",
-                                        "dummy": "1778106821147",
-                                        "bimestre": "1"
-                                    }
-                                    
-                                    sucesso_envio, msg_envio = client.sincronizar_dataframe_ao_siepe(df_view, contexto_requisicao)
-                                    if sucesso_envio:
-                                        st.success(f"✅ {msg_envio}")
-                                    else:
-                                        st.error(f"❌ Falha de envio: {msg_envio}")
+                                sucesso_envio, msg_envio = client.sincronizar_dataframe_ao_siepe(df_view, contexto_requisicao)
+                                if sucesso_envio:
+                                    st.success(f"✅ {msg_envio}")
                                 else:
-                                    st.error(f"❌ Falha de Login no SIEPE: {msg_log}")
+                                    st.error(f"❌ Erro no envio: {msg_envio}")
+                            else:
+                                st.error("❌ Falha de Login: Verifique usuário e senha no Secrets.")   
 
                     with col_b3:
                         output = io.BytesIO()
