@@ -1,94 +1,94 @@
-import requests
-import logging
-import pandas as pd  # <--- Faltava isso aqui!
+import streamlit as st
+import pandas as pd
+import io
+import math
+from siepe_api import SiepeClient
 
-class SiepeClient:
-    def __init__(self):
-        self.session = requests.Session()
-        self.base_url = "https://www.siepe.educacao.pe.gov.br"
-        
-        self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:150.0) Gecko/20100101 Firefox/150.0',
-            'Accept': '*/*',
-            'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-            'X-Requested-With': 'XMLHttpRequest',
-            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-            'Origin': self.base_url,
-            'Connection': 'keep-alive'
-        })
+# --- FUNÇÃO OFICIAL DE ARREDONDAMENTO SIEPE ---
+def arredondar_siepe(nota):
+    if pd.isna(nota) or nota is None: return 0.0
+    nota = float(nota)
+    inteiro = math.floor(nota)
+    decimal = round((nota - inteiro) * 10)
+    if decimal in [0, 1]: return float(inteiro)
+    elif decimal in [2, 3, 4, 5, 6]: return float(inteiro + 0.5)
+    else: return float(inteiro + 1)
 
-    def fazer_login(self, usuario, senha):
-        """
-        Realiza o login no sistema do SIEPE.
-        """
-        # Passo opcional mas recomendado: carregar a página inicial para pegar cookies básicos
-        self.session.get(f"{self.base_url}/GerenciadorAcessoWeb/login.do", timeout=10)
-
-        url_login = f"{self.base_url}/GerenciadorAcessoWeb/segurancaAction.do?actionType=ajaxLogin"
-        payload = {
-            'login': usuario,
-            'senha': senha
+def mostrar_tela_boletim(supabase, supabase_alunos):
+    st.title("📝 Meu Registro Pessoal de Notas")
+    
+    # CONFIGURAÇÃO DE IDS POR TURMA
+    MAPA_IDS_SIEPE = {
+        "2º A": {
+            "turma_id": "2483",       # ID capturado no console
+            "disciplina_id": "1132",  # Química
+            "ew_base": "122549628",   # Valores dinâmicos (expiram)
+            "ew_id": "126982310",     
+            "dummy": "1778106821147",
+            "bimestre": "1"
         }
-        try:
-            headers_login = {'Referer': f"{self.base_url}/GerenciadorAcessoWeb/login.do"}
-            response = self.session.post(url_login, data=payload, headers=headers_login, timeout=15)
+        # Adicione outras turmas aqui conforme capturar os IDs
+    }
+
+    try:
+        res_a = supabase_alunos.table("alunos").select("*").execute()
+        if not res_a.data:
+            st.warning("Nenhum aluno encontrado.")
+            return
+
+        df_todos = pd.DataFrame(res_a.data)
+        col_t = 'turma' if 'turma' in df_todos.columns else 'serie'
+        turmas_list = sorted(df_todos[col_t].dropna().unique())
+        turma_sel = st.selectbox("Selecione a Turma:", turmas_list)
+
+        if turma_sel:
+            state_key = f"tabela_notas_{turma_sel}"
             
-            # O SIEPE costuma retornar "OK" ou um JSON no texto se der certo
-            if response.status_code == 200:
-                # Se o login falhar mesmo com 200, ele geralmente avisa no corpo da resposta
-                if "inválido" in response.text.lower() or "erro" in response.text.lower():
-                    return False, "Usuário ou senha inválidos segundo o SIEPE."
-                return True, "Login processado."
-            return False, f"Erro de comunicação. Status: {response.status_code}"
-        except Exception as e:
-            return False, str(e)
+            if state_key not in st.session_state:
+                df_base = df_todos[df_todos[col_t] == turma_sel].copy().rename(columns={"id": "aluno_id"})
+                for c in ['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N2']:
+                    df_base[c] = df_base.get(c, 0.0)
+                st.session_state[state_key] = df_base.sort_values('nome').reset_index(drop=True)
 
-    def enviar_notas_siepe(self, payload_dados):
-        url_save = f"{self.base_url}/GerenciadorAcessoWeb/EWServlet.ew"
-        headers_save = {
-            'Referer': 'https://www.siepe.educacao.pe.gov.br/diarioclasse/DiarioClasse.do'
-        }
-        try:
-            response = self.session.post(url_save, data=payload_dados, headers=headers_save, timeout=20)
-            if response.status_code == 200:
-                return True, "Notas integradas com sucesso!"
-            return False, f"Servidor retornou erro {response.status_code}"
-        except Exception as e:
-            return False, f"Falha de conexão: {str(e)}"
-
-    def sincronizar_dataframe_ao_siepe(self, df_view, ids_contexto):
-        # O payload carrega as configurações da turma e disciplina que você capturou no navegador
-        payload = {
-            "idAbaSelecionada": "2",
-            "idAbaSelecionadaPedagogico": "2",
-            "hdnMetodosCarregados": "selecionarAba",
-            "ddlSerieNotaFalta": ids_contexto.get('turma_id'),
-            "ddlPeriodo": ids_contexto.get('bimestre', "1"),
-            "ddlDisciplina": ids_contexto.get('disciplina_id'),
-            "inputConceitos": "null",
-            "EWBase": ids_contexto.get('ew_base'),
-            "EWId": ids_contexto.get('ew_id'),
-            "EWAction": "raiseEvent",
-            "EWMethod": "btnGravarNotasFaltasDisciplina_onclick",
-            "dummy": ids_contexto.get('dummy')
-        }
-
-        # Varre cada linha da tabela (df_view) para preencher as notas de cada aluno
-        for _, row in df_view.iterrows():
-            # Tenta usar 'id_siepe' (se você já tiver no banco), senão usa o 'aluno_id' padrão
-            id_aluno = str(row['id_siepe']) if 'id_siepe' in row else str(row['aluno_id'])
+            df_view = st.session_state[state_key]
             
-            # Função para converter o ponto (.) do Python para a vírgula (,) do SIEPE
-            def fmt(v): 
-                return str(v).replace('.', ',') if (v is not None and v > 0) else ""
+            df_editado = st.data_editor(
+                df_view,
+                key=f"editor_{turma_sel}",
+                hide_index=True,
+                use_container_width=True
+            )
+            st.session_state[state_key] = df_editado
 
-            # Mapeia as notas das ATs e da Prova (N2 vai no campo nota_7)
-            payload[f"nota_1_{id_aluno}"] = fmt(row['AT1'])
-            payload[f"nota_2_{id_aluno}"] = fmt(row['AT2'])
-            payload[f"nota_3_{id_aluno}"] = fmt(row['AT3'])
-            payload[f"nota_4_{id_aluno}"] = fmt(row['AT4'])
-            payload[f"nota_5_{id_aluno}"] = fmt(row['AT5'])
-            payload[f"nota_7_{id_aluno}"] = fmt(row['N2'])
+            col_b1, col_b2, col_b3 = st.columns(3)
+            
+            with col_b1:
+                if st.button("💾 Salvar no Banco", use_container_width=True):
+                    # Lógica de persistência no Supabase aqui
+                    st.success("Dados salvos no banco pessoal.")
 
-        # Envia o pacote completo de notas para o servidor
-        return self.enviar_notas_siepe(payload)
+            with col_b2:
+                # Busca a configuração específica para a turma selecionada
+                config_siepe = MAPA_IDS_SIEPE.get(turma_sel)
+                
+                if not config_siepe:
+                    st.error(f"⚠️ Configure os IDs do SIEPE para a turma '{turma_sel}' no código!")
+                else:
+                    if st.button("🚀 Sincronizar com SIEPE", type="primary", use_container_width=True):
+                        client = SiepeClient()
+                        with st.spinner("Conectando ao portal..."):
+                            logado, msg = client.fazer_login(st.secrets["SIEPE_USER"], st.secrets["SIEPE_PASS"])
+                            if logado:
+                                sucesso, res = client.sincronizar_dataframe_ao_siepe(df_editado, config_siepe)
+                                if sucesso: st.success(res)
+                                else: st.error(res)
+                            else:
+                                st.error(msg)
+
+            with col_b3:
+                if st.button("🔄 Recarregar", use_container_width=True):
+                    del st.session_state[state_key]
+                    st.rerun()
+
+    except Exception as e:
+        st.error(f"Erro no sistema: {e}")

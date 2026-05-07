@@ -1,14 +1,15 @@
 import requests
+import pandas as pd  # Importação essencial para evitar "pd is not defined"
 import logging
-import pandas as pd  # <--- CORREÇÃO: O import que faltava
 
 class SiepeClient:
     def __init__(self):
         self.session = requests.Session()
         self.base_url = "https://www.siepe.educacao.pe.gov.br"
         
+        # User-agent atualizado para simular um navegador moderno
         self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:150.0) Gecko/20100101 Firefox/150.0',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
             'Accept': '*/*',
             'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
             'X-Requested-With': 'XMLHttpRequest',
@@ -19,11 +20,10 @@ class SiepeClient:
 
     def fazer_login(self, usuario, senha):
         """
-        Realiza o login. Adicionamos um GET inicial para garantir que o cookie 
-        da sessão seja gerado antes de enviar a senha.
+        Realiza o login no SIEPE. O GET inicial é necessário para 
+        estabelecer os cookies de sessão antes do POST de login.
         """
         try:
-            # Garante que a página de login carregue primeiro
             self.session.get(f"{self.base_url}/GerenciadorAcessoWeb/login.do", timeout=10)
 
             url_login = f"{self.base_url}/GerenciadorAcessoWeb/segurancaAction.do?actionType=ajaxLogin"
@@ -33,36 +33,38 @@ class SiepeClient:
             response = self.session.post(url_login, data=payload, headers=headers_login, timeout=15)
             
             if response.status_code == 200:
-                # O SIEPE às vezes retorna 200 mas com mensagem de erro no texto
-                if "inválido" in response.text.lower():
-                    return False, "Usuário ou senha inválidos no SIEPE."
-                return True, "Login realizado."
-            return False, f"Erro de conexão: {response.status_code}"
+                if "inválido" in response.text.lower() or "erro" in response.text.lower():
+                    return False, f"SIEPE: {response.text[:50]}"
+                return True, "Login realizado com sucesso."
+            return False, f"Status erro: {response.status_code}"
         except Exception as e:
-            return False, f"Falha técnica: {str(e)}"
+            return False, f"Falha técnica no login: {str(e)}"
 
     def enviar_notas_siepe(self, payload_dados):
+        """
+        Envia o payload de notas para o servlet do SIEPE (EWServlet.ew).
+        """
         url_save = f"{self.base_url}/GerenciadorAcessoWeb/EWServlet.ew"
         headers_save = {
             'Referer': 'https://www.siepe.educacao.pe.gov.br/diarioclasse/DiarioClasse.do'
         }
         try:
-            response = self.session.post(url_save, data=payload_dados, headers=headers_save, timeout=20)
+            response = self.session.post(url_save, data=payload_dados, headers=headers_save, timeout=25)
             if response.status_code == 200:
                 return True, "Notas integradas com sucesso!"
-            return False, f"Erro no servidor SIEPE: {response.status_code}"
+            return False, f"Erro no servidor: {response.status_code}"
         except Exception as e:
-            return False, f"Falha de conexão: {str(e)}"
+            return False, f"Erro de rede: {str(e)}"
 
     def sincronizar_dataframe_ao_siepe(self, df_view, ids_contexto):
         """
-        Mapeia os dados do Streamlit para os campos do SIEPE.
+        Transforma o DataFrame em um payload compatível com o portal.
         """
         payload = {
             "idAbaSelecionada": "2",
             "idAbaSelecionadaPedagogico": "2",
             "hdnMetodosCarregados": "selecionarAba",
-            "ddlSerieNotaFalta": ids_contexto.get('turma_id'),
+            "ddlSerieNotaFalta": ids_contexto.get('turma_id'), # ID 2483 da imagem
             "ddlPeriodo": ids_contexto.get('bimestre', "1"),
             "ddlDisciplina": ids_contexto.get('disciplina_id'),
             "inputConceitos": "null",
@@ -74,17 +76,21 @@ class SiepeClient:
         }
 
         for _, row in df_view.iterrows():
-            # Usa o aluno_id que é o ID interno do SIEPE para cada estudante
-            id_aluno = str(row['aluno_id'])
+            # Tenta usar o ID do SIEPE se disponível, senão usa o aluno_id
+            id_aluno = str(row.get('id_siepe', row.get('aluno_id')))
             
             def fmt(v): 
-                return str(v).replace('.', ',') if (v is not None and v > 0) else ""
+                # Converte para string com vírgula se for maior que zero
+                try:
+                    val = float(v)
+                    return str(val).replace('.', ',') if val > 0 else ""
+                except: return ""
 
             payload[f"nota_1_{id_aluno}"] = fmt(row['AT1'])
             payload[f"nota_2_{id_aluno}"] = fmt(row['AT2'])
             payload[f"nota_3_{id_aluno}"] = fmt(row['AT3'])
             payload[f"nota_4_{id_aluno}"] = fmt(row['AT4'])
             payload[f"nota_5_{id_aluno}"] = fmt(row['AT5'])
-            payload[f"nota_7_{id_aluno}"] = fmt(row['N2'])
+            payload[f"nota_7_{id_aluno}"] = fmt(row['N2']) # N2 mapeado para nota_7
 
         return self.enviar_notas_siepe(payload)
