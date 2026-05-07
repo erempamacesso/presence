@@ -154,7 +154,7 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
             colunas_notas = ['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N1', 'N2', 'Média Final']
             df_estilizado = df_view.style.map(aplicar_estilo_notas, subset=[c for c in colunas_notas if c in df_view.columns])
 
-            # Configuração das colunas no Editor
+           # Configuração das colunas no Editor
             config_cols = {
                 "aluno_id": None, 
                 "nome": st.column_config.TextColumn("Estudante", disabled=True, width="medium"),
@@ -164,12 +164,17 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
             for c in ['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N2']:
                 config_cols[c] = st.column_config.NumberColumn(c, min_value=0.0, max_value=10.0, step=0.1, format="%.1f", disabled=(c in locked_cols))
 
+            # --- CORREÇÃO DA ROLAGEM: Calcula a altura para mostrar todos de uma vez ---
+            # 36 pixels (altura média de uma linha) + espaço para o cabeçalho
+            altura_tabela = (len(df_view) + 1) * 36 + 10 
+
             st.data_editor(
                 df_estilizado, 
                 key=editor_key, 
                 hide_index=True, 
                 column_config=config_cols, 
-                use_container_width=True
+                use_container_width=True,
+                height=altura_tabela # <-- A MÁGICA DA ALTURA ESTÁ AQUI
             )
             
             # --- BOTÕES DE AÇÃO ---
