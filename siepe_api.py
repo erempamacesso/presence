@@ -2,12 +2,14 @@ import requests
 import pandas as pd
 import logging
 import time
-import re  # <--- IMPORTANTE: Adicione isso no topo!
+import re
 
 class SiepeClient:
     def __init__(self):
         self.session = requests.Session()
         self.base_url = "https://www.siepe.educacao.pe.gov.br"
+        
+        # User-agent atualizado
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:150.0) Gecko/20100101 Firefox/150.0',
             'Accept': '*/*',
@@ -15,7 +17,7 @@ class SiepeClient:
             'Connection': 'keep-alive'
         })
         
-        # Variáveis globais da sessão do robô
+        # Variáveis globais para guardar os IDs mágicos do portal
         self.ew_base = ""
         self.ew_id = ""
 
@@ -23,7 +25,6 @@ class SiepeClient:
         """
         O 'Olho' do robô: Caça os novos EWBase e EWId na resposta do servidor.
         """
-        # Procura por value="123456" ou EWId="123456" ou EWId: 123456
         match_base = re.search(r'EWBase.*?[\'"]?(\d{8,12})[\'"]?', texto_html)
         match_id = re.search(r'EWId.*?[\'"]?(\d{8,12})[\'"]?', texto_html)
         
@@ -32,7 +33,27 @@ class SiepeClient:
         
         return self.ew_base, self.ew_id
 
-    # ... [Seu método fazer_login continua aqui] ...
+    def fazer_login(self, usuario, senha):
+        """
+        Realiza o login no SIEPE.
+        """
+        try:
+            # Puxa os cookies iniciais
+            self.session.get(f"{self.base_url}/GerenciadorAcessoWeb/login.do", timeout=10)
+            
+            url_login = f"{self.base_url}/GerenciadorAcessoWeb/login.do"
+            payload_login = {
+                "acao": "C",
+                "cpf": usuario,
+                "senha": senha
+            }
+            res_login = self.session.post(url_login, data=payload_login, timeout=10)
+            
+            if "Sair" in res_login.text or "Bem-vindo" in res_login.text or "Agamenon" in res_login.text:
+                return True, "Login realizado com sucesso."
+            return False, "Usuário ou senha incorretos."
+        except Exception as e:
+            return False, f"Erro de conexão: {str(e)}"
 
     def iniciar_robo_navegacao(self):
         """
@@ -47,7 +68,10 @@ class SiepeClient:
             'Referer': f'{self.base_url}/diarioclasse/DiarioClasse.do'
         }
 
-        # PASSO 1: Acessar o diário pela primeira vez para pegar os IDs iniciais
+        # Atualiza a sessão para aceitar os POSTs de navegação
+        self.session.headers.update(headers_post)
+
+        # PASSO 1: Acessar o diário
         print("1. Abrindo Diário...")
         res = self.session.get(f'{self.base_url}/diarioclasse/DiarioClasse.do')
         self._extrair_tokens(res.text)
@@ -58,7 +82,7 @@ class SiepeClient:
             "unidadeSelecionada": "606137", "EWBase": self.ew_base, "EWId": self.ew_id,
             "EWAction": "raiseEvent", "EWMethod": "selecionarUnidade", "dummy": str(int(time.time() * 1000))
         }
-        res = self.session.post(url_ew, data=payload_escola, headers=headers_post)
+        res = self.session.post(url_ew, data=payload_escola)
         self._extrair_tokens(res.text)
 
         # PASSO 3: Pesquisar Turmas (2026)
@@ -67,7 +91,7 @@ class SiepeClient:
             "txtAno": "2026", "EWBase": self.ew_base, "EWId": self.ew_id,
             "EWAction": "raiseEvent", "EWMethod": "btnPesquisar_onclick", "dummy": str(int(time.time() * 1000))
         }
-        res = self.session.post(url_ew, data=payload_pesquisa, headers=headers_post)
+        res = self.session.post(url_ew, data=payload_pesquisa)
         self._extrair_tokens(res.text)
 
         # PASSO 4: Clicar na Turma 2º A (ID interno: 260007983)
@@ -76,7 +100,7 @@ class SiepeClient:
             "hdnIdTurma": "260007983", "txtAno": "2026", "EWBase": self.ew_base, "EWId": self.ew_id,
             "EWAction": "raiseEvent", "EWMethod": "selecionarTurma", "dummy": str(int(time.time() * 1000))
         }
-        res = self.session.post(url_ew, data=payload_turma, headers=headers_post)
+        res = self.session.post(url_ew, data=payload_turma)
         self._extrair_tokens(res.text)
 
         # PASSO 5: Abrir Aba de Notas (Aba 2)
@@ -86,29 +110,26 @@ class SiepeClient:
             "EWBase": self.ew_base, "EWId": self.ew_id, "EWAction": "raiseEvent", "EWMethod": "selecionarAba", 
             "dummy": str(int(time.time() * 1000))
         }
-        res = self.session.post(url_ew, data=payload_aba, headers=headers_post)
+        res = self.session.post(url_ew, data=payload_aba)
         self._extrair_tokens(res.text)
 
         print(f"Sucesso! Navegação concluída. Último EWId capturado: {self.ew_id}")
         return True
 
-    def sincronizar_dataframe_ao_siepe_final(self, df_view):
+    def sincronizar_dataframe_ao_siepe_final(self, df_view, config_siepe):
         """
         Envia as notas usando a sessão que o robô acabou de criar.
         """
-        # Agora nós não dependemos mais do Streamlit nos passar os IDs. 
-        # O próprio robô sabe quais são porque ele guardou no self.ew_base e self.ew_id!
-        
         payload = {
             "idAbaSelecionada": "2",
             "idAbaSelecionadaPedagogico": "2",
             "hdnMetodosCarregados": "selecionarAba",
-            "ddlSerieNotaFalta": "2483", # Código do 2º A para salvar
-            "ddlPeriodo": "1",
-            "ddlDisciplina": "1132",
+            "ddlSerieNotaFalta": config_siepe.get('turma_id', '2483'),
+            "ddlPeriodo": config_siepe.get('bimestre', '1'),
+            "ddlDisciplina": config_siepe.get('disciplina_id', '1132'),
             "inputConceitos": "null",
             "EWBase": self.ew_base,
-            "EWId": self.ew_id,       # O robô pega o ID fresquinho aqui!
+            "EWId": self.ew_id,       
             "EWHome": "",
             "EWAction": "raiseEvent",
             "EWMethod": "btnGravarNotasFaltasDisciplina_onclick",
@@ -117,7 +138,7 @@ class SiepeClient:
 
         # Varre os alunos
         for _, row in df_view.iterrows():
-            id_aluno = str(row.get('id_siepe'))
+            id_aluno = str(row.get('id_siepe', row.get('aluno_id')))
             def fmt(v): 
                 try:
                     val = float(v)
@@ -132,9 +153,7 @@ class SiepeClient:
             payload[f"nota_7_{id_aluno}"] = fmt(row.get('N2', 0))
 
         url_ew = f"{self.base_url}/diarioclasse/EWServlet.ew"
-        headers_post = {'request-type': '2', 'Referer': f'{self.base_url}/diarioclasse/DiarioClasse.do'}
-        
-        res = self.session.post(url_ew, data=payload, headers=headers_post)
+        res = self.session.post(url_ew, data=payload)
         
         if res.status_code == 200:
             return True, "NOTAS SALVAS COM SUCESSO NO PORTAL DO GOVERNO!"
