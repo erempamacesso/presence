@@ -60,37 +60,41 @@ class SiepeClient:
         """
         Transforma o DataFrame em um payload compatível com o portal.
         """
+        # Adicionamos o campo EWHome que faltava
         payload = {
             "idAbaSelecionada": "2",
             "idAbaSelecionadaPedagogico": "2",
             "hdnMetodosCarregados": "selecionarAba",
-            "ddlSerieNotaFalta": ids_contexto.get('turma_id'), # ID 2483 da imagem
+            "ddlSerieNotaFalta": ids_contexto.get('turma_id'),
             "ddlPeriodo": ids_contexto.get('bimestre', "1"),
             "ddlDisciplina": ids_contexto.get('disciplina_id'),
             "inputConceitos": "null",
             "EWBase": ids_contexto.get('ew_base'),
             "EWId": ids_contexto.get('ew_id'),
+            "EWHome": "", # <--- ADICIONADO AQUI
             "EWAction": "raiseEvent",
             "EWMethod": "btnGravarNotasFaltasDisciplina_onclick",
             "dummy": ids_contexto.get('dummy')
         }
 
+        # Garanta que o df_view contenha TODOS os alunos da turma
         for _, row in df_view.iterrows():
-            # Tenta usar o ID do SIEPE se disponível, senão usa o aluno_id
+            # Pegando o ID real do SIEPE (ex: 13700627)
             id_aluno = str(row.get('id_siepe', row.get('aluno_id')))
             
             def fmt(v): 
-                # Converte para string com vírgula se for maior que zero
                 try:
                     val = float(v)
-                    return str(val).replace('.', ',') if val > 0 else ""
+                    # O portal usa vírgula: "2,0"
+                    return f"{val:.1f}".replace('.', ',') if val > 0 else ""
                 except: return ""
 
-            payload[f"nota_1_{id_aluno}"] = fmt(row['AT1'])
-            payload[f"nota_2_{id_aluno}"] = fmt(row['AT2'])
-            payload[f"nota_3_{id_aluno}"] = fmt(row['AT3'])
-            payload[f"nota_4_{id_aluno}"] = fmt(row['AT4'])
-            payload[f"nota_5_{id_aluno}"] = fmt(row['AT5'])
-            payload[f"nota_7_{id_aluno}"] = fmt(row['N2']) # N2 mapeado para nota_7
+            # Mapeamento exato conforme sua captura
+            payload[f"nota_1_{id_aluno}"] = fmt(row.get('AT1', 0))
+            payload[f"nota_2_{id_aluno}"] = fmt(row.get('AT2', 0))
+            payload[f"nota_3_{id_aluno}"] = fmt(row.get('AT3', 0))
+            payload[f"nota_4_{id_aluno}"] = fmt(row.get('AT4', 0))
+            payload[f"nota_5_{id_aluno}"] = fmt(row.get('AT5', 0))
+            payload[f"nota_7_{id_aluno}"] = fmt(row.get('N2', 0)) # N2 é a nota_7
 
         return self.enviar_notas_siepe(payload)
