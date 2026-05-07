@@ -31,6 +31,7 @@ def arredondar_siepe(nota):
 def mostrar_tela_boletim(supabase, supabase_alunos):
     st.title("📝 Meu Registro Pessoal de Notas")
     st.info("AT1 e AT2: Simulados Online | AT3, AT4 e AT5: Notas Diversas | N2: Prova")
+    st.caption("💡 Dica: Notas maiores que zero ficam em **azul** automaticamente.")
 
     try:
         # 1. Busca alunos do banco
@@ -56,7 +57,7 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
             editor_key = f"editor_notas_{turma_sel}"
             locked_cols = ['AT1', 'AT2']
 
-            # --- INICIALIZAÇÃO E BUSCA DE DADOS (Lógica Otimizada do Código 2) ---
+            # --- INICIALIZAÇÃO E BUSCA DE DADOS ---
             if state_key not in st.session_state:
                 with st.spinner(f"Carregando dados de {turma_sel}..."):
                     df_turma = df_todos[df_todos[col_t] == turma_sel].copy()
@@ -141,6 +142,18 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
             df_view['N1'] = df_view[['AT1', 'AT2', 'AT3', 'AT4', 'AT5']].sum(axis=1).apply(arredondar_siepe)
             df_view['Média Final'] = ((df_view['N1'] + df_view['N2']) / 2).apply(arredondar_siepe)
 
+            # --- LÓGICA DE CORES ---
+            def aplicar_estilo_notas(val):
+                try:
+                    if float(val) > 0:
+                        return 'color: #1E40AF; font-weight: bold; background-color: #EFF6FF;'
+                    return 'color: #9CA3AF;'
+                except:
+                    return ''
+
+            colunas_notas = ['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N1', 'N2', 'Média Final']
+            df_estilizado = df_view.style.map(aplicar_estilo_notas, subset=[c for c in colunas_notas if c in df_view.columns])
+
             # Configuração das colunas no Editor
             config_cols = {
                 "aluno_id": None, 
@@ -152,7 +165,7 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                 config_cols[c] = st.column_config.NumberColumn(c, min_value=0.0, max_value=10.0, step=0.1, format="%.1f", disabled=(c in locked_cols))
 
             st.data_editor(
-                df_view, 
+                df_estilizado, 
                 key=editor_key, 
                 hide_index=True, 
                 column_config=config_cols, 
@@ -175,7 +188,6 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                     st.success("✅ Salvo!")
 
             with col_b2:
-                # Lógica Dinâmica do Código 1 aplicada aqui
                 config_siepe = MAPA_IDS_SIEPE.get(turma_sel)
                 if not config_siepe:
                     st.warning("⚠️ Turma sem IDs no mapa.")
@@ -185,7 +197,6 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                         with st.spinner("Conectando ao SIEPE..."):
                             logado, msg = client.fazer_login(st.secrets["SIEPE_USER"], st.secrets["SIEPE_PASS"])
                             if logado:
-                                # Usa o config_siepe que veio do MAPA_IDS_SIEPE
                                 sucesso, res = client.sincronizar_dataframe_ao_siepe(df_view, config_siepe)
                                 if sucesso: st.success(res)
                                 else: st.error(res)
