@@ -4,18 +4,19 @@ import io
 import math
 from siepe_api import SiepeClient
 
-# --- CONFIGURAÇÃO GLOBAL DE IDS POR TURMA (Siga o modelo do Código 1) ---
+# --- CONFIGURAÇÃO GLOBAL DE IDS POR TURMA ---
+# Note que agora não precisamos mais do EWBase, EWId e dummy aqui, 
+# pois o robô vai pegar sozinho! Mas mantive a estrutura para não quebrar nada.
 MAPA_IDS_SIEPE = {
     "2º A": {
-        "turma_id": "2483",
+        "turma_id": "2483",       # ID para salvar a nota
         "disciplina_id": "1132",  # Química
-        "ew_base": "122549628",
-        "ew_id": "126982310",
-        "dummy": "1778106821147",
+        "ew_base": "",            # O robô vai preencher
+        "ew_id": "",              # O robô vai preencher
+        "dummy": "",              # O robô vai preencher
         "bimestre": "1"
     },
-    # Adicione as próximas turmas aqui:
-    # "3º B": { ... },
+    # Adicione as próximas turmas aqui...
 }
 
 # --- FUNÇÃO OFICIAL DE ARREDONDAMENTO SIEPE ---
@@ -154,7 +155,7 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
             colunas_notas = ['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N1', 'N2', 'Média Final']
             df_estilizado = df_view.style.map(aplicar_estilo_notas, subset=[c for c in colunas_notas if c in df_view.columns])
 
-           # Configuração das colunas no Editor
+            # Configuração das colunas no Editor
             config_cols = {
                 "aluno_id": None, 
                 "nome": st.column_config.TextColumn("Estudante", disabled=True, width="medium"),
@@ -165,7 +166,6 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                 config_cols[c] = st.column_config.NumberColumn(c, min_value=0.0, max_value=10.0, step=0.1, format="%.1f", disabled=(c in locked_cols))
 
             # --- CORREÇÃO DA ROLAGEM: Calcula a altura para mostrar todos de uma vez ---
-            # 36 pixels (altura média de uma linha) + espaço para o cabeçalho
             altura_tabela = (len(df_view) + 1) * 36 + 10 
 
             st.data_editor(
@@ -174,7 +174,7 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                 hide_index=True, 
                 column_config=config_cols, 
                 use_container_width=True,
-                height=altura_tabela # <-- A MÁGICA DA ALTURA ESTÁ AQUI
+                height=altura_tabela
             )
             
             # --- BOTÕES DE AÇÃO ---
@@ -192,20 +192,40 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                     supabase.table("notas_atividades").upsert(dados_upsert, on_conflict="aluno_id, unidade").execute()
                     st.success("✅ Salvo!")
 
+            # =========================================================================
+            # AQUI ESTÁ A NOVA MÁGICA: O BOTÃO TOTALMENTE AUTOMATIZADO DO ROBÔ
+            # =========================================================================
             with col_b2:
                 config_siepe = MAPA_IDS_SIEPE.get(turma_sel)
                 if not config_siepe:
                     st.warning("⚠️ Turma sem IDs no mapa.")
                 else:
-                    if st.button("🚀 Sincronizar SIEPE", use_container_width=True):
+                    if st.button("🚀 Sincronizar SIEPE Automático", use_container_width=True):
                         client = SiepeClient()
-                        with st.spinner("Conectando ao SIEPE..."):
-                            logado, msg = client.fazer_login(st.secrets["SIEPE_USER"], st.secrets["SIEPE_PASS"])
+                        with st.spinner("Conectando e navegando pelas telas invisíveis..."):
+                            usuario = st.secrets["SIEPE_USER"]
+                            senha = st.secrets["SIEPE_PASS"]
+                            
+                            logado, msg = client.fazer_login(usuario, senha)
                             if logado:
-                                sucesso, res = client.sincronizar_dataframe_ao_siepe(df_view, config_siepe)
-                                if sucesso: st.success(res)
-                                else: st.error(res)
-                            else: st.error(msg)
+                                st.info("Login OK! Iniciando navegação robótica...")
+                                
+                                # O robô vai fazer o caminho invisível até a aba de notas
+                                sucesso_nav = client.iniciar_robo_navegacao()
+                                
+                                if sucesso_nav:
+                                    st.info("Aba de Notas aberta. Enviando dados...")
+                                    # Passamos o config_siepe junto para ele saber qual a disciplina e a turma correta
+                                    sucesso_envio, msg_envio = client.sincronizar_dataframe_ao_siepe_final(df_view, config_siepe)
+                                    
+                                    if sucesso_envio:
+                                        st.success(msg_envio)
+                                    else:
+                                        st.error(msg_envio)
+                                else:
+                                    st.error("Erro na navegação automática. O portal pode ter mudado algo.")
+                            else:
+                                st.error(f"Falha no login: {msg}")
 
             with col_b3:
                 output = io.BytesIO()
