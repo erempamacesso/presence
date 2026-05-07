@@ -1,6 +1,6 @@
 import requests
 import logging
-import pandas as pd  # <--- Faltava isso aqui!
+import pandas as pd  # <--- CORREÇÃO: O import que faltava
 
 class SiepeClient:
     def __init__(self):
@@ -19,29 +19,27 @@ class SiepeClient:
 
     def fazer_login(self, usuario, senha):
         """
-        Realiza o login no sistema do SIEPE.
+        Realiza o login. Adicionamos um GET inicial para garantir que o cookie 
+        da sessão seja gerado antes de enviar a senha.
         """
-        # Passo opcional mas recomendado: carregar a página inicial para pegar cookies básicos
-        self.session.get(f"{self.base_url}/GerenciadorAcessoWeb/login.do", timeout=10)
-
-        url_login = f"{self.base_url}/GerenciadorAcessoWeb/segurancaAction.do?actionType=ajaxLogin"
-        payload = {
-            'login': usuario,
-            'senha': senha
-        }
         try:
+            # Garante que a página de login carregue primeiro
+            self.session.get(f"{self.base_url}/GerenciadorAcessoWeb/login.do", timeout=10)
+
+            url_login = f"{self.base_url}/GerenciadorAcessoWeb/segurancaAction.do?actionType=ajaxLogin"
+            payload = {'login': usuario, 'senha': senha}
+            
             headers_login = {'Referer': f"{self.base_url}/GerenciadorAcessoWeb/login.do"}
             response = self.session.post(url_login, data=payload, headers=headers_login, timeout=15)
             
-            # O SIEPE costuma retornar "OK" ou um JSON no texto se der certo
             if response.status_code == 200:
-                # Se o login falhar mesmo com 200, ele geralmente avisa no corpo da resposta
-                if "inválido" in response.text.lower() or "erro" in response.text.lower():
-                    return False, "Usuário ou senha inválidos segundo o SIEPE."
-                return True, "Login processado."
-            return False, f"Erro de comunicação. Status: {response.status_code}"
+                # O SIEPE às vezes retorna 200 mas com mensagem de erro no texto
+                if "inválido" in response.text.lower():
+                    return False, "Usuário ou senha inválidos no SIEPE."
+                return True, "Login realizado."
+            return False, f"Erro de conexão: {response.status_code}"
         except Exception as e:
-            return False, str(e)
+            return False, f"Falha técnica: {str(e)}"
 
     def enviar_notas_siepe(self, payload_dados):
         url_save = f"{self.base_url}/GerenciadorAcessoWeb/EWServlet.ew"
@@ -52,11 +50,14 @@ class SiepeClient:
             response = self.session.post(url_save, data=payload_dados, headers=headers_save, timeout=20)
             if response.status_code == 200:
                 return True, "Notas integradas com sucesso!"
-            return False, f"Servidor retornou erro {response.status_code}"
+            return False, f"Erro no servidor SIEPE: {response.status_code}"
         except Exception as e:
             return False, f"Falha de conexão: {str(e)}"
 
     def sincronizar_dataframe_ao_siepe(self, df_view, ids_contexto):
+        """
+        Mapeia os dados do Streamlit para os campos do SIEPE.
+        """
         payload = {
             "idAbaSelecionada": "2",
             "idAbaSelecionadaPedagogico": "2",
@@ -73,8 +74,8 @@ class SiepeClient:
         }
 
         for _, row in df_view.iterrows():
-            # USANDO O ID_SIEPE QUE ESTÁ NO SEU BANCO DE DADOS
-            id_aluno = str(row['id_siepe']) if 'id_siepe' in row else str(row['aluno_id'])
+            # Usa o aluno_id que é o ID interno do SIEPE para cada estudante
+            id_aluno = str(row['aluno_id'])
             
             def fmt(v): 
                 return str(v).replace('.', ',') if (v is not None and v > 0) else ""

@@ -57,6 +57,7 @@ class SiepeClient:
             return False, f"Falha de conexão: {str(e)}"
 
     def sincronizar_dataframe_ao_siepe(self, df_view, ids_contexto):
+        # O payload carrega as configurações da turma e disciplina que você capturou no navegador
         payload = {
             "idAbaSelecionada": "2",
             "idAbaSelecionadaPedagogico": "2",
@@ -72,13 +73,16 @@ class SiepeClient:
             "dummy": ids_contexto.get('dummy')
         }
 
+        # Varre cada linha da tabela (df_view) para preencher as notas de cada aluno
         for _, row in df_view.iterrows():
-            # USANDO O ID_SIEPE QUE ESTÁ NO SEU BANCO DE DADOS
+            # Tenta usar 'id_siepe' (se você já tiver no banco), senão usa o 'aluno_id' padrão
             id_aluno = str(row['id_siepe']) if 'id_siepe' in row else str(row['aluno_id'])
             
+            # Função para converter o ponto (.) do Python para a vírgula (,) do SIEPE
             def fmt(v): 
                 return str(v).replace('.', ',') if (v is not None and v > 0) else ""
 
+            # Mapeia as notas das ATs e da Prova (N2 vai no campo nota_7)
             payload[f"nota_1_{id_aluno}"] = fmt(row['AT1'])
             payload[f"nota_2_{id_aluno}"] = fmt(row['AT2'])
             payload[f"nota_3_{id_aluno}"] = fmt(row['AT3'])
@@ -86,4 +90,5 @@ class SiepeClient:
             payload[f"nota_5_{id_aluno}"] = fmt(row['AT5'])
             payload[f"nota_7_{id_aluno}"] = fmt(row['N2'])
 
+        # Envia o pacote completo de notas para o servidor
         return self.enviar_notas_siepe(payload)
