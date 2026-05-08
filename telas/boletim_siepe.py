@@ -14,7 +14,7 @@ MAPA_IDS_SIEPE = {
         "dummy": "",              
         "bimestre": "1"
     },
-    # Adicione as outras 5 turmas aqui seguindo o mesmo padrão
+    # Adicione as outras turmas aqui mantendo o padrão
 }
 
 # --- FUNÇÃO OFICIAL DE ARREDONDAMENTO SIEPE ---
@@ -128,7 +128,6 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                         except Exception as e: st.error(f"Erro no CSV: {e}")
 
             # --- LÓGICA DE PERSISTÊNCIA DAS EDIÇÕES ---
-            # Sincroniza o que foi digitado no editor de volta para o session_state ANTES de calcular médias
             if editor_key in st.session_state:
                 edicoes = st.session_state[editor_key].get("edited_rows", {})
                 if edicoes:
@@ -152,7 +151,7 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
             colunas_notas = ['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N2', 'N1', 'Média Final']
             df_estilizado = df_view.style.map(aplicar_estilo_notas, subset=[c for c in colunas_notas if c in df_view.columns])
 
-            # --- CONFIGURAÇÃO DAS COLUNAS (Títulos em Negrito/Caps e Ordem) ---
+            # --- CONFIGURAÇÃO DAS COLUNAS ---
             config_cols = {
                 "aluno_id": None, 
                 "nome": st.column_config.TextColumn("ESTUDANTE", disabled=True, width="medium"),
@@ -166,15 +165,18 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                 "Média Final": st.column_config.NumberColumn("MÉDIA 🔒", disabled=True, format="%.1f"),
             }
 
-            # --- EDITOR DE DADOS (CABEÇALHO FIXO E COLUNA N2 ANTES DE N1) ---
+            # --- CÁLCULO DE ALTURA PARA EXIBIR TODAS AS LINHAS (Sem barra de rolagem interna) ---
+            altura_tabela = (len(df_view) + 1) * 35 + 45
+
+            # --- EDITOR DE DADOS (ORDEM CORRETA: N2 ANTES DE N1) ---
             st.data_editor(
                 df_estilizado, 
                 key=editor_key, 
                 hide_index=True, 
                 column_config=config_cols, 
                 use_container_width=True,
-                height=500, # Altura fixa para travar o cabeçalho no topo (Sticky Header)
-                column_order=("nome", "AT1", "AT2", "AT3", "AT4", "AT5", "N2", "N1", "Média Final")
+                height=altura_tabela, # Aplica a altura dinâmica para evitar a barra de rolagem
+                column_order=("nome", "AT1", "AT2", "AT3", "AT4", "AT5", "N2", "N1", "Média Final") # N2 vem antes de N1
             )
 
             # --- BOTÕES DE AÇÃO ---
