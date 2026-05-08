@@ -57,7 +57,6 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                     df_turma = df_turma.rename(columns={"id": "aluno_id"})
                     ano_ref = "2º ano" if "2º" in turma_sel else ("3º ano" if "3º" in turma_sel else "")
                     
-                    # Busca Simulados (AT1/AT2)
                     def buscar_nota_simulado(termo_simulado, limite_nota=4.0):
                         mapa_notas = {}
                         if ano_ref:
@@ -78,7 +77,6 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                     mapa_at1 = buscar_nota_simulado("1º Simulado")
                     mapa_at2 = buscar_nota_simulado("2º Simulado")
 
-                    # Busca Notas Manuais do Supabase
                     res_notas = supabase.table("notas_atividades").select("*").eq("turma", turma_sel).eq("unidade", "1º Bimestre").execute()
                     m3, m4, m5, mn2 = {}, {}, {}, {}
                     if res_notas.data:
@@ -87,6 +85,8 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                             m3[aid], m4[aid], m5[aid], mn2[aid] = r.get('at3'), r.get('at4'), r.get('at5'), r.get('prova')
 
                     df_base = df_turma[['aluno_id', col_n]].copy().rename(columns={col_n: 'nome'})
+                    
+                    # Garantir que comecem como None (NP)
                     df_base['AT1'] = df_base['aluno_id'].astype(str).map(mapa_at1)
                     df_base['AT2'] = df_base['aluno_id'].astype(str).map(mapa_at2)
                     df_base['AT3'] = df_base['aluno_id'].astype(str).map(m3)
@@ -96,7 +96,7 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                     
                     st.session_state[state_key] = df_base.sort_values('nome').reset_index(drop=True)
 
-            # --- LÓGICA DE IMPORTAR E SOMAR (AQUI ESTÁ O QUE VOCÊ PEDIU) ---
+            # --- LÓGICA DE IMPORTAR E SOMAR ---
             with st.expander("📥 Importar e SOMAR Notas (N2) via CSV"):
                 arquivo_csv = st.file_uploader("Upload CSV", type="csv", key=f"up_{turma_sel}")
                 if arquivo_csv and st.button("🚀 Processar e Somar"):
@@ -112,7 +112,6 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                             for idx, row in df_atual.iterrows():
                                 nome = row['n_match']
                                 if nome in mapa_csv:
-                                    # Lógica: Verifica se há valor (se não, assume 0) e soma
                                     v_atual = float(row['N2']) if pd.notna(row['N2']) else 0.0
                                     df_atual.at[idx, 'N2'] = v_atual + float(mapa_csv[nome])
                             
@@ -125,12 +124,26 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                 edicoes = st.session_state[editor_key].get("edited_rows", {})
                 for row_idx, alteracoes in edicoes.items():
                     for col_name, valor in alteracoes.items():
+                        # Converte para float se houver valor, senão mantém None
                         st.session_state[state_key].at[row_idx, col_name] = float(valor) if valor is not None else None
 
-            # --- CÁLCULOS E ESTILO ---
+            # --- CÁLCULOS E ESTILO (VERREDURA AQUI) ---
             df_view = st.session_state[state_key].copy()
-            df_view['N1'] = df_view[['AT1', 'AT2', 'AT3', 'AT4', 'AT5']].sum(axis=1).apply(arredondar_siepe)
-            df_view['Média Final'] = ((df_view['N1'] + df_view['N2'].fillna(0.0)) / 2).apply(arredondar_siepe)
+            
+            # min_count=1 evita que NaN + NaN vire 0
+            df_view['N1'] = df_view[['AT1', 'AT2', 'AT3', 'AT4', 'AT5']].sum(axis=1, min_count=1).apply(
+                lambda x: arredondar_siepe(x) if pd.notna(x) else None
+            )
+
+            # Cálculo de média que preserva o "Vazio" se nada foi feito
+            def calcular_media_segura(row):
+                n1, n2 = row['N1'], row['N2']
+                if pd.isna(n1) and pd.isna(n2): return None
+                v1 = n1 if pd.notna(n1) else 0.0
+                v2 = n2 if pd.notna(n2) else 0.0
+                return arredondar_siepe((v1 + v2) / 2)
+
+            df_view['Média Final'] = df_view.apply(calcular_media_segura, axis=1)
 
             def estilo(val):
                 try:
@@ -164,15 +177,17 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
             c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
             with c1:
                 if st.button("💾 Salvar no Banco", type="primary", use_container_width=True):
-                    dados = []
+                    dados_limpos = []
                     for _, r in df_view.iterrows():
-                        dados.append({
+                        # Forçar None para garantir que salve NULL no banco (NP)
+                        limpar = lambda x: float(x) if pd.notna(x) else None
+                        dados_limpos.append({
                             "aluno_id": r['aluno_id'], "turma": turma_sel, "unidade": "1º Bimestre",
-                            "at1": r['AT1'], "at2": r['AT2'], "at3": r['AT3'],
-                            "at4": r['AT4'], "at5": r['AT5'], "prova": r['N2']
+                            "at1": limpar(r['AT1']), "at2": limpar(r['AT2']), "at3": limpar(r['AT3']),
+                            "at4": limpar(r['AT4']), "at5": limpar(r['AT5']), "prova": limpar(r['N2'])
                         })
-                    supabase.table("notas_atividades").upsert(dados, on_conflict="aluno_id, unidade").execute()
-                    st.success("✅ Salvo!")
+                    supabase.table("notas_atividades").upsert(dados_limpos, on_conflict="aluno_id, unidade").execute()
+                    st.success("✅ Salvo com distinção de NP!")
 
             with c2:
                 cfg = MAPA_IDS_SIEPE.get(turma_sel)
