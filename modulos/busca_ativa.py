@@ -45,27 +45,30 @@ def exibir_busca_ativa(supabase, supabase_alunos):
             turma_sel = st.selectbox("Selecione a Turma:", turmas_lista)
 
 #---------------------------------------------------------------------------------------------------------
-        
-        # --- [NOVO] ALERTA DE FOTOS PENDENTES (VISÃO GERAL) ---
-        from fotograma_aba import listar_fotos_github, limpar_texto
+       # --- [SEGURO] ALERTA DE FOTOS PENDENTES ---
+        try:
+            from fotograma_aba import listar_fotos_github, limpar_texto
+            
+            mapa_fotos = listar_fotos_github()
+            
+            # Criamos uma cópia temporária para não mexer no df original agora
+            df_temp = df_al.copy()
+            df_temp['tem_foto'] = df_temp['nome'].apply(lambda x: limpar_texto(x) in mapa_fotos)
+            df_sem_foto_geral = df_temp[df_temp['tem_foto'] == False]
 
-        mapa_fotos = listar_fotos_github()
+            if not df_sem_foto_geral.empty:
+                st.error(f"📸 Existem **{len(df_sem_foto_geral)}** estudantes sem foto no fotograma.")
+                with st.expander("📂 Ver lista de pendências por turma", expanded=False):
+                    df_pendentes_view = df_sem_foto_geral[['nome', 'turma']].sort_values(by=['turma', 'nome'])
+                    st.dataframe(df_pendentes_view, use_container_width=True, hide_index=True)
+            else:
+                st.success("✅ 100% dos estudantes possuem foto no sistema!")
         
-        # Cruzamos a lista geral de alunos (df_al) com o que existe no GitHub
-        df_al['tem_foto'] = df_al['nome'].apply(lambda x: limpar_texto(x) in mapa_fotos)
-        df_sem_foto_geral = df_al[df_al['tem_foto'] == False]
+        except Exception as e_foto:
+            st.warning(f"⚠️ Aviso: Não foi possível carregar o alerta de fotos (Erro: {e_foto})")
 
-        if not df_sem_foto_geral.empty:
-            st.error(f"📸 Existem **{len(df_sem_foto_geral)}** estudantes sem foto no fotograma.")
-            with st.expander("📂 Ver lista de pendências por turma", expanded=False):
-                # Mostra o nome e a turma para facilitar a busca ativa do professor
-                df_pendentes_view = df_sem_foto_geral[['nome', 'turma']].sort_values(by=['turma', 'nome'])
-                st.dataframe(df_pendentes_view, use_container_width=True, hide_index=True)
-        else:
-            st.success("✅ 100% dos estudantes possuem foto no sistema!")
-        
-        st.divider() # Mantém a interface organizada
-
+        st.divider() 
+   
 #----------------------------------------------------------------------------------------------------
 
         # --- BUSCA DE DADOS HISTÓRICOS (Para Presença Zero) ---
