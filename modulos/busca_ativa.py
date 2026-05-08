@@ -5,6 +5,7 @@ import pytz
 import unicodedata
 import calendar
 import os
+import requests
 from pathlib import Path # <-- NOVA IMPORTAÇÃO PARA ROTA ABSOLUTA
 
 # ==========================================
@@ -16,8 +17,63 @@ def normalizar(nome):
     nome_limpo = "".join([c for c in nfkd if not unicodedata.combining(c)]).upper()
     return " ".join(nome_limpo.split())
 
-# --- FUNÇÃO PARA CHECAR ARQUIVOS DE FOTO (BLINDADA COM PATHLIB) ---
-def listar_nomes_com_foto():
+
+# ==========================================
+# ✅ NOVA: BUSCAR FOTOS DO GITHUB (COM CACHE)
+# ==========================================
+@st.cache_data(ttl=3600)  # Cache de 1 hora
+def construir_mapa_fotos_github(github_url_base):
+    """
+    Busca lista de fotos no GitHub e retorna mapa normalizado.
+    
+    Args:
+        github_url_base: URL da pasta (ex: https://raw.githubusercontent.com/user/repo/main/alunos_fotos)
+    
+    Returns:
+        dict: {nome_normalizado: url_da_foto} ou {} se erro
+    """
+    mapa_fotos = {}
+    
+    try:
+        # Converte URL raw em URL da API GitHub
+        api_url = github_url_base.replace(
+            "https://raw.githubusercontent.com/",
+            "https://api.github.com/repos/"
+        ).replace("/main/alunos_fotos", "")
+        
+        api_url = f"{api_url}/contents/alunos_fotos"
+        
+        response = requests.get(api_url, timeout=10)
+        
+        if response.status_code == 200:
+            arquivos = response.json()
+            
+            for arquivo in arquivos:
+                if arquivo['type'] == 'file' and arquivo['name'].lower().endswith('.png'):
+                    # Extrai nome do arquivo sem extensão
+                    nome_arquivo = arquivo['name'].replace('.png', '').replace('.PNG', '')
+                    
+                    # Normaliza para comparação (MESMA FUNÇÃO do resto do código)
+                    nome_normalizado = normalizar(nome_arquivo)
+                    
+                    if nome_normalizado:
+                        # Constrói URL raw do GitHub
+                        url_foto = f"{github_url_base}/{arquivo['name']}"
+                        mapa_fotos[nome_normalizado] = url_foto
+        
+    except requests.exceptions.Timeout:
+        pass  # Falha silenciosa - não trava a tela
+    except Exception:
+        pass  # Falha silenciosa - não trava a tela
+    
+    return mapa_fotos
+
+
+# ==========================================
+# FALLBACK: FUNÇÃO LOCAL (se GitHub não funcionar)
+# ==========================================
+def listar_nomes_com_foto_local():
+    """Função original que tenta pasta local como fallback"""
     # Caminho absoluto: Pega o local deste script (modulos) e volta uma pasta (para a raiz)
     caminho_base = Path(__file__).resolve().parent.parent
     pasta_fotos_1 = caminho_base / "alunos_fotos"
@@ -31,7 +87,7 @@ def listar_nomes_com_foto():
     elif pasta_fotos_2.exists() and pasta_fotos_2.is_dir():
         pasta_ativa = pasta_fotos_2
 
-    # Retorna None se não achar a pasta de jeito nenhum (evita o bug de acusar todo mundo)
+    # Retorna None se não achar a pasta de jeito nenhum
     if not pasta_ativa:
         return None 
         
@@ -45,7 +101,8 @@ def listar_nomes_com_foto():
     except:
         return None
 
-def exibir_busca_ativa(supabase, supabase_alunos):
+
+def exibir_busca_ativa(supabase, supabase_alunos, github_url_base=None):
     st.title("🕵️ Busca Ativa e Gestão de Frequência")
 
     tz = pytz.timezone('America/Recife')
@@ -62,7 +119,7 @@ def exibir_busca_ativa(supabase, supabase_alunos):
         df_al['nome_limpo'] = df_al['nome'].apply(normalizar)
 
         # ==========================================
-        # 🚨 LÓGICA DE FOTOS: PRESENÇA -> FOTOGRAMA
+        # ✅ NOVA LÓGICA DE FOTOS: PRESENÇA -> FOTOGRAMA (GITHUB)
         # ==========================================
         try:
             hoje_str = hoje.strftime('%Y-%m-%d')
@@ -70,12 +127,22 @@ def exibir_busca_ativa(supabase, supabase_alunos):
             # 1º PASSO: Vê quem veio pra aula hoje
             res_pres_hoje = supabase.table("frequencia").select("aluno_nome").eq("data_chamada", hoje_str).eq("status", "P").execute()
             
-            # 2º PASSO: Mapeia as fotos que existem na pasta
-            nomes_com_foto = listar_nomes_com_foto()
+            # 2º PASSO: Mapeia as fotos (GitHub como prioridade, fallback local)
+            nomes_com_foto = None
+            
+            if github_url_base:
+                # Tenta GitHub primeiro
+                mapa_github = construir_mapa_fotos_github(github_url_base)
+                if mapa_github:
+                    nomes_com_foto = set(mapa_github.keys())
+            
+            # Se GitHub não funcionou, tenta pasta local
+            if nomes_com_foto is None:
+                nomes_com_foto = listar_nomes_com_foto_local()
 
             # Só cruza os dados se houve presenças hoje
             if res_pres_hoje.data:
-                # Se a pasta de fotos foi localizada com sucesso (nomes_com_foto não é None)
+                # Se conseguiu localizar fotos (GitHub ou local)
                 if nomes_com_foto is not None:
                     nomes_presentes_hoje = [normalizar(p['aluno_nome']) for p in res_pres_hoje.data]
                     df_presentes = df_al[df_al['nome_limpo'].isin(nomes_presentes_hoje)]
@@ -91,13 +158,15 @@ def exibir_busca_ativa(supabase, supabase_alunos):
                     else:
                         st.success("✅ Show! Todos os alunos presentes hoje já possuem foto.")
                 else:
-                    st.info("💡 Pasta 'alunos_fotos' não localizada para o cruzamento de dados.")
+                    st.info("💡 Nenhuma fonte de fotos disponível (GitHub ou pasta local).")
         except Exception as e_foto:
             # Não trava a tela se der algum erro bizarro nessa verificação
             pass
         # ==========================================
 
+        #===============
         # 2. FILTROS
+        #============
         st.markdown("### 📅 Filtros de Pesquisa")
         c1, c2, c3 = st.columns([1, 1, 2])
         meses_br = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
