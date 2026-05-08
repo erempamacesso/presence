@@ -44,6 +44,30 @@ def exibir_busca_ativa(supabase, supabase_alunos):
             turmas_lista = sorted(df_al['turma'].dropna().unique().tolist())
             turma_sel = st.selectbox("Selecione a Turma:", turmas_lista)
 
+#---------------------------------------------------------------------------------------------------------
+        
+        # --- [NOVO] ALERTA DE FOTOS PENDENTES (VISÃO GERAL) ---
+        from fotograma_aba import listar_fotos_github, limpar_texto
+
+        mapa_fotos = listar_fotos_github()
+        
+        # Cruzamos a lista geral de alunos (df_al) com o que existe no GitHub
+        df_al['tem_foto'] = df_al['nome'].apply(lambda x: limpar_texto(x) in mapa_fotos)
+        df_sem_foto_geral = df_al[df_al['tem_foto'] == False]
+
+        if not df_sem_foto_geral.empty:
+            st.error(f"📸 Existem **{len(df_sem_foto_geral)}** estudantes sem foto no fotograma.")
+            with st.expander("📂 Ver lista de pendências por turma", expanded=False):
+                # Mostra o nome e a turma para facilitar a busca ativa do professor
+                df_pendentes_view = df_sem_foto_geral[['nome', 'turma']].sort_values(by=['turma', 'nome'])
+                st.dataframe(df_pendentes_view, use_container_width=True, hide_index=True)
+        else:
+            st.success("✅ 100% dos estudantes possuem foto no sistema!")
+        
+        st.divider() # Mantém a interface organizada
+
+#----------------------------------------------------------------------------------------------------
+
         # --- BUSCA DE DADOS HISTÓRICOS (Para Presença Zero) ---
         res_p_historico = supabase.table("frequencia").select("aluno_nome").eq("status", "P").execute()
         nomes_com_presenca_historica = {normalizar(r['aluno_nome']) for r in res_p_historico.data} if res_p_historico.data else set()
