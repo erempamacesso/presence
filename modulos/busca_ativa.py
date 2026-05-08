@@ -45,22 +45,16 @@ def exibir_busca_ativa(supabase, supabase_alunos):
             turma_sel = st.selectbox("Selecione a Turma:", turmas_lista)
 
 #---------------------------------------------------------------------------------------------------------
-       # --- [VERSÃO INDEPENDENTE] ALERTA DE FOTOS PENDENTES ---
+       # --- [SEGURO] ALERTA DE FOTOS PENDENTES ---
         try:
-            # 1. Definimos a limpeza aqui dentro para não depender de outro arquivo
-            def limpar_nome_local(nome):
-                import unicodedata
-                nfkd = unicodedata.normalize("NFKD", str(nome))
-                texto_limpo = "".join(c for c in nfkd if not unicodedata.combining(c)).lower()
-                return "".join(filter(str.isalnum, texto_limpo))
-
-            # 2. Tentamos rodar a busca (o listar_fotos_github precisa estar acessível)
-            from fotograma_aba import listar_fotos_github
+            from fotograma_aba import listar_fotos_github, limpar_texto
+            
             mapa_fotos = listar_fotos_github()
             
-            # 3. Lógica de cruzamento
-            df_al['tem_foto'] = df_al['nome'].apply(lambda x: limpar_nome_local(x) in mapa_fotos)
-            df_sem_foto_geral = df_al[df_al['tem_foto'] == False]
+            # Criamos uma cópia temporária para não mexer no df original agora
+            df_temp = df_al.copy()
+            df_temp['tem_foto'] = df_temp['nome'].apply(lambda x: limpar_texto(x) in mapa_fotos)
+            df_sem_foto_geral = df_temp[df_temp['tem_foto'] == False]
 
             if not df_sem_foto_geral.empty:
                 st.error(f"📸 Existem **{len(df_sem_foto_geral)}** estudantes sem foto no fotograma.")
@@ -69,10 +63,11 @@ def exibir_busca_ativa(supabase, supabase_alunos):
                     st.dataframe(df_pendentes_view, use_container_width=True, hide_index=True)
             else:
                 st.success("✅ 100% dos estudantes possuem foto no sistema!")
+        
+        except Exception as e_foto:
+            st.warning(f"⚠️ Aviso: Não foi possível carregar o alerta de fotos (Erro: {e_foto})")
 
-        except Exception as e:
-            # Se ainda der erro de módulo, ele apenas avisa e não trava seu app
-            st.warning(f"⚠️ Nota: O arquivo 'fotograma_aba.py' não foi detectado. Certifique-se de que ele está na mesma pasta do projeto.")
+        st.divider() 
    
 #----------------------------------------------------------------------------------------------------
 
