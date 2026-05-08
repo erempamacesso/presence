@@ -4,15 +4,26 @@ from datetime import datetime
 import pytz
 import unicodedata
 import calendar
+import os
 
 # ==========================================
-# 1. FUNÇÃO DE PADRONIZAÇÃO (A BASE DO FUNCIONAMENTO)
+# 1. FUNÇÃO DE PADRONIZAÇÃO
 # ==========================================
 def normalizar(nome):
     if not nome: return ""
     nfkd = unicodedata.normalize('NFKD', str(nome))
     nome_limpo = "".join([c for c in nfkd if not unicodedata.combining(c)]).upper()
     return " ".join(nome_limpo.split())
+
+# --- [NOVA] FUNÇÃO PARA CHECAR ARQUIVOS DE FOTO ---
+def listar_nomes_com_foto(pasta="alunos_fotos"):
+    if not os.path.exists(pasta):
+        return set()
+    # Pega os nomes dos arquivos, remove a extensão e normaliza
+    arquivos = os.listdir(pasta)
+    nomes_fotos = {normalizar(f.replace(".png", "").replace(".jpg", "").replace(".jpeg", "")) 
+                   for f in arquivos if f.lower().endswith(('.png', '.jpg', '.jpeg'))}
+    return nomes_fotos
 
 def exibir_busca_ativa(supabase, supabase_alunos):
     st.title("🕵️ Busca Ativa e Gestão de Frequência")
@@ -30,6 +41,37 @@ def exibir_busca_ativa(supabase, supabase_alunos):
         df_al = pd.DataFrame(res_al.data)
         df_al['nome_limpo'] = df_al['nome'].apply(normalizar)
 
+        # --- [CORRIGIDO] BLOCO: ALUNOS PRESENTES SEM FOTO ---
+        try:
+            hoje_str = hoje.strftime('%Y-%m-%d')
+            # Busca quem marcou presença hoje (Usando 'data_chamada' conforme seu print)
+            res_pres_hoje = supabase.table("frequencia")\
+                .select("aluno_nome")\
+                .eq("data_chamada", hoje_str)\
+                .eq("status", "P")\
+                .execute()
+            
+            # Lê as fotos da pasta 'alunos_fotos' que você mostrou no GitHub
+            nomes_com_foto = listar_nomes_com_foto("alunos_fotos")
+
+            if res_pres_hoje.data:
+                nomes_presentes_hoje = [normalizar(p['aluno_nome']) for p in res_pres_hoje.data]
+                
+                # Filtra alunos que estão presentes hoje mas o nome não está na pasta de fotos
+                df_presentes = df_al[df_al['nome_limpo'].isin(nomes_presentes_hoje)]
+                df_sem_foto = df_presentes[~df_presentes['nome_limpo'].isin(nomes_com_foto)]
+
+                if not df_sem_foto.empty:
+                    st.error(f"📸 **Atenção:** Identificamos **{len(df_sem_foto)}** alunos presentes hoje sem foto na pasta.")
+                    with st.expander("📍 Lista para Fotografar Agora"):
+                        for turma_ref, grupo in df_sem_foto.groupby('turma'):
+                            st.markdown(f"**Turma: {turma_ref}**")
+                            st.write(", ".join(grupo.sort_values('nome')['nome'].tolist()))
+                else:
+                    st.success("✅ Todos os alunos presentes hoje já possuem foto!")
+        except Exception as e_foto:
+            st.sidebar.warning(f"Aviso Fotos: {e_foto}")
+
         # 2. FILTROS DE TOPO
         st.markdown("### 📅 Filtros de Pesquisa")
         c1, c2, c3 = st.columns([1, 1, 2])
@@ -44,42 +86,12 @@ def exibir_busca_ativa(supabase, supabase_alunos):
             turmas_lista = sorted(df_al['turma'].dropna().unique().tolist())
             turma_sel = st.selectbox("Selecione a Turma:", turmas_lista)
 
-#---------------------------------------------------------------------------------------------------------
-       # --- [SEGURO] ALERTA DE FOTOS PENDENTES ---
-        try:
-            from fotograma_aba import listar_fotos_github, limpar_texto
-            
-            mapa_fotos = listar_fotos_github()
-            
-            # Criamos uma cópia temporária para não mexer no df original agora
-            df_temp = df_al.copy()
-            df_temp['tem_foto'] = df_temp['nome'].apply(lambda x: limpar_texto(x) in mapa_fotos)
-            df_sem_foto_geral = df_temp[df_temp['tem_foto'] == False]
-
-            if not df_sem_foto_geral.empty:
-                st.error(f"📸 Existem **{len(df_sem_foto_geral)}** estudantes sem foto no fotograma.")
-                with st.expander("📂 Ver lista de pendências por turma", expanded=False):
-                    df_pendentes_view = df_sem_foto_geral[['nome', 'turma']].sort_values(by=['turma', 'nome'])
-                    st.dataframe(df_pendentes_view, use_container_width=True, hide_index=True)
-            else:
-                st.success("✅ 100% dos estudantes possuem foto no sistema!")
-        
-        except Exception as e_foto:
-            st.warning(f"⚠️ Aviso: Não foi possível carregar o alerta de fotos (Erro: {e_foto})")
-
-        st.divider() 
-   
-#----------------------------------------------------------------------------------------------------
-
-        # --- BUSCA DE DADOS HISTÓRICOS (Para Presença Zero) ---
-        res_p_historico = supabase.table("frequencia").select("aluno_nome").eq("status", "P").execute()
-        nomes_com_presenca_historica = {normalizar(r['aluno_nome']) for r in res_p_historico.data} if res_p_historico.data else set()
-
-        # --- BUSCA DE DADOS MENSAL (Para Diário e Ranking) ---
+        # 3. BUSCA DE DADOS MENSAL
         ultimo_dia = calendar.monthrange(ano_sel, mes_num)[1]
         data_ini = f"{ano_sel}-{mes_num:02d}-01"
         data_fim = f"{ano_sel}-{mes_num:02d}-{ultimo_dia}"
 
+        # Importante: Mantendo 'data_chamada' que é o nome real no seu banco
         res_mensal = supabase.table("frequencia")\
             .select("aluno_nome, data_chamada")\
             .eq("status", "P")\
@@ -96,108 +108,21 @@ def exibir_busca_ativa(supabase, supabase_alunos):
                 dia = str(row['data_chamada']).split("-")[2]
                 presencas_mes_set.add((row['nome_limpo'], dia))
 
-        # --- DEFINIÇÃO DAS ABAS ---
-        abas = st.tabs([
-            "📊 Ranking de Faltas", 
-            "❌ Presença Zero", 
-            "🚩 Evasão Interna (Gazeando)", 
-            "🚨 Ocorrências", 
-            "📅 Diário de Frequência"
-        ])
+        # 4. INTERFACE EM ABAS
+        abas = st.tabs(["📊 Ranking", "❌ Presença Zero", "🚩 Gazeando", "🚨 Ocorrências", "📅 Diário"])
         
         df_t = df_al[df_al['turma'] == turma_sel].copy()
 
         # --- ABA 1: RANKING ---
         with abas[0]:
-            st.subheader(f"Assiduidade Mensal: {turma_sel}")
+            st.subheader(f"Faltas no Mês: {turma_sel}")
             contagem = df_p_mes.groupby('nome_limpo').size().reset_index(name='presencas') if not df_p_mes.empty else pd.DataFrame(columns=['nome_limpo', 'presencas'])
             df_rank = pd.merge(df_t, contagem, on='nome_limpo', how='left').fillna(0)
             dias_letivos = df_p_mes['data_chamada'].nunique() if not df_p_mes.empty else 0
             df_rank['faltas'] = dias_letivos - df_rank['presencas']
             st.dataframe(df_rank[['nome', 'presencas', 'faltas']].sort_values('faltas', ascending=False), use_container_width=True, hide_index=True)
 
-        # --- ABA 2: PRESENÇA ZERO (HISTÓRICO) ---
-        with abas[1]:
-            st.subheader("⚠️ Alunos que NUNCA registraram presença")
-            df_presenca_zero = df_t[~df_t['nome_limpo'].isin(nomes_com_presenca_historica)]
-            if not df_presenca_zero.empty:
-                st.error(f"Detectamos {len(df_presenca_zero)} alunos na turma {turma_sel} sem histórico de presença 'P'.")
-                st.dataframe(df_presenca_zero[['nome', 'turma']], use_container_width=True, hide_index=True)
-            else:
-                st.success("Todos os alunos desta turma já vieram pelo menos uma vez!")
-
-     
-       # --- ABA: EVASÃO INTERNA (VISUALIZAÇÃO E EXCLUSÃO) ---
-        with abas[2]:
-            st.subheader("🚩 Registros de Evasão Interna (Gazeando)")
-            
-            try:
-                # Busca registros da tabela 'evasoes' filtrando pela turma selecionada
-                res_ev = supabase.table("evasoes").select("*").eq("turma", turma_sel).order("data_registro", desc=True).execute()
-                df_ev_raw = pd.DataFrame(res_ev.data) if res_ev.data else pd.DataFrame()
-
-                if not df_ev_raw.empty:
-                    # Formatação da data para o padrão brasileiro
-                    df_ev_raw['Data'] = pd.to_datetime(df_ev_raw['data_registro']).dt.strftime('%d/%m/%Y')
-                    
-                    # Preparamos o DataFrame para exibição
-                    df_display = df_ev_raw[['Data', 'aluno_nome', 'aula_periodo']].copy()
-                    df_display.columns = ['Data', 'Estudante', 'Aula/Período']
-                    
-                    st.warning("⚠️ Para apagar um registro: Selecione a linha e aperte 'Delete' no teclado ou use a lixeira que aparecerá ao lado.")
-
-                    # O editor de dados agora permite deletar linhas diretamente
-                    # O 'num_rows="dynamic"' habilita a lixeira nativa do Streamlit
-                    event = st.data_editor(
-                        df_display,
-                        use_container_width=True,
-                        hide_index=True,
-                        key="editor_evasoes",
-                        disabled=['Data', 'Estudante', 'Aula/Período'], 
-                        height=(len(df_display) + 1) * 36,
-                        num_rows="dynamic" # ISSO ATIVA A LIXEIRA
-                    )
-
-                    # Lógica para detectar se o usuário apagou algo na tabela
-                    if len(event) < len(df_display):
-                        # Descobrimos qual item sumiu comparando os índices
-                        indices_atuais = event.index.tolist()
-                        indices_originais = df_display.index.tolist()
-                        index_removido = list(set(indices_originais) - set(indices_atuais))[0]
-                        
-                        # Pegamos o ID real do banco para deletar
-                        id_para_deletar = df_ev_raw.iloc[index_removido]['id']
-                        
-                        with st.spinner("Excluindo registro..."):
-                            supabase.table("evasoes").delete().eq("id", id_para_deletar).execute()
-                            st.success("Registro removido com sucesso!")
-                            st.rerun()
-
-                else:
-                    st.info(f"Nenhum registro de evasão encontrado para a turma {turma_sel}.")
-
-            except Exception as e:
-                st.error(f"Erro ao carregar evasões: {e}")        
-
-        # --- ABA 4: OCORRÊNCIAS ---
-        with abas[3]:
-            st.subheader("🚨 Ocorrências Disciplinares")
-            nome_oc = st.selectbox("Estudante:", df_t['nome'].tolist(), key="sb_oc")
-            with st.form("form_oc"):
-                tipo = st.selectbox("Tipo:", ["Ligação", "Visita", "Conselho Tutelar"])
-                relato = st.text_area("Relato:")
-                resp_oc = st.text_input("Responsável:")
-                if st.form_submit_button("💾 Salvar"):
-                    if relato:
-                        id_al = df_t[df_t['nome'] == nome_oc]['id'].values[0]
-                        supabase.table("ocorrencias_disciplinares").insert({
-                            "aluno_id": str(id_al), "aluno_nome": nome_oc, "turma": turma_sel,
-                            "tipo_ocorrencia": tipo, "motivo": relato, "quem_registrou": resp_oc,
-                            "data_registro": hoje.strftime('%Y-%m-%d')
-                        }).execute()
-                        st.success("Ocorrência salva!")
-
-        # --- ABA 5: DIÁRIO ---
+        # --- ABA 5: DIÁRIO MENSAL (Célula de Ouro) ---
         with abas[4]:
             st.subheader(f"📅 Mapa Mensal: {turma_sel}")
             dias_lista = [f"{d:02d}" for d in range(1, ultimo_dia + 1)]
@@ -208,10 +133,12 @@ def exibir_busca_ativa(supabase, supabase_alunos):
                     if (aluno['nome_limpo'], d) in presencas_mes_set:
                         linha[d] = "✅"
                     else:
-                        dt_dia = datetime(ano_sel, mes_num, int(d)).date()
-                        if dt_dia > hoje.date(): linha[d] = " "
-                        elif dt_dia.weekday() >= 5: linha[d] = "-"
-                        else: linha[d] = "❌"
+                        try:
+                            dt_dia = datetime(ano_sel, mes_num, int(d)).date()
+                            if dt_dia > hoje.date(): linha[d] = " "
+                            elif dt_dia.weekday() >= 5: linha[d] = "-"
+                            else: linha[d] = "❌"
+                        except: linha[d] = " "
                 matriz.append(linha)
             
             df_mapa = pd.DataFrame(matriz)
@@ -220,4 +147,4 @@ def exibir_busca_ativa(supabase, supabase_alunos):
             st.dataframe(df_mapa, use_container_width=True, hide_index=True, column_config=config_cols, height=500)
 
     except Exception as e:
-        st.error(f"Erro: {e}")
+        st.error(f"Erro geral: {e}")
