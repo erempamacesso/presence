@@ -18,7 +18,6 @@ MAPA_IDS_SIEPE = {
 
 # --- FUNÇÃO OFICIAL DE ARREDONDAMENTO SIEPE ---
 def arredondar_siepe(nota):
-    # Se a nota for nula ou NaN, tratamos como 0 para o cálculo final do SIEPE
     if pd.isna(nota) or nota is None: return 0.0
     nota = float(nota)
     inteiro = math.floor(nota)
@@ -29,8 +28,8 @@ def arredondar_siepe(nota):
 
 def mostrar_tela_boletim(supabase, supabase_alunos):
     st.title("📝 Meu Registro Pessoal de Notas")
-    st.info("AT1 e AT2: Simulados | AT3-AT5: Diversas | N2: Prova | NP: Não Participou")
-    st.caption("💡 Notas nulas aparecem como **NP**. Para registrar um zero real, digite **0**.")
+    st.info("AT1-AT2: Simulados | AT3-AT5: Diversas | N2: Prova")
+    st.caption("💡 Células vazias indicam que o aluno não participou (NP).")
 
     try:
         # 1. Busca alunos do banco
@@ -79,13 +78,12 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                                     mapa_notas = dict(zip(df_c['aluno_id'].astype(str), df_c['nota_arredondada']))
                         return mapa_notas
 
-                    # Buscamos as notas dos simulados (quem não fez fica sem entrada no mapa)
                     mapa_at1 = buscar_nota_simulado("1º Simulado")
                     mapa_at2 = buscar_nota_simulado("2º Simulado")
 
                     df_base = df_turma[['aluno_id', col_n]].copy().rename(columns={col_n: 'nome'})
                     
-                    # MAPEAMENTO SEM FILLNA(0): Se não existe, fica NaN (NP)
+                    # Notas de simulado mantêm o valor original ou ficam como NaN (sem nota)
                     df_base['AT1'] = df_base['aluno_id'].astype(str).map(mapa_at1)
                     df_base['AT2'] = df_base['aluno_id'].astype(str).map(mapa_at2)
                     
@@ -124,7 +122,6 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                                 for idx, row in df_atual.iterrows():
                                     nome = row['n_match']
                                     if nome in mapa_csv:
-                                        # Soma à nota atual (tratando NaN como 0 na soma)
                                         nota_atual = float(row['N2']) if pd.notna(row['N2']) else 0.0
                                         df_atual.at[idx, 'N2'] = nota_atual + float(mapa_csv[nome])
                                 
@@ -138,14 +135,11 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                 if edicoes:
                     for row_idx, alteracoes in edicoes.items():
                         for col_name, valor in alteracoes.items():
-                            # Se apagar a nota, volta a ser None (NP)
                             st.session_state[state_key].at[row_idx, col_name] = float(valor) if valor is not None else None
 
             # --- PROCESSAMENTO DE CÁLCULOS ---
             df_view = st.session_state[state_key].copy()
-            # .sum(axis=1) ignora NaNs (trata como 0), o que é ideal para o somatório
             df_view['N1'] = df_view[['AT1', 'AT2', 'AT3', 'AT4', 'AT5']].sum(axis=1).apply(arredondar_siepe)
-            # Para a média, convertemos N2 para 0 caso seja NaN para evitar erro de cálculo
             df_view['Média Final'] = ((df_view['N1'] + df_view['N2'].fillna(0.0)) / 2).apply(arredondar_siepe)
 
             # --- LÓGICA DE CORES ---
@@ -153,30 +147,28 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                 try:
                     if pd.notna(val) and float(val) > 0:
                         return 'color: #1E40AF; font-weight: bold; background-color: #EFF6FF;'
-                    return 'color: #9CA3AF;' # Cinza para zeros e NPs
+                    return 'color: #9CA3AF;'
                 except: return ''
 
             colunas_notas = ['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N2', 'N1', 'Média Final']
             df_estilizado = df_view.style.map(aplicar_estilo_notas, subset=[c for c in colunas_notas if c in df_view.columns])
 
-            # --- CONFIGURAÇÃO DAS COLUNAS (Placeholder NP e Ordem) ---
+            # --- CONFIGURAÇÃO DAS COLUNAS (Removido 'placeholder' para compatibilidade) ---
             config_cols = {
                 "aluno_id": None, 
                 "nome": st.column_config.TextColumn("ESTUDANTE", disabled=True, width="medium"),
-                "AT1": st.column_config.NumberColumn("AT1", format="%.1f", disabled=True, placeholder="NP"),
-                "AT2": st.column_config.NumberColumn("AT2", format="%.1f", disabled=True, placeholder="NP"),
-                "AT3": st.column_config.NumberColumn("AT3", format="%.1f", min_value=0.0, max_value=10.0, placeholder="NP"),
-                "AT4": st.column_config.NumberColumn("AT4", format="%.1f", min_value=0.0, max_value=10.0, placeholder="NP"),
-                "AT5": st.column_config.NumberColumn("AT5", format="%.1f", min_value=0.0, max_value=10.0, placeholder="NP"),
-                "N2": st.column_config.NumberColumn("N2 (PROVA)", format="%.1f", min_value=0.0, max_value=10.0, placeholder="NP"),
+                "AT1": st.column_config.NumberColumn("AT1", format="%.1f", disabled=True),
+                "AT2": st.column_config.NumberColumn("AT2", format="%.1f", disabled=True),
+                "AT3": st.column_config.NumberColumn("AT3", format="%.1f", min_value=0.0, max_value=10.0),
+                "AT4": st.column_config.NumberColumn("AT4", format="%.1f", min_value=0.0, max_value=10.0),
+                "AT5": st.column_config.NumberColumn("AT5", format="%.1f", min_value=0.0, max_value=10.0),
+                "N2": st.column_config.NumberColumn("N2 (PROVA)", format="%.1f", min_value=0.0, max_value=10.0),
                 "N1": st.column_config.NumberColumn("Σ N1 🔒", disabled=True, format="%.1f"),
                 "Média Final": st.column_config.NumberColumn("MÉDIA 🔒", disabled=True, format="%.1f"),
             }
 
-            # Altura dinâmica para exibir todas as linhas
             altura_tabela = (len(df_view) + 1) * 35 + 45
 
-            # EDITOR: N2 antes de N1 conforme solicitado
             st.data_editor(
                 df_estilizado, 
                 key=editor_key, 
@@ -194,26 +186,39 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                 if st.button("💾 Salvar no Banco", type="primary", use_container_width=True):
                     dados_upsert = []
                     for _, r in df_view.iterrows():
-                        # O banco aceita nulos para alunos que não participaram
+                        # O Supabase salvará None como NULL, o que preserva a ausência de nota
                         dados_upsert.append({
                             "aluno_id": r['aluno_id'], "turma": turma_sel, "unidade": "1º Bimestre",
-                            "at1": r['AT1'], "at2": r['AT2'], "at3": r['AT3'],
-                            "at4": r['AT4'], "at5": r['AT5'], "prova": r['N2']
+                            "at1": r['AT1'] if pd.notna(r['AT1']) else None,
+                            "at2": r['AT2'] if pd.notna(r['AT2']) else None,
+                            "at3": r['at3'] if pd.notna(r['AT3']) else None, # Ajustado para bater com coluna AT3
+                            "at4": r['at4'] if pd.notna(r['AT4']) else None,
+                            "at5": r['at5'] if pd.notna(r['AT5']) else None,
+                            "prova": r['N2'] if pd.notna(r['N2']) else None
                         })
-                    supabase.table("notas_atividades").upsert(dados_upsert, on_conflict="aluno_id, unidade").execute()
-                    st.success("✅ Notas salvas (incluindo faltas)!")
+                    # Correção rápida nos nomes das chaves para o banco
+                    dados_formatados = []
+                    for d in dados_upsert:
+                        dados_formatados.append({
+                            "aluno_id": d["aluno_id"], "turma": d["turma"], "unidade": d["unidade"],
+                            "at1": d["at1"], "at2": d["at2"], "at3": r.get('AT3'), # Usando get seguro
+                            "at4": r.get('AT4'), "at5": r.get('AT5'), "prova": r.get('N2')
+                        })
+                    
+                    supabase.table("notas_atividades").upsert(dados_formatados, on_conflict="aluno_id, unidade").execute()
+                    st.success("✅ Notas salvas!")
 
             with col_b2:
                 config_siepe = MAPA_IDS_SIEPE.get(turma_sel)
                 if config_siepe and st.button("🚀 Sincronizar SIEPE", use_container_width=True):
                     client = SiepeClient()
-                    with st.spinner("Enviando ao portal..."):
+                    with st.spinner("Sincronizando..."):
                         usuario, senha = st.secrets["SIEPE_USER"], st.secrets["SIEPE_PASS"]
                         logado, _ = client.fazer_login(usuario, senha)
                         if logado and client.iniciar_robo_navegacao():
                             sucesso, msg = client.sincronizar_dataframe_ao_siepe_final(df_view, config_siepe)
                             st.success(msg) if sucesso else st.error(msg)
-                        else: st.error("Erro no login ou navegação.")
+                        else: st.error("Erro no login.")
 
             with col_b3:
                 output = io.BytesIO()
