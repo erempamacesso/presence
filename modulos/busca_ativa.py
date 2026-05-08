@@ -3,39 +3,16 @@ import pandas as pd
 from datetime import datetime
 import pytz
 import unicodedata
-from urllib.parse import quote
-from fpdf import FPDF 
-import traceback
-import calendar  # Novo import necessário
+import calendar
 
 # ==========================================
-# 1. FUNÇÕES DE APOIO
+# 1. FUNÇÃO DE PADRONIZAÇÃO
 # ==========================================
-def limpar_texto(texto):
-    """Padronização idêntica ao Fotograma para bater com as fotos do GitHub"""
-    if not texto: return ""
-    if "." in str(texto): texto = str(texto).rsplit('.', 1)[0]
-    nfkd = unicodedata.normalize('NFKD', str(texto))
-    texto_limpo = "".join([c for c in nfkd if not unicodedata.combining(c)]).lower()
-    return "".join(filter(str.isalnum, texto_limpo))
-
-@st.cache_data(ttl=3600)
-def carregar_fotos_github_busca_ativa():
-    try:
-        import github
-        from github import Github, Auth
-        
-        if "GITHUB_TOKEN" not in st.secrets:
-            return {}
-            
-        auth = Auth.Token(st.secrets["GITHUB_TOKEN"])
-        g = Github(auth=auth)
-        repo = g.get_repo("erempamacesso/presence")
-        contents = repo.get_contents("alunos_fotos")
-        
-        return {limpar_texto(arq.name): arq.download_url for arq in contents}
-    except Exception:
-        return {}
+def normalizar(nome):
+    if not nome: return ""
+    nfkd = unicodedata.normalize('NFKD', str(nome))
+    nome_limpo = "".join([c for c in nfkd if not unicodedata.combining(c)]).upper()
+    return " ".join(nome_limpo.split())
 
 # ==========================================
 # 2. TELA PRINCIPAL
@@ -43,186 +20,124 @@ def carregar_fotos_github_busca_ativa():
 def exibir_busca_ativa(supabase, supabase_alunos):
     st.title("🕵️ Busca Ativa e Gestão de Frequência")
 
-    # Configuração de fuso horário
     tz = pytz.timezone('America/Recife')
     hoje = datetime.now(tz)
-    hoje_str = hoje.strftime('%Y-%m-%d')
-
+    
     try:
-        # --- CARREGAMENTO DE DADOS ---
-        res_al = supabase_alunos.table("alunos").select("id, nome, turma, status").eq("status", "Ativo").execute()
-        df_al = pd.DataFrame(res_al.data) if res_al.data else pd.DataFrame()
+        # 1. CARREGA LISTA GERAL DE ALUNOS
+        res_al = supabase_alunos.table("alunos").select("id, nome, turma").execute()
+        if not res_al.data:
+            st.error("Erro: Tabela de alunos não encontrada.")
+            return
+        
+        df_al = pd.DataFrame(res_al.data)
+        df_al['nome_limpo'] = df_al['nome'].apply(normalizar)
 
-        # Filtro de Data Global
-        col_data, col_vazia = st.columns([1, 2])
-        with col_data:
-            data_escolhida = st.date_input("📅 Selecione a Data de Referência:", hoje)
-            data_ref_str = data_escolhida.strftime('%Y-%m-%d')
+        # 2. FILTROS DE TOPO
+        st.markdown("### 📅 Filtros de Pesquisa")
+        c1, c2, c3 = st.columns([1, 1, 2])
+        meses_br = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
+        
+        with c1:
+            mes_nome = st.selectbox("Mês", meses_br, index=hoje.month - 1)
+            mes_num = meses_br.index(mes_nome) + 1
+        with c2:
+            ano_sel = st.selectbox("Ano", [2025, 2026], index=1)
+        with c3:
+            turmas_lista = sorted(df_al['turma'].dropna().unique().tolist())
+            turma_sel = st.selectbox("Selecione a Turma:", turmas_lista)
+
+        # --- BUSCA DE DADOS (Puxamos TODAS as presenças 'P' históricas para o Risco de Abandono) ---
+        res_p_historico = supabase.table("frequencia").select("aluno_nome").eq("status", "P").execute()
+        nomes_com_presenca_historica = set()
+        if res_p_historico.data:
+            for r in res_p_historico.data:
+                nomes_com_presenca_historica.add(normalizar(r['aluno_nome']))
+
+        # --- BUSCA DE DADOS MENSAL (Para o Diário e Ranking) ---
+        ultimo_dia = calendar.monthrange(ano_sel, mes_num)[1]
+        data_ini = f"{ano_sel}-{mes_num:02d}-01"
+        data_fim = f"{ano_sel}-{mes_num:02d}-{ultimo_dia}"
+
+        res_mensal = supabase.table("frequencia")\
+            .select("aluno_nome, data_chamada")\
+            .eq("status", "P")\
+            .eq("turma", turma_sel)\
+            .filter("data_chamada", "gte", data_ini)\
+            .filter("data_chamada", "lte", data_fim)\
+            .execute()
+
+        df_p_mes = pd.DataFrame(res_mensal.data) if res_mensal.data else pd.DataFrame()
+        presencas_mes_set = set()
+        if not df_p_mes.empty:
+            df_p_mes['nome_limpo'] = df_p_mes['aluno_nome'].apply(normalizar)
+            for _, row in df_p_mes.iterrows():
+                dia = str(row['data_chamada']).split("-")[2]
+                presencas_mes_set.add((row['nome_limpo'], dia))
 
         # --- ABAS ---
-        # Adicionada a aba "Diário de Frequência"
-        abas = st.tabs([
-            "📊 Ranking de Faltas", 
-            "⚠️ Risco de Abandono (0%)", 
-            "🚨 Ocorrências Disciplinares",
-            "📅 Diário de Frequência"
-        ])
+        abas = st.tabs(["📊 Ranking de Faltas", "❌ Presença Zero", "🚨 Ocorrências", "📅 Diário de Frequência"])
+        df_t = df_al[df_al['turma'] == turma_sel].copy()
 
-        # --- ABA 1: RANKING DE FALTAS ---
+        # --- ABA 1: RANKING ---
         with abas[0]:
-            st.subheader("Filtrar por Turma")
-            turma_sel = st.selectbox("Selecione a Turma:", ["Todas"] + sorted(df_al['turma'].unique().tolist()))
-            
-            # Busca todas as chamadas até hoje
-            res_ch = supabase.table("chamada").select("aluno_id, data_presenca").execute()
-            df_ch = pd.DataFrame(res_ch.data) if res_ch.data else pd.DataFrame()
+            st.subheader(f"Assiduidade Mensal: {turma_sel}")
+            contagem = df_p_mes.groupby('nome_limpo').size().reset_index(name='presencas') if not df_p_mes.empty else pd.DataFrame(columns=['nome_limpo', 'presencas'])
+            df_rank = pd.merge(df_t, contagem, on='nome_limpo', how='left').fillna(0)
+            dias_com_aula = df_p_mes['data_chamada'].nunique() if not df_p_mes.empty else 0
+            df_rank['faltas'] = dias_com_aula - df_rank['presencas']
+            st.dataframe(df_rank[['nome', 'presencas', 'faltas']].sort_values('faltas', ascending=False), use_container_width=True, hide_index=True)
 
-            if not df_ch.empty and not df_al.empty:
-                # Contagem de presenças por aluno
-                contagem = df_ch.groupby('aluno_id').size().reset_index(name='presencas')
-                df_ranking = pd.merge(df_al, contagem, left_on='id', right_on='aluno_id', how='left').fillna(0)
-                
-                # Cálculo de faltas aproximadas (Baseado em dias letivos únicos na tabela chamada)
-                dias_letivos = df_ch['data_presenca'].nunique()
-                df_ranking['faltas'] = dias_letivos - df_ranking['presencas']
-                
-                if turma_sel != "Todas":
-                    df_ranking = df_ranking[df_ranking['turma'] == turma_sel]
-
-                st.dataframe(
-                    df_ranking[['nome', 'turma', 'presencas', 'faltas']].sort_values('faltas', ascending=False),
-                    use_container_width=True,
-                    hide_index=True
-                )
-
-        # --- ABA 2: RISCO DE ABANDONO ---
+        # --- ABA 2: PRESENÇA ZERO (O QUE VOCÊ PEDIU) ---
         with abas[1]:
-            st.warning("Alunos que ainda não registraram NENHUMA presença no sistema.")
-            alunos_com_presenca = df_ch['aluno_id'].unique().tolist()
-            df_risco = df_al[~df_al['id'].astype(str).isin([str(x) for x in alunos_com_presenca])]
-            st.write(f"Total de Alunos em Risco: {len(df_risco)}")
-            st.table(df_risco[['nome', 'turma']])
+            st.subheader("⚠️ Alunos que NUNCA registraram presença")
+            # Filtra alunos da turma que NÃO estão no set histórico de presenças 'P'
+            df_presenca_zero = df_t[~df_t['nome_limpo'].isin(nomes_com_presenca_historica)]
+            
+            if not df_presenca_zero.empty:
+                st.error(f"Atenção: Detectamos {len(df_presenca_zero)} alunos na turma {turma_sel} sem histórico de presença.")
+                st.dataframe(df_presenca_zero[['nome', 'turma']], use_container_width=True, hide_index=True)
+            else:
+                st.success(f"Parabéns! Todos os alunos da turma {turma_sel} já registraram presença ao menos uma vez.")
 
         # --- ABA 3: OCORRÊNCIAS ---
         with abas[2]:
-            st.subheader("Registrar Nova Ação")
-            t_escolhida_reg = st.selectbox("Turma do Estudante:", sorted(df_al['turma'].dropna().unique()), key="reg_turma")
-            al_da_t = df_al[df_al['turma'] == t_escolhida_reg]
-            al_dict = dict(zip(al_da_t['nome'], al_da_t['id']))
-            n_escolhido = st.selectbox("Selecione o Estudante:", list(al_dict.keys()), key="reg_aluno")
-
+            st.subheader("🚨 Registrar Ação de Busca Ativa")
+            nome_oc = st.selectbox("Selecione o Estudante:", df_t['nome'].tolist(), key="sb_oc")
             with st.form("form_oc"):
-                t_ac = st.selectbox("Ação:", ["Ligação para Família", "Advertência", "Suspensão", "Visita Domiciliar", "Conselho Tutelar"])
-                mot = st.text_area("Motivo:")
-                mat = st.text_input("Sua Matrícula:")
-                if st.form_submit_button("🚨 Gravar", type="primary"):
-                    if mot and mat:
+                tipo = st.selectbox("Ação:", ["Ligação", "Visita", "Advertência", "Conselho Tutelar"])
+                relato = st.text_area("Relato:")
+                resp = st.text_input("Responsável:")
+                if st.form_submit_button("✅ Salvar"):
+                    if relato and resp:
+                        id_al = df_t[df_t['nome'] == nome_oc]['id'].values[0]
                         supabase.table("ocorrencias_disciplinares").insert({
-                            "aluno_id": al_dict[n_escolhido], "aluno_nome": n_escolhido,
-                            "turma": t_escolhida_reg, "tipo_ocorrencia": t_ac,
-                            "motivo": mot, "quem_registrou": mat, "status": "Ativa",
-                            "data_registro": hoje_str
+                            "aluno_id": str(id_al), "aluno_nome": nome_oc, "turma": turma_sel,
+                            "tipo_ocorrencia": tipo, "motivo": relato, "quem_registrou": resp,
+                            "data_registro": hoje.strftime('%Y-%m-%d')
                         }).execute()
-                        st.success("Gravado com Sucesso!")
-                    else: st.error("Preencha todos os campos.")
+                        st.success("Ocorrência registrada!")
 
-        # --- ABA 4: DIÁRIO DE FREQUÊNCIA MENSAL (NOVA FUNCIONALIDADE) ---
+        # --- ABA 4: DIÁRIO ---
         with abas[3]:
-            st.subheader("📅 Mapa de Frequência Mensal")
-            
-            # Filtros locais
-            col_f1, col_f2 = st.columns(2)
-            with col_f1:
-                turmas_mapa = sorted(df_al['turma'].dropna().unique())
-                turma_mapa = st.selectbox("Selecione a Turma para o Mapa:", turmas_mapa, key="mapa_turma")
-            
-            with col_f2:
-                # Usa o mês da data selecionada no topo
-                mes_ref = data_escolhida.month
-                ano_ref = data_escolhida.year
-                nome_mes = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", 
-                            "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"][mes_ref - 1]
-                st.info(f"Visualizando: **{nome_mes} / {ano_ref}**")
-
-            # Cálculo de dias do mês
-            ultimo_dia = calendar.monthrange(ano_ref, mes_ref)[1]
-            dias_mes = [f"{d:02d}" for d in range(1, ultimo_dia + 1)]
-
-            # Busca presenças do mês inteiro (Uma única query para performance)
-            data_ini = f"{ano_ref}-{mes_ref:02d}-01"
-            data_fim = f"{ano_ref}-{mes_ref:02d}-{ultimo_dia}"
-            
-            try:
-                res_m = supabase.table("chamada").select("aluno_id, data_presenca").execute()
-                
-                # Mapeamento rápido de presenças {(aluno_id, dia): True}
-                p_map = set()
-                if res_m.data:
-                    for r in res_m.data:
-                        try:
-                            # Trata diferentes formatos de data
-                            data_str = str(r['data_presenca'])
-                            if 'T' in data_str:  # Formato ISO com hora
-                                data_str = data_str.split('T')[0]
-                            
-                            # Extrai o dia
-                            dia_r = data_str.split("-")[2]
-                            ano_r = int(data_str.split("-")[0])
-                            mes_r = int(data_str.split("-")[1])
-                            
-                            # Só adiciona se for do mês de referência
-                            if ano_r == ano_ref and mes_r == mes_ref:
-                                p_map.add((int(r['aluno_id']), dia_r))
-                        except (ValueError, IndexError):
-                            # Ignora registros com formato inválido
-                            continue
-                
-                # Montagem da Matriz de Dados
-                alunos_t = df_al[df_al['turma'] == turma_mapa].sort_values('nome')
-                
-                if not alunos_t.empty:
-                    matriz_frequencia = []
-                    for _, al_row in alunos_t.iterrows():
-                        linha = {"Estudante": al_row['nome']}
-                        for d in dias_mes:
-                            if (int(al_row['id']), d) in p_map:
-                                linha[d] = "✅"
-                            else:
-                                # Só marca falta (X) se o dia já passou ou é hoje
-                                try:
-                                    data_col = datetime(ano_ref, mes_ref, int(d)).date()
-                                    if data_col <= hoje.date():
-                                        linha[d] = "❌"
-                                    else:
-                                        linha[d] = " "  # Futuro fica vazio
-                                except ValueError:
-                                    linha[d] = " "
-
-                        matriz_frequencia.append(linha)
-
-                    df_final_mapa = pd.DataFrame(matriz_frequencia)
-
-                    # Configuração de Colunas para evitar barra lateral
-                    # Cada coluna de dia fica bem pequena (35px)
-                    conf_cols = {d: st.column_config.TextColumn(d, width=35) for d in dias_mes}
-                    conf_cols["Estudante"] = st.column_config.TextColumn("Estudante", width=250, pinned=True)
-
-                    st.dataframe(
-                        df_final_mapa,
-                        use_container_width=True,
-                        hide_index=True,
-                        column_config=conf_cols,
-                        height=500
-                    )
-                    st.caption("✅ Presença | ❌ Falta ou Sem Registro | Coluna Fixa: Estudante")
-                else:
-                    st.warning("Selecione uma turma para carregar o mapa.")
-                    
-            except Exception as e:
-                st.error(f"Erro ao carregar dados de frequência: {e}")
-                # Descomente a linha abaixo para debug
-                # traceback.print_exc()
+            st.subheader(f"📅 Mapa Mensal: {turma_sel}")
+            dias_lista = [f"{d:02d}" for d in range(1, ultimo_dia + 1)]
+            matriz = []
+            for _, aluno in df_t.sort_values('nome').iterrows():
+                linha = {"Estudante": aluno['nome']}
+                for d in dias_lista:
+                    if (aluno['nome_limpo'], d) in presencas_mes_set:
+                        linha[d] = "✅"
+                    else:
+                        dt_dia = datetime(ano_sel, mes_num, int(d)).date()
+                        if dt_dia > hoje.date(): linha[d] = " "
+                        elif dt_dia.weekday() >= 5: linha[d] = "-"
+                        else: linha[d] = "❌"
+                matriz.append(linha)
+            df_mapa = pd.DataFrame(matriz)
+            config_cols = {d: st.column_config.TextColumn(d, width=35) for d in dias_lista}
+            config_cols["Estudante"] = st.column_config.TextColumn("Estudante", width=220, pinned=True)
+            st.dataframe(df_mapa, use_container_width=True, hide_index=True, column_config=config_cols, height=500)
 
     except Exception as e:
-        st.error(f"Erro ao carregar Busca Ativa: {e}")
-        traceback.print_exc()  # Útil para debug no terminal
+        st.error(f"Erro: {e}")
