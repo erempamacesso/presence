@@ -29,7 +29,7 @@ def arredondar_siepe(nota):
 def mostrar_tela_boletim(supabase, supabase_alunos):
     st.title("📝 Meu Registro Pessoal de Notas")
     st.info("AT1-AT2: Simulados | AT3-AT5: Diversas | N2: Prova")
-    st.caption("💡 Células vazias indicam que o aluno não participou (NP).")
+    st.caption("💡 Células vazias (NP) não somam pontos. Para um zero real, digite 0.")
 
     try:
         # 1. Busca alunos do banco
@@ -40,13 +40,9 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
             return
 
         df_todos = pd.DataFrame(res_a.data)
-        col_t = 'turma' if 'turma' in df_todos.columns else ('serie' if 'serie' in df_todos.columns else None)
+        col_t = 'turma' if 'turma' in df_todos.columns else ('serie' if 'serie' in df_todos.columns else 'turma')
         col_n = 'nome' if 'nome' in df_todos.columns else 'Nome'
         
-        if not col_t:
-            st.error("Coluna de turma não encontrada.")
-            return
-
         turmas_list = sorted(df_todos[col_t].dropna().unique())
         turma_sel = st.selectbox("Selecione a Turma:", turmas_list)
         
@@ -54,13 +50,14 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
             state_key = f"tabela_notas_{turma_sel}"
             editor_key = f"editor_notas_{turma_sel}"
 
-            # --- INICIALIZAÇÃO E BUSCA DE DADOS ---
+            # --- CARREGAMENTO INICIAL DE DADOS ---
             if state_key not in st.session_state:
-                with st.spinner(f"Carregando dados de {turma_sel}..."):
+                with st.spinner(f"Carregando {turma_sel}..."):
                     df_turma = df_todos[df_todos[col_t] == turma_sel].copy()
                     df_turma = df_turma.rename(columns={"id": "aluno_id"})
                     ano_ref = "2º ano" if "2º" in turma_sel else ("3º ano" if "3º" in turma_sel else "")
                     
+                    # Busca Simulados (AT1/AT2)
                     def buscar_nota_simulado(termo_simulado, limite_nota=4.0):
                         mapa_notas = {}
                         if ano_ref:
@@ -74,89 +71,79 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                                     df_r = pd.DataFrame(res_r.data)
                                     df_r['pts'] = df_r['acertou'].apply(lambda x: 1 if x is True else 0)
                                     df_c = df_r.groupby('aluno_id')['pts'].sum().reset_index()
-                                    df_c['nota_arredondada'] = (df_c['pts'] * v_q).clip(upper=limite_nota).apply(arredondar_siepe)
-                                    mapa_notas = dict(zip(df_c['aluno_id'].astype(str), df_c['nota_arredondada']))
+                                    df_c['n_arr'] = (df_c['pts'] * v_q).clip(upper=limite_nota).apply(arredondar_siepe)
+                                    mapa_notas = dict(zip(df_c['aluno_id'].astype(str), df_c['n_arr']))
                         return mapa_notas
 
                     mapa_at1 = buscar_nota_simulado("1º Simulado")
                     mapa_at2 = buscar_nota_simulado("2º Simulado")
 
+                    # Busca Notas Manuais do Supabase
+                    res_notas = supabase.table("notas_atividades").select("*").eq("turma", turma_sel).eq("unidade", "1º Bimestre").execute()
+                    m3, m4, m5, mn2 = {}, {}, {}, {}
+                    if res_notas.data:
+                        for r in res_notas.data:
+                            aid = str(r['aluno_id'])
+                            m3[aid], m4[aid], m5[aid], mn2[aid] = r.get('at3'), r.get('at4'), r.get('at5'), r.get('prova')
+
                     df_base = df_turma[['aluno_id', col_n]].copy().rename(columns={col_n: 'nome'})
-                    
-                    # Notas de simulado mantêm o valor original ou ficam como NaN (sem nota)
                     df_base['AT1'] = df_base['aluno_id'].astype(str).map(mapa_at1)
                     df_base['AT2'] = df_base['aluno_id'].astype(str).map(mapa_at2)
-                    
-                    res_notas_salvas = supabase.table("notas_atividades").select("*").eq("turma", turma_sel).eq("unidade", "1º Bimestre").execute()
-                    mapa_at3, mapa_at4, mapa_at5, mapa_n2 = {}, {}, {}, {}
-                    
-                    if res_notas_salvas.data:
-                        for r in res_notas_salvas.data:
-                            aid = str(r['aluno_id'])
-                            mapa_at3[aid] = r.get('at3')
-                            mapa_at4[aid] = r.get('at4')
-                            mapa_at5[aid] = r.get('at5')
-                            mapa_n2[aid]  = r.get('prova')
-                    
-                    df_base['AT3'] = df_base['aluno_id'].astype(str).map(mapa_at3)
-                    df_base['AT4'] = df_base['aluno_id'].astype(str).map(mapa_at4)
-                    df_base['AT5'] = df_base['aluno_id'].astype(str).map(mapa_at5)
-                    df_base['N2']  = df_base['aluno_id'].astype(str).map(mapa_n2)
+                    df_base['AT3'] = df_base['aluno_id'].astype(str).map(m3)
+                    df_base['AT4'] = df_base['aluno_id'].astype(str).map(m4)
+                    df_base['AT5'] = df_base['aluno_id'].astype(str).map(m5)
+                    df_base['N2']  = df_base['aluno_id'].astype(str).map(mn2)
                     
                     st.session_state[state_key] = df_base.sort_values('nome').reset_index(drop=True)
 
-            # --- ÁREA DE IMPORTAÇÃO CSV ---
-            with st.expander("📥 Importar e SOMAR Notas de Prova (N2) via CSV"):
+            # --- LÓGICA DE IMPORTAR E SOMAR (AQUI ESTÁ O QUE VOCÊ PEDIU) ---
+            with st.expander("📥 Importar e SOMAR Notas (N2) via CSV"):
                 arquivo_csv = st.file_uploader("Upload CSV", type="csv", key=f"up_{turma_sel}")
-                if arquivo_csv:
-                    if st.button("🚀 Processar e Somar CSV"):
-                        try:
-                            df_csv = pd.read_csv(arquivo_csv, encoding='latin-1', sep=None, engine='python')
-                            if 'QUÍMICA' in df_csv.columns:
-                                df_csv['QUÍMICA'] = pd.to_numeric(df_csv['QUÍMICA'], errors='coerce').fillna(0.0)
-                                df_atual = st.session_state[state_key].copy()
-                                df_csv['n_match'] = df_csv['Name'].astype(str).str.strip().str.lower()
-                                df_atual['n_match'] = df_atual['nome'].astype(str).str.strip().str.lower()
-                                mapa_csv = dict(zip(df_csv['n_match'], df_csv['QUÍMICA']))
-                                
-                                for idx, row in df_atual.iterrows():
-                                    nome = row['n_match']
-                                    if nome in mapa_csv:
-                                        nota_atual = float(row['N2']) if pd.notna(row['N2']) else 0.0
-                                        df_atual.at[idx, 'N2'] = nota_atual + float(mapa_csv[nome])
-                                
-                                st.session_state[state_key] = df_atual.drop(columns=['n_match'])
-                                st.rerun()
-                        except Exception as e: st.error(f"Erro no CSV: {e}")
+                if arquivo_csv and st.button("🚀 Processar e Somar"):
+                    try:
+                        df_csv = pd.read_csv(arquivo_csv, encoding='latin-1', sep=None, engine='python')
+                        if 'QUÍMICA' in df_csv.columns:
+                            df_csv['QUÍMICA'] = pd.to_numeric(df_csv['QUÍMICA'], errors='coerce').fillna(0.0)
+                            df_atual = st.session_state[state_key].copy()
+                            df_csv['n_match'] = df_csv['Name'].astype(str).str.strip().str.lower()
+                            df_atual['n_match'] = df_atual['nome'].astype(str).str.strip().str.lower()
+                            mapa_csv = dict(zip(df_csv['n_match'], df_csv['QUÍMICA']))
+                            
+                            for idx, row in df_atual.iterrows():
+                                nome = row['n_match']
+                                if nome in mapa_csv:
+                                    # Lógica: Verifica se há valor (se não, assume 0) e soma
+                                    v_atual = float(row['N2']) if pd.notna(row['N2']) else 0.0
+                                    df_atual.at[idx, 'N2'] = v_atual + float(mapa_csv[nome])
+                            
+                            st.session_state[state_key] = df_atual.drop(columns=['n_match'])
+                            st.rerun()
+                    except Exception as e: st.error(f"Erro no CSV: {e}")
 
-            # --- LÓGICA DE PERSISTÊNCIA DAS EDIÇÕES ---
+            # --- PERSISTÊNCIA DAS EDIÇÕES ---
             if editor_key in st.session_state:
                 edicoes = st.session_state[editor_key].get("edited_rows", {})
-                if edicoes:
-                    for row_idx, alteracoes in edicoes.items():
-                        for col_name, valor in alteracoes.items():
-                            st.session_state[state_key].at[row_idx, col_name] = float(valor) if valor is not None else None
+                for row_idx, alteracoes in edicoes.items():
+                    for col_name, valor in alteracoes.items():
+                        st.session_state[state_key].at[row_idx, col_name] = float(valor) if valor is not None else None
 
-            # --- PROCESSAMENTO DE CÁLCULOS ---
+            # --- CÁLCULOS E ESTILO ---
             df_view = st.session_state[state_key].copy()
             df_view['N1'] = df_view[['AT1', 'AT2', 'AT3', 'AT4', 'AT5']].sum(axis=1).apply(arredondar_siepe)
             df_view['Média Final'] = ((df_view['N1'] + df_view['N2'].fillna(0.0)) / 2).apply(arredondar_siepe)
 
-            # --- LÓGICA DE CORES ---
-            def aplicar_estilo_notas(val):
+            def estilo(val):
                 try:
                     if pd.notna(val) and float(val) > 0:
                         return 'color: #1E40AF; font-weight: bold; background-color: #EFF6FF;'
                     return 'color: #9CA3AF;'
                 except: return ''
 
-            colunas_notas = ['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N2', 'N1', 'Média Final']
-            df_estilizado = df_view.style.map(aplicar_estilo_notas, subset=[c for c in colunas_notas if c in df_view.columns])
+            df_estilizado = df_view.style.map(estilo, subset=['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N2', 'N1', 'Média Final'])
 
-            # --- CONFIGURAÇÃO DAS COLUNAS (Removido 'placeholder' para compatibilidade) ---
+            # --- EDITOR DE DADOS ---
             config_cols = {
-                "aluno_id": None, 
-                "nome": st.column_config.TextColumn("ESTUDANTE", disabled=True, width="medium"),
+                "aluno_id": None, "nome": st.column_config.TextColumn("ESTUDANTE", disabled=True, width="medium"),
                 "AT1": st.column_config.NumberColumn("AT1", format="%.1f", disabled=True),
                 "AT2": st.column_config.NumberColumn("AT2", format="%.1f", disabled=True),
                 "AT3": st.column_config.NumberColumn("AT3", format="%.1f", min_value=0.0, max_value=10.0),
@@ -167,69 +154,47 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                 "Média Final": st.column_config.NumberColumn("MÉDIA 🔒", disabled=True, format="%.1f"),
             }
 
-            altura_tabela = (len(df_view) + 1) * 35 + 45
-
             st.data_editor(
-                df_estilizado, 
-                key=editor_key, 
-                hide_index=True, 
-                column_config=config_cols, 
-                use_container_width=True,
-                height=altura_tabela,
+                df_estilizado, key=editor_key, hide_index=True, column_config=config_cols, 
+                use_container_width=True, height=(len(df_view) + 1) * 35 + 45,
                 column_order=("nome", "AT1", "AT2", "AT3", "AT4", "AT5", "N2", "N1", "Média Final")
             )
 
             # --- BOTÕES DE AÇÃO ---
-            col_b1, col_b2, col_b3, col_b4 = st.columns([2, 2, 2, 1])
-            
-            with col_b1:
+            c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
+            with c1:
                 if st.button("💾 Salvar no Banco", type="primary", use_container_width=True):
-                    dados_upsert = []
+                    dados = []
                     for _, r in df_view.iterrows():
-                        # O Supabase salvará None como NULL, o que preserva a ausência de nota
-                        dados_upsert.append({
+                        dados.append({
                             "aluno_id": r['aluno_id'], "turma": turma_sel, "unidade": "1º Bimestre",
-                            "at1": r['AT1'] if pd.notna(r['AT1']) else None,
-                            "at2": r['AT2'] if pd.notna(r['AT2']) else None,
-                            "at3": r['at3'] if pd.notna(r['AT3']) else None, # Ajustado para bater com coluna AT3
-                            "at4": r['at4'] if pd.notna(r['AT4']) else None,
-                            "at5": r['at5'] if pd.notna(r['AT5']) else None,
-                            "prova": r['N2'] if pd.notna(r['N2']) else None
+                            "at1": r['AT1'], "at2": r['AT2'], "at3": r['AT3'],
+                            "at4": r['AT4'], "at5": r['AT5'], "prova": r['N2']
                         })
-                    # Correção rápida nos nomes das chaves para o banco
-                    dados_formatados = []
-                    for d in dados_upsert:
-                        dados_formatados.append({
-                            "aluno_id": d["aluno_id"], "turma": d["turma"], "unidade": d["unidade"],
-                            "at1": d["at1"], "at2": d["at2"], "at3": r.get('AT3'), # Usando get seguro
-                            "at4": r.get('AT4'), "at5": r.get('AT5'), "prova": r.get('N2')
-                        })
-                    
-                    supabase.table("notas_atividades").upsert(dados_formatados, on_conflict="aluno_id, unidade").execute()
-                    st.success("✅ Notas salvas!")
+                    supabase.table("notas_atividades").upsert(dados, on_conflict="aluno_id, unidade").execute()
+                    st.success("✅ Salvo!")
 
-            with col_b2:
-                config_siepe = MAPA_IDS_SIEPE.get(turma_sel)
-                if config_siepe and st.button("🚀 Sincronizar SIEPE", use_container_width=True):
+            with c2:
+                cfg = MAPA_IDS_SIEPE.get(turma_sel)
+                if cfg and st.button("🚀 Sincronizar SIEPE", use_container_width=True):
                     client = SiepeClient()
-                    with st.spinner("Sincronizando..."):
-                        usuario, senha = st.secrets["SIEPE_USER"], st.secrets["SIEPE_PASS"]
-                        logado, _ = client.fazer_login(usuario, senha)
-                        if logado and client.iniciar_robo_navegacao():
-                            sucesso, msg = client.sincronizar_dataframe_ao_siepe_final(df_view, config_siepe)
-                            st.success(msg) if sucesso else st.error(msg)
-                        else: st.error("Erro no login.")
+                    with st.spinner("Enviando..."):
+                        u, s = st.secrets["SIEPE_USER"], st.secrets["SIEPE_PASS"]
+                        log, _ = client.fazer_login(u, s)
+                        if log and client.iniciar_robo_navegacao():
+                            suc, msg = client.sincronizar_dataframe_ao_siepe_final(df_view, cfg)
+                            st.success(msg) if suc else st.error(msg)
 
-            with col_b3:
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            with c3:
+                out = io.BytesIO()
+                with pd.ExcelWriter(out, engine='xlsxwriter') as writer:
                     df_view.drop(columns=['aluno_id']).to_excel(writer, index=False)
-                st.download_button("📥 Excel", output.getvalue(), f"Notas_{turma_sel}.xlsx", use_container_width=True)
+                st.download_button("📥 Excel", out.getvalue(), f"Notas_{turma_sel}.xlsx", use_container_width=True)
 
-            with col_b4:
+            with c4:
                 if st.button("🔄", use_container_width=True):
                     del st.session_state[state_key]
                     st.rerun()
 
     except Exception as e:
-        st.error(f"Erro no processamento: {e}")
+        st.error(f"Erro geral: {e}")
