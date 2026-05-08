@@ -5,18 +5,16 @@ import math
 from siepe_api import SiepeClient
 
 # --- CONFIGURAÇÃO GLOBAL DE IDS POR TURMA ---
-# Note que agora não precisamos mais do EWBase, EWId e dummy aqui, 
-# pois o robô vai pegar sozinho! Mas mantive a estrutura para não quebrar nada.
 MAPA_IDS_SIEPE = {
     "2º A": {
-        "turma_id": "2483",       # ID para salvar a nota
-        "disciplina_id": "1132",  # Química
-        "ew_base": "",            # O robô vai preencher
-        "ew_id": "",              # O robô vai preencher
-        "dummy": "",              # O robô vai preencher
+        "turma_id": "2483",       
+        "disciplina_id": "1132",  
+        "ew_base": "",            
+        "ew_id": "",              
+        "dummy": "",              
         "bimestre": "1"
     },
-    # Adicione as próximas turmas aqui...
+    # Adicione as outras 5 turmas aqui seguindo o mesmo padrão
 }
 
 # --- FUNÇÃO OFICIAL DE ARREDONDAMENTO SIEPE ---
@@ -65,7 +63,6 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                     df_turma = df_turma.rename(columns={"id": "aluno_id"})
                     ano_ref = "2º ano" if "2º" in turma_sel else ("3º ano" if "3º" in turma_sel else "")
                     
-                    # Função interna para buscar simulados
                     def buscar_nota_simulado(termo_simulado, limite_nota=4.0):
                         mapa_notas = {}
                         if ano_ref:
@@ -90,7 +87,6 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                     df_base['AT1'] = df_base['aluno_id'].astype(str).map(mapa_at1).fillna(0.0)
                     df_base['AT2'] = df_base['aluno_id'].astype(str).map(mapa_at2).fillna(0.0)
                     
-                    # Busca notas manuais já salvas
                     res_notas_salvas = supabase.table("notas_atividades").select("*").eq("turma", turma_sel).eq("unidade", "1º Bimestre").execute()
                     mapa_at3, mapa_at4, mapa_at5, mapa_n2 = {}, {}, {}, {}
                     
@@ -131,14 +127,16 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                                 st.rerun()
                         except Exception as e: st.error(f"Erro no CSV: {e}")
 
-            # --- EDITOR DE DADOS ---
-            # Sincroniza edições manuais com o state
+            # --- LÓGICA DE PERSISTÊNCIA DAS EDIÇÕES ---
+            # Sincroniza o que foi digitado no editor de volta para o session_state ANTES de calcular médias
             if editor_key in st.session_state:
                 edicoes = st.session_state[editor_key].get("edited_rows", {})
-                for row_idx, alteracoes in edicoes.items():
-                    for col_name, valor in alteracoes.items():
-                        st.session_state[state_key].at[row_idx, col_name] = float(valor) if valor is not None else 0.0
+                if edicoes:
+                    for row_idx, alteracoes in edicoes.items():
+                        for col_name, valor in alteracoes.items():
+                            st.session_state[state_key].at[row_idx, col_name] = float(valor) if valor is not None else 0.0
 
+            # --- PROCESSAMENTO DE CÁLCULOS ---
             df_view = st.session_state[state_key].copy()
             df_view['N1'] = df_view[['AT1', 'AT2', 'AT3', 'AT4', 'AT5']].sum(axis=1).apply(arredondar_siepe)
             df_view['Média Final'] = ((df_view['N1'] + df_view['N2']) / 2).apply(arredondar_siepe)
@@ -149,34 +147,36 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                     if float(val) > 0:
                         return 'color: #1E40AF; font-weight: bold; background-color: #EFF6FF;'
                     return 'color: #9CA3AF;'
-                except:
-                    return ''
+                except: return ''
 
-            colunas_notas = ['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N1', 'N2', 'Média Final']
+            colunas_notas = ['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N2', 'N1', 'Média Final']
             df_estilizado = df_view.style.map(aplicar_estilo_notas, subset=[c for c in colunas_notas if c in df_view.columns])
 
-            # Configuração das colunas no Editor
+            # --- CONFIGURAÇÃO DAS COLUNAS (Títulos em Negrito/Caps e Ordem) ---
             config_cols = {
                 "aluno_id": None, 
-                "nome": st.column_config.TextColumn("Estudante", disabled=True, width="medium"),
+                "nome": st.column_config.TextColumn("ESTUDANTE", disabled=True, width="medium"),
+                "AT1": st.column_config.NumberColumn("AT1", format="%.1f", disabled=True),
+                "AT2": st.column_config.NumberColumn("AT2", format="%.1f", disabled=True),
+                "AT3": st.column_config.NumberColumn("AT3", format="%.1f", min_value=0.0, max_value=10.0),
+                "AT4": st.column_config.NumberColumn("AT4", format="%.1f", min_value=0.0, max_value=10.0),
+                "AT5": st.column_config.NumberColumn("AT5", format="%.1f", min_value=0.0, max_value=10.0),
+                "N2": st.column_config.NumberColumn("N2 (PROVA)", format="%.1f", min_value=0.0, max_value=10.0),
                 "N1": st.column_config.NumberColumn("Σ N1 🔒", disabled=True, format="%.1f"),
-                "Média Final": st.column_config.NumberColumn("Média 🔒", disabled=True, format="%.1f"),
+                "Média Final": st.column_config.NumberColumn("MÉDIA 🔒", disabled=True, format="%.1f"),
             }
-            for c in ['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N2']:
-                config_cols[c] = st.column_config.NumberColumn(c, min_value=0.0, max_value=10.0, step=0.1, format="%.1f", disabled=(c in locked_cols))
 
-            # --- CORREÇÃO DA ROLAGEM: Calcula a altura para mostrar todos de uma vez ---
-            altura_tabela = (len(df_view) + 1) * 36 + 10 
-
+            # --- EDITOR DE DADOS (CABEÇALHO FIXO E COLUNA N2 ANTES DE N1) ---
             st.data_editor(
                 df_estilizado, 
                 key=editor_key, 
                 hide_index=True, 
                 column_config=config_cols, 
                 use_container_width=True,
-                height=altura_tabela
+                height=500, # Altura fixa para travar o cabeçalho no topo (Sticky Header)
+                column_order=("nome", "AT1", "AT2", "AT3", "AT4", "AT5", "N2", "N1", "Média Final")
             )
-            
+
             # --- BOTÕES DE AÇÃO ---
             col_b1, col_b2, col_b3, col_b4 = st.columns([2, 2, 2, 1])
             
@@ -192,9 +192,6 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                     supabase.table("notas_atividades").upsert(dados_upsert, on_conflict="aluno_id, unidade").execute()
                     st.success("✅ Salvo!")
 
-            # =========================================================================
-            # AQUI ESTÁ A NOVA MÁGICA: O BOTÃO TOTALMENTE AUTOMATIZADO DO ROBÔ
-            # =========================================================================
             with col_b2:
                 config_siepe = MAPA_IDS_SIEPE.get(turma_sel)
                 if not config_siepe:
@@ -202,30 +199,18 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                 else:
                     if st.button("🚀 Sincronizar SIEPE Automático", use_container_width=True):
                         client = SiepeClient()
-                        with st.spinner("Conectando e navegando pelas telas invisíveis..."):
+                        with st.spinner("Conectando ao SIEPE..."):
                             usuario = st.secrets["SIEPE_USER"]
                             senha = st.secrets["SIEPE_PASS"]
-                            
                             logado, msg = client.fazer_login(usuario, senha)
                             if logado:
-                                st.info("Login OK! Iniciando navegação robótica...")
-                                
-                                # O robô vai fazer o caminho invisível até a aba de notas
                                 sucesso_nav = client.iniciar_robo_navegacao()
-                                
                                 if sucesso_nav:
-                                    st.info("Aba de Notas aberta. Enviando dados...")
-                                    # Passamos o config_siepe junto para ele saber qual a disciplina e a turma correta
                                     sucesso_envio, msg_envio = client.sincronizar_dataframe_ao_siepe_final(df_view, config_siepe)
-                                    
-                                    if sucesso_envio:
-                                        st.success(msg_envio)
-                                    else:
-                                        st.error(msg_envio)
-                                else:
-                                    st.error("Erro na navegação automática. O portal pode ter mudado algo.")
-                            else:
-                                st.error(f"Falha no login: {msg}")
+                                    if sucesso_envio: st.success(msg_envio)
+                                    else: st.error(msg_envio)
+                                else: st.error("Erro na navegação automática.")
+                            else: st.error(f"Falha no login: {msg}")
 
             with col_b3:
                 output = io.BytesIO()
