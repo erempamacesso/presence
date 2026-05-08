@@ -15,28 +15,15 @@ def normalizar(nome):
     nome_limpo = "".join([c for c in nfkd if not unicodedata.combining(c)]).upper()
     return " ".join(nome_limpo.split())
 
-# --- [CORRIGIDO] FUNÇÃO PARA CHECAR ARQUIVOS DE FOTO ---
-def listar_nomes_com_foto():
-    # Testamos os dois caminhos: raiz e um nível acima (caso esteja na pasta modulos)
-    caminhos = ["alunos_fotos", "../alunos_fotos"]
-    pasta_ativa = None
-    
-    for c in caminhos:
-        if os.path.exists(c):
-            pasta_ativa = c
-            break
-            
-    if not pasta_ativa:
+# --- [NOVA] FUNÇÃO PARA CHECAR ARQUIVOS DE FOTO ---
+def listar_nomes_com_foto(pasta="alunos_fotos"):
+    if not os.path.exists(pasta):
         return set()
-        
-    try:
-        arquivos = os.listdir(pasta_ativa)
-        # Normaliza o nome do arquivo (sem extensão) para comparar com o banco
-        nomes_fotos = {normalizar(os.path.splitext(f)[0]) 
-                       for f in arquivos if f.lower().endswith(('.png', '.jpg', '.jpeg'))}
-        return nomes_fotos
-    except:
-        return set()
+    # Pega os nomes dos arquivos, remove a extensão e normaliza
+    arquivos = os.listdir(pasta)
+    nomes_fotos = {normalizar(f.replace(".png", "").replace(".jpg", "").replace(".jpeg", "")) 
+                   for f in arquivos if f.lower().endswith(('.png', '.jpg', '.jpeg'))}
+    return nomes_fotos
 
 def exibir_busca_ativa(supabase, supabase_alunos):
     st.title("🕵️ Busca Ativa e Gestão de Frequência")
@@ -54,20 +41,23 @@ def exibir_busca_ativa(supabase, supabase_alunos):
         df_al = pd.DataFrame(res_al.data)
         df_al['nome_limpo'] = df_al['nome'].apply(normalizar)
 
-        # --- [RESTAURADO E BLINDADO] BLOCO: ALUNOS PRESENTES SEM FOTO ---
+        # --- [CORRIGIDO] BLOCO: ALUNOS PRESENTES SEM FOTO ---
         try:
             hoje_str = hoje.strftime('%Y-%m-%d')
+            # Busca quem marcou presença hoje (Usando 'data_chamada' conforme seu print)
             res_pres_hoje = supabase.table("frequencia")\
                 .select("aluno_nome")\
                 .eq("data_chamada", hoje_str)\
                 .eq("status", "P")\
                 .execute()
             
-            nomes_com_foto = listar_nomes_com_foto()
+            # Lê as fotos da pasta 'alunos_fotos' que você mostrou no GitHub
+            nomes_com_foto = listar_nomes_com_foto("alunos_fotos")
 
-            # Só exibe o alerta se encontrar a pasta e houver presenças hoje
-            if res_pres_hoje.data and nomes_com_foto:
+            if res_pres_hoje.data:
                 nomes_presentes_hoje = [normalizar(p['aluno_nome']) for p in res_pres_hoje.data]
+                
+                # Filtra alunos que estão presentes hoje mas o nome não está na pasta de fotos
                 df_presentes = df_al[df_al['nome_limpo'].isin(nomes_presentes_hoje)]
                 df_sem_foto = df_presentes[~df_presentes['nome_limpo'].isin(nomes_com_foto)]
 
@@ -77,11 +67,10 @@ def exibir_busca_ativa(supabase, supabase_alunos):
                         for turma_ref, grupo in df_sem_foto.groupby('turma'):
                             st.markdown(f"**Turma: {turma_ref}**")
                             st.write(", ".join(grupo.sort_values('nome')['nome'].tolist()))
-            elif not nomes_com_foto:
-                 st.sidebar.info("💡 Pasta 'alunos_fotos' não detectada.")
+                else:
+                    st.success("✅ Todos os alunos presentes hoje já possuem foto!")
         except Exception as e_foto:
-            # Se der qualquer erro nas fotos, ele não trava a página
-            pass
+            st.sidebar.warning(f"Aviso Fotos: {e_foto}")
 
         # 2. FILTROS DE TOPO
         st.markdown("### 📅 Filtros de Pesquisa")
@@ -102,6 +91,7 @@ def exibir_busca_ativa(supabase, supabase_alunos):
         data_ini = f"{ano_sel}-{mes_num:02d}-01"
         data_fim = f"{ano_sel}-{mes_num:02d}-{ultimo_dia}"
 
+        # Importante: Mantendo 'data_chamada' que é o nome real no seu banco
         res_mensal = supabase.table("frequencia")\
             .select("aluno_nome, data_chamada")\
             .eq("status", "P")\
@@ -132,12 +122,7 @@ def exibir_busca_ativa(supabase, supabase_alunos):
             df_rank['faltas'] = dias_letivos - df_rank['presencas']
             st.dataframe(df_rank[['nome', 'presencas', 'faltas']].sort_values('faltas', ascending=False), use_container_width=True, hide_index=True)
 
-        # --- ABAS INTERMEDIÁRIAS (ESQUELETO) ---
-        with abas[1]: st.write("Lista de alunos com 100% de faltas no período selecionado.")
-        with abas[2]: st.write("Alunos que marcam presença mas saem antes do término.")
-        with abas[3]: st.write("Registro de visitas e contatos com responsáveis.")
-
-        # --- ABA 5: DIÁRIO MENSAL ---
+        # --- ABA 5: DIÁRIO MENSAL (Célula de Ouro) ---
         with abas[4]:
             st.subheader(f"📅 Mapa Mensal: {turma_sel}")
             dias_lista = [f"{d:02d}" for d in range(1, ultimo_dia + 1)]
