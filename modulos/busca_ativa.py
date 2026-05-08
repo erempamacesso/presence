@@ -5,6 +5,7 @@ import pytz
 import unicodedata
 import calendar
 import os
+from pathlib import Path # <-- NOVA IMPORTAÇÃO PARA ROTA ABSOLUTA
 
 # ==========================================
 # 1. FUNÇÃO DE PADRONIZAÇÃO
@@ -15,23 +16,34 @@ def normalizar(nome):
     nome_limpo = "".join([c for c in nfkd if not unicodedata.combining(c)]).upper()
     return " ".join(nome_limpo.split())
 
-# --- FUNÇÃO PARA CHECAR ARQUIVOS DE FOTO (CORRIGIDA PARA GITHUB/MODULOS) ---
+# --- FUNÇÃO PARA CHECAR ARQUIVOS DE FOTO (BLINDADA COM PATHLIB) ---
 def listar_nomes_com_foto():
-    caminhos = ["alunos_fotos", "../alunos_fotos"]
+    # Caminho absoluto: Pega o local deste script (modulos) e volta uma pasta (para a raiz)
+    caminho_base = Path(__file__).resolve().parent.parent
+    pasta_fotos_1 = caminho_base / "alunos_fotos"
+    
+    # Fallback: tenta procurar na pasta de execução atual
+    pasta_fotos_2 = Path("alunos_fotos").resolve()
+
     pasta_ativa = None
-    for c in caminhos:
-        if os.path.exists(c):
-            pasta_ativa = c
-            break
+    if pasta_fotos_1.exists() and pasta_fotos_1.is_dir():
+        pasta_ativa = pasta_fotos_1
+    elif pasta_fotos_2.exists() and pasta_fotos_2.is_dir():
+        pasta_ativa = pasta_fotos_2
+
+    # Retorna None se não achar a pasta de jeito nenhum (evita o bug de acusar todo mundo)
     if not pasta_ativa:
-        return set()
+        return None 
+        
     try:
-        arquivos = os.listdir(pasta_ativa)
-        nomes_fotos = {normalizar(os.path.splitext(f)[0]) 
-                       for f in arquivos if f.lower().endswith(('.png', '.jpg', '.jpeg'))}
+        nomes_fotos = set()
+        for arquivo in pasta_ativa.iterdir():
+            if arquivo.suffix.lower() in ['.png', '.jpg', '.jpeg']:
+                # stem pega o nome do arquivo sem a extensão (.png)
+                nomes_fotos.add(normalizar(arquivo.stem))
         return nomes_fotos
     except:
-        return set()
+        return None
 
 def exibir_busca_ativa(supabase, supabase_alunos):
     st.title("🕵️ Busca Ativa e Gestão de Frequência")
@@ -49,23 +61,41 @@ def exibir_busca_ativa(supabase, supabase_alunos):
         df_al = pd.DataFrame(res_al.data)
         df_al['nome_limpo'] = df_al['nome'].apply(normalizar)
 
-        # --- ALERTA DE FOTOS ---
+        # ==========================================
+        # 🚨 LÓGICA DE FOTOS: PRESENÇA -> FOTOGRAMA
+        # ==========================================
         try:
             hoje_str = hoje.strftime('%Y-%m-%d')
+            
+            # 1º PASSO: Vê quem veio pra aula hoje
             res_pres_hoje = supabase.table("frequencia").select("aluno_nome").eq("data_chamada", hoje_str).eq("status", "P").execute()
+            
+            # 2º PASSO: Mapeia as fotos que existem na pasta
             nomes_com_foto = listar_nomes_com_foto()
 
-            if res_pres_hoje.data and nomes_com_foto:
-                nomes_presentes_hoje = [normalizar(p['aluno_nome']) for p in res_pres_hoje.data]
-                df_presentes = df_al[df_al['nome_limpo'].isin(nomes_presentes_hoje)]
-                df_sem_foto = df_presentes[~df_presentes['nome_limpo'].isin(nomes_com_foto)]
+            # Só cruza os dados se houve presenças hoje
+            if res_pres_hoje.data:
+                # Se a pasta de fotos foi localizada com sucesso (nomes_com_foto não é None)
+                if nomes_com_foto is not None:
+                    nomes_presentes_hoje = [normalizar(p['aluno_nome']) for p in res_pres_hoje.data]
+                    df_presentes = df_al[df_al['nome_limpo'].isin(nomes_presentes_hoje)]
+                    
+                    # 3º PASSO: Filtra quem está presente E NÃO tem nome na lista de fotos
+                    df_sem_foto = df_presentes[~df_presentes['nome_limpo'].isin(nomes_com_foto)]
 
-                if not df_sem_foto.empty:
-                    st.error(f"📸 **Atenção:** {len(df_sem_foto)} alunos presentes hoje sem foto na pasta.")
-                    with st.expander("📍 Ver Lista para Fotografar"):
-                        for t, g in df_sem_foto.groupby('turma'):
-                            st.write(f"**{t}:** {', '.join(g.sort_values('nome')['nome'].tolist())}")
-        except: pass
+                    if not df_sem_foto.empty:
+                        st.error(f"📸 **Atenção:** Identificamos **{len(df_sem_foto)}** alunos presentes hoje sem foto na pasta.")
+                        with st.expander("📍 Ver Lista para Fotografar"):
+                            for t, g in df_sem_foto.groupby('turma'):
+                                st.write(f"**{t}:** {', '.join(g.sort_values('nome')['nome'].tolist())}")
+                    else:
+                        st.success("✅ Show! Todos os alunos presentes hoje já possuem foto.")
+                else:
+                    st.info("💡 Pasta 'alunos_fotos' não localizada para o cruzamento de dados.")
+        except Exception as e_foto:
+            # Não trava a tela se der algum erro bizarro nessa verificação
+            pass
+        # ==========================================
 
         # 2. FILTROS
         st.markdown("### 📅 Filtros de Pesquisa")
