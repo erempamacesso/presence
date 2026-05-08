@@ -6,8 +6,13 @@ import unicodedata
 import calendar
 
 # ==========================================
-# 1. FUNÇÃO DE PADRONIZAÇÃO
+# CONFIGURAÇÃO DE NOMES DO BANCO (AJUSTE AQUI)
 # ==========================================
+TABELA_FREQUENCIA = "frequencia"
+COLUNA_DATA = "data"    # <-- SE DER ERRO DE NOVO, TENTE MUDAR PARA 'created_at' OU O NOME CERTO LÁ
+TABELA_FOTOS = "fotos_alunos"
+COLUNA_FOTO_ID = "aluno_id"
+
 def normalizar(nome):
     if not nome: return ""
     nfkd = unicodedata.normalize('NFKD', str(nome))
@@ -23,112 +28,89 @@ def exibir_busca_ativa(supabase, supabase_alunos):
     try:
         # 1. CARREGA LISTA GERAL DE ALUNOS
         res_al = supabase_alunos.table("alunos").select("id, nome, turma").execute()
-        if not res_al.data:
-            st.error("Erro: Tabela de alunos não encontrada.")
-            return
-        
         df_al = pd.DataFrame(res_al.data)
         df_al['nome_limpo'] = df_al['nome'].apply(normalizar)
 
-        # --- [RESTAURADO] BLOCO: ALUNOS PRESENTES SEM FOTO ---
+        # --- BLOCO: ALUNOS PRESENTES SEM FOTO ---
         try:
-            # CORREÇÃO: Alterado de 'frequencia_diaria' para 'frequencia' conforme erro PGRST205
             hoje_str = hoje.strftime('%Y-%m-%d')
-            res_pres_hoje = supabase.table("frequencia")\
+            # Busca presença de hoje
+            res_pres_hoje = supabase.table(TABELA_FREQUENCIA)\
                 .select("aluno_nome")\
-                .eq("data", hoje_str)\
+                .eq(COLUNA_DATA, hoje_str)\
                 .execute()
             
-            # Busca IDs que já possuem foto (Tabela: fotos_alunos)
-            res_fotos = supabase_alunos.table("fotos_alunos").select("aluno_id").execute()
-            ids_com_foto = set(str(f['aluno_id']) for f in res_fotos.data) if res_fotos.data else set()
+            # Busca IDs com foto
+            res_fotos = supabase_alunos.table(TABELA_FOTOS).select(COLUNA_FOTO_ID).execute()
+            ids_com_foto = set(str(f[COLUNA_FOTO_ID]) for f in res_fotos.data) if res_fotos.data else set()
 
             if res_pres_hoje.data:
                 nomes_presentes = set(normalizar(p['aluno_nome']) for p in res_pres_hoje.data)
-                
                 mask_presente = df_al['nome_limpo'].isin(nomes_presentes)
                 mask_sem_foto = ~df_al['id'].astype(str).isin(ids_com_foto)
-                
                 df_alerta_fotos = df_al[mask_presente & mask_sem_foto]
 
                 if not df_alerta_fotos.empty:
-                    qtd_sem = len(df_alerta_fotos)
-                    st.error(f"📸 **Atenção:** Temos **{qtd_sem}** alunos presentes hoje sem foto no sistema.")
-                    
-                    with st.expander("📍 Ver lista de estudantes (por série)"):
+                    st.error(f"📸 **Atenção:** {len(df_alerta_fotos)} alunos presentes hoje sem foto!")
+                    with st.expander("📍 Ver lista para fotografar"):
                         for turma_ref, grupo in df_alerta_fotos.groupby('turma'):
-                            st.markdown(f"**Turma: {turma_ref}**")
-                            nomes_str = ", ".join(grupo.sort_values('nome')['nome'].tolist())
-                            st.write(f"_{nomes_str}_")
-                            st.divider()
-        except Exception as e_foto:
-            # Se a tabela de fotos não existir, o sistema avisa discretamente no log
-            st.info("💡 Info: Conecte a tabela 'fotos_alunos' para habilitar o alerta visual.")
+                            st.write(f"**{turma_ref}:** {', '.join(grupo['nome'].tolist())}")
+        except Exception:
+            st.info(f"💡 Info: A tabela '{TABELA_FOTOS}' ou a coluna de data não foi encontrada. Verifique o banco.")
 
-        # 2. FILTROS DE TOPO
-        st.markdown("### 📅 Filtros de Pesquisa")
-        c1, c2, c3 = st.columns([2, 2, 2])
-        
+        # 2. FILTROS
+        st.markdown("### 📅 Filtros")
+        c1, c2, c3 = st.columns(3)
         with c1:
             mes_nome = st.selectbox("Mês", list(calendar.month_name)[1:], index=hoje.month-1)
             mes_num = list(calendar.month_name).index(mes_nome)
         with c2:
-            ano_sel = st.number_input("Ano", min_value=2024, max_value=2030, value=hoje.year)
+            ano_sel = st.number_input("Ano", value=hoje.year)
         with c3:
-            turmas_lista = sorted(df_al['turma'].unique())
-            turma_sel = st.selectbox("Filtrar Turma", ["TODAS"] + turmas_lista)
+            turma_sel = st.selectbox("Turma", ["TODAS"] + sorted(df_al['turma'].unique()))
 
-        # 3. FILTRAGEM DOS DADOS
-        df_t = df_al if turma_sel == "TODAS" else df_al[df_al['turma'] == turma_sel]
-        
-        # 4. BUSCA FREQUÊNCIA DO MÊS (CORREÇÃO: 'frequencia')
+        # 3. BUSCA FREQUÊNCIA MENSAL
         ultimo_dia = calendar.monthrange(ano_sel, mes_num)[1]
         data_inicio = f"{ano_sel}-{mes_num:02d}-01"
         data_fim = f"{ano_sel}-{mes_num:02d}-{ultimo_dia}"
 
-        res_f = supabase.table("frequencia")\
-            .select("aluno_nome, data")\
-            .filter("data", "gte", data_inicio)\
-            .filter("data", "lte", data_fim)\
+        # ATENÇÃO: Se o erro persistir, o nome da coluna no .filter() deve ser igual ao do banco
+        res_f = supabase.table(TABELA_FREQUENCIA)\
+            .select(f"aluno_nome, {COLUNA_DATA}")\
+            .filter(COLUNA_DATA, "gte", data_inicio)\
+            .filter(COLUNA_DATA, "lte", data_fim)\
             .execute()
         
         presencas_mes_set = set()
         if res_f.data:
             for p in res_f.data:
-                # Extrai o dia da string '2024-05-05' -> '05'
-                d_str = p['data'].split('-')[2]
+                # Ajuste para pegar a data independente do formato (ISO ou simples)
+                data_valor = str(p[COLUNA_DATA])
+                d_str = data_valor.split('T')[0].split('-')[2] 
                 presencas_mes_set.add((normalizar(p['aluno_nome']), d_str))
 
-        # 5. INTERFACE EM ABAS
-        abas = st.tabs(["📊 Dashboard", "🚨 Alertas Críticos", "📝 Registrar Ocorrência", "📂 Histórico", "📅 Diário Mensal"])
+        # 4. ABAS
+        abas = st.tabs(["📊 Dash", "🚨 Alertas", "📝 Ocorrência", "📂 Histórico", "📅 Diário"])
 
-        # --- ABA 5: DIÁRIO MENSAL (MAPA DE CALOR) ---
-        with abas[4]:
-            st.subheader(f"📅 Mapa de Presença - {turma_sel}")
-            dias_lista = [f"{d:02d}" for d in range(1, ultimo_dia + 1)]
+        with abas[4]: # Diário Mensal
+            df_t = df_al if turma_sel == "TODAS" else df_al[df_al['turma'] == turma_sel]
+            dias = [f"{d:02d}" for d in range(1, ultimo_dia + 1)]
             matriz = []
-            
             for _, aluno in df_t.sort_values('nome').iterrows():
                 linha = {"Estudante": aluno['nome']}
-                for d in dias_lista:
-                    if (aluno['nome_limpo'], d) in presencas_mes_set:
-                        linha[d] = "✅"
+                for d in dias:
+                    if (aluno['nome_limpo'], d) in presencas_mes_set: linha[d] = "✅"
                     else:
                         try:
-                            dt_dia = datetime(ano_sel, mes_num, int(d)).date()
-                            if dt_dia > hoje.date(): linha[d] = " "
-                            elif dt_dia.weekday() >= 5: linha[d] = "-" # Fim de semana
+                            dt = datetime(ano_sel, mes_num, int(d)).date()
+                            if dt > hoje.date(): linha[d] = " "
+                            elif dt.weekday() >= 5: linha[d] = "-"
                             else: linha[d] = "❌"
                         except: linha[d] = " "
                 matriz.append(linha)
             
-            df_mapa = pd.DataFrame(matriz)
-            
-            # Configuração das colunas para ficarem estreitas
-            config_cols = {d: st.column_config.TextColumn(d, width=35) for d in dias_lista}
-            config_cols["Estudante"] = st.column_config.TextColumn("Estudante", width=250)
-
-            st.dataframe(df_mapa, hide_index=True, column_config=config_cols)
+            st.dataframe(pd.DataFrame(matriz), hide_index=True)
 
     except Exception as e:
-        st.error(f"Erro geral na Busca Ativa: {e}")
+        st.error(f"Erro Crítico: {e}")
+        st.info("Dica: Verifique se o nome da coluna de data na tabela 'frequencia' é realmente 'data'.")
