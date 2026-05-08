@@ -11,18 +11,31 @@ import os
 # ==========================================
 def normalizar(nome):
     if not nome: return ""
+    # Remove acentos, deixa em maiúsculo e remove espaços duplos
     nfkd = unicodedata.normalize('NFKD', str(nome))
     nome_limpo = "".join([c for c in nfkd if not unicodedata.combining(c)]).upper()
     return " ".join(nome_limpo.split())
 
-# --- [NOVA] FUNÇÃO PARA CHECAR ARQUIVOS DE FOTO ---
-def listar_nomes_com_foto(pasta="alunos_fotos"):
-    if not os.path.exists(pasta):
+# --- [CORRIGIDO] FUNÇÃO PARA LER AS FOTOS DO GITHUB/PASTA ---
+def listar_nomes_com_foto():
+    # Testamos dois caminhos: um se estiver na raiz, outro se estiver dentro de 'modulos'
+    caminhos_possiveis = ["alunos_fotos", "../alunos_fotos"]
+    pasta_final = ""
+    
+    for p in caminhos_possiveis:
+        if os.path.exists(p):
+            pasta_final = p
+            break
+            
+    if not pasta_final:
         return set()
-    # Pega os nomes dos arquivos, remove a extensão e normaliza
-    arquivos = os.listdir(pasta)
-    nomes_fotos = {normalizar(f.replace(".png", "").replace(".jpg", "").replace(".jpeg", "")) 
-                   for f in arquivos if f.lower().endswith(('.png', '.jpg', '.jpeg'))}
+
+    # Pega os nomes dos arquivos, remove a extensão e normaliza para comparar
+    arquivos = os.listdir(pasta_final)
+    nomes_fotos = {
+        normalizar(f.rsplit('.', 1)[0]) 
+        for f in arquivos if f.lower().endswith(('.png', '.jpg', '.jpeg'))
+    }
     return nomes_fotos
 
 def exibir_busca_ativa(supabase, supabase_alunos):
@@ -41,24 +54,26 @@ def exibir_busca_ativa(supabase, supabase_alunos):
         df_al = pd.DataFrame(res_al.data)
         df_al['nome_limpo'] = df_al['nome'].apply(normalizar)
 
-        # --- [CORRIGIDO] BLOCO: ALUNOS PRESENTES SEM FOTO ---
+        # --- [BLOQUEIO DE BUG] BLOCO: ALUNOS PRESENTES SEM FOTO ---
         try:
             hoje_str = hoje.strftime('%Y-%m-%d')
-            # Busca quem marcou presença hoje (Usando 'data_chamada' conforme seu print)
+            # Busca presenças de hoje no banco (tabela 'frequencia', coluna 'data_chamada')
             res_pres_hoje = supabase.table("frequencia")\
                 .select("aluno_nome")\
                 .eq("data_chamada", hoje_str)\
                 .eq("status", "P")\
                 .execute()
             
-            # Lê as fotos da pasta 'alunos_fotos' que você mostrou no GitHub
-            nomes_com_foto = listar_nomes_com_foto("alunos_fotos")
+            # Pega os nomes que já estão na pasta 'alunos_fotos'
+            nomes_com_foto = listar_nomes_com_foto()
 
-            if res_pres_hoje.data:
+            if res_pres_hoje.data and nomes_com_foto:
                 nomes_presentes_hoje = [normalizar(p['aluno_nome']) for p in res_pres_hoje.data]
                 
-                # Filtra alunos que estão presentes hoje mas o nome não está na pasta de fotos
+                # Filtra alunos que estão presentes hoje
                 df_presentes = df_al[df_al['nome_limpo'].isin(nomes_presentes_hoje)]
+                
+                # Filtra os que NÃO estão na lista de fotos
                 df_sem_foto = df_presentes[~df_presentes['nome_limpo'].isin(nomes_com_foto)]
 
                 if not df_sem_foto.empty:
@@ -68,7 +83,9 @@ def exibir_busca_ativa(supabase, supabase_alunos):
                             st.markdown(f"**Turma: {turma_ref}**")
                             st.write(", ".join(grupo.sort_values('nome')['nome'].tolist()))
                 else:
-                    st.success("✅ Todos os alunos presentes hoje já possuem foto!")
+                    st.success("✅ Todos os alunos presentes hoje já possuem foto no Fotograma!")
+            elif not nomes_com_foto:
+                st.warning("⚠️ Pasta de fotos não encontrada ou vazia. Verifique o diretório 'alunos_fotos'.")
         except Exception as e_foto:
             st.sidebar.warning(f"Aviso Fotos: {e_foto}")
 
@@ -81,17 +98,17 @@ def exibir_busca_ativa(supabase, supabase_alunos):
             mes_nome = st.selectbox("Mês", meses_br, index=hoje.month - 1)
             mes_num = meses_br.index(mes_nome) + 1
         with c2:
-            ano_sel = st.selectbox("Ano", [2025, 2026], index=1)
+            # Pegando o ano da data atual para evitar erro de index
+            ano_sel = st.selectbox("Ano", [2025, 2026], index=1 if hoje.year == 2026 else 0)
         with c3:
             turmas_lista = sorted(df_al['turma'].dropna().unique().tolist())
             turma_sel = st.selectbox("Selecione a Turma:", turmas_lista)
 
-        # 3. BUSCA DE DADOS MENSAL
+        # 3. BUSCA DE DADOS MENSAL (CORREÇÃO DA COLUNA)
         ultimo_dia = calendar.monthrange(ano_sel, mes_num)[1]
         data_ini = f"{ano_sel}-{mes_num:02d}-01"
         data_fim = f"{ano_sel}-{mes_num:02d}-{ultimo_dia}"
 
-        # Importante: Mantendo 'data_chamada' que é o nome real no seu banco
         res_mensal = supabase.table("frequencia")\
             .select("aluno_nome, data_chamada")\
             .eq("status", "P")\
@@ -113,16 +130,7 @@ def exibir_busca_ativa(supabase, supabase_alunos):
         
         df_t = df_al[df_al['turma'] == turma_sel].copy()
 
-        # --- ABA 1: RANKING ---
-        with abas[0]:
-            st.subheader(f"Faltas no Mês: {turma_sel}")
-            contagem = df_p_mes.groupby('nome_limpo').size().reset_index(name='presencas') if not df_p_mes.empty else pd.DataFrame(columns=['nome_limpo', 'presencas'])
-            df_rank = pd.merge(df_t, contagem, on='nome_limpo', how='left').fillna(0)
-            dias_letivos = df_p_mes['data_chamada'].nunique() if not df_p_mes.empty else 0
-            df_rank['faltas'] = dias_letivos - df_rank['presencas']
-            st.dataframe(df_rank[['nome', 'presencas', 'faltas']].sort_values('faltas', ascending=False), use_container_width=True, hide_index=True)
-
-        # --- ABA 5: DIÁRIO MENSAL (Célula de Ouro) ---
+        # --- ABA 5: DIÁRIO MENSAL ---
         with abas[4]:
             st.subheader(f"📅 Mapa Mensal: {turma_sel}")
             dias_lista = [f"{d:02d}" for d in range(1, ultimo_dia + 1)]
