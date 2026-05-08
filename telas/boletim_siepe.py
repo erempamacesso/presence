@@ -160,7 +160,7 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                 "AT3": st.column_config.NumberColumn("AT3", format="%.1f", min_value=0.0, max_value=10.0),
                 "AT4": st.column_config.NumberColumn("AT4", format="%.1f", min_value=0.0, max_value=10.0),
                 "AT5": st.column_config.NumberColumn("AT5", format="%.1f", min_value=0.0, max_value=10.0),
-                "N2": st.column_config.NumberColumn("N2 (PROVA)", format="%.1f", min_value=0.0, max_value=10.0),
+                "N2": st.column_config.NumberColumn("N2", format="%.1f", min_value=0.0, max_value=10.0),
                 "N1": st.column_config.NumberColumn("Σ N1 🔒", disabled=True, format="%.1f"),
                 "Média Final": st.column_config.NumberColumn("MÉDIA 🔒", disabled=True, format="%.1f"),
             }
