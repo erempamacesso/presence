@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guia Vocacional IA</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white font-sans h-screen flex flex-col items-center justify-center p-4">
+
+    <div class="bg-gray-800 w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col h-[80vh]">
+        
+        <div class="p-5 border-b border-gray-700 flex items-center gap-3">
+            <div class="w-10 h-10 bg-indigo-500 rounded-full flex items-center justify-center text-xl">🎓</div>
+            <div>
+                <h1 class="text-xl font-bold">Guia Vocacional IA</h1>
+                <p class="text-sm text-gray-400">Online e pronto para ajudar</p>
+            </div>
+        </div>
+
+        <div id="chat-box" class="flex-1 p-5 overflow-y-auto flex flex-col gap-4 space-y-2">
+            <div class="flex items-start gap-3">
+                <div class="bg-indigo-600 p-3 rounded-2xl rounded-tl-none max-w-[80%]">
+                    Olá! Se você tivesse tempo e dinheiro ilimitados, o que passaria o dia fazendo?
+                </div>
+            </div>
+        </div>
+
+        <div class="p-4 border-t border-gray-700 flex gap-2">
+            <input type="text" id="user-input" class="flex-1 bg-gray-700 text-white rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Digite sua resposta aqui...">
+            <button onclick="enviarMensagem()" class="bg-indigo-500 hover:bg-indigo-600 px-6 py-3 rounded-xl font-semibold transition-all">Enviar</button>
+        </div>
+    </div>
+
+    <script>
+        const chatBox = document.getElementById('chat-box');
+        const inputField = document.getElementById('user-input');
+
+        // Permite enviar com a tecla Enter
+        inputField.addEventListener("keypress", function(event) {
+            if (event.key === "Enter") enviarMensagem();
+        });
+
+        async function enviarMensagem() {
+            const texto = inputField.value.trim();
+            if (!texto) return;
+
+            // 1. Mostra a mensagem do usuário na tela
+            adicionarBalao(texto, 'usuario');
+            inputField.value = '';
+
+            // 2. Mostra um aviso "Digitando..."
+            const idDigitando = adicionarBalao("Pensando...", 'bot', true);
+
+            try {
+                // 3. Manda a mensagem para o seu Python (FastAPI)
+                const resposta = await fetch("http://localhost:8000/conversar", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ texto: texto })
+                });
+                const dados = await resposta.json();
+                
+                // 4. Remove o "Pensando..." e mostra a resposta real
+                document.getElementById(idDigitando).remove();
+                adicionarBalao(dados.resposta, 'bot');
+            } catch (erro) {
+                document.getElementById(idDigitando).remove();
+                adicionarBalao("Erro ao conectar com o servidor.", 'bot');
+            }
+        }
+
+        function adicionarBalao(texto, remetente, isDigitando = false) {
+            const divId = "msg-" + Math.random().toString(36).substr(2, 9);
+            const balao = document.createElement('div');
+            
+            if (remetente === 'usuario') {
+                balao.className = "flex items-end justify-end gap-3";
+                balao.innerHTML = `<div class="bg-gray-700 p-3 rounded-2xl rounded-tr-none max-w-[80%]">${texto}</div>`;
+            } else {
+                balao.className = "flex items-start gap-3";
+                const cor = isDigitando ? "bg-indigo-800 animate-pulse" : "bg-indigo-600";
+                balao.innerHTML = `<div id="${divId}" class="${cor} p-3 rounded-2xl rounded-tl-none max-w-[80%]">${texto}</div>`;
+            }
+            
+            chatBox.appendChild(balao);
+            chatBox.scrollTop = chatBox.scrollHeight;
+            return divId;
+        }
+    </script>
+</body>
+</html>
