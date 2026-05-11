@@ -3,274 +3,180 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Guia Vocacional IA - Autoconhecimento e Carreiras</title>
+    <title>MarIO - Orientador Vocacional</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        /* --- ESTILOS GERAIS E FUNDO CLARO COM ÍCONES --- */
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: 'Open Sans', sans-serif;
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        
+        body { 
+            height: 100vh; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            background-color: #f0f2f5; 
         }
 
-        body {
-            height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            background-color: #f9f9f9;
-        }
-
-        /* --- TELA DO CHAT --- */
         #chat-container {
-            width: 420px;
-            height: 600px;
+            width: 100%;
+            max-width: 450px;
+            height: 90vh;
             background: white;
-            border-radius: 12px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            border-radius: 15px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.1);
             display: flex;
             flex-direction: column;
             overflow: hidden;
         }
 
-        /* --- CABEÇALHO DO CHAT --- */
         #chat-header {
-            background-color: #4f46e5;
+            background: #4f46e5;
             color: white;
-            padding: 15px 20px;
+            padding: 15px;
             display: flex;
             align-items: center;
-            border-bottom: 1px solid #ddd;
+            gap: 12px;
         }
 
-        /* Estilo para a foto do MarIO no cabeçalho */
-        #chat-header .bot-avatar {
+        .header-img {
             width: 45px;
             height: 45px;
             border-radius: 50%;
-            margin-right: 15px;
-            object-fit: cover; /* Garante que a foto não fique esticada */
-            border: 2px solid white; /* Borda branca estilosa */
+            border: 2px solid white;
+            object-fit: cover;
         }
 
-        #chat-title {
-            font-weight: bold;
-            font-size: 18px;
-        }
-
-        /* --- ÁREA DAS MENSAGENS --- */
         #chat-box {
             flex: 1;
-            padding: 20px;
+            padding: 15px;
             overflow-y: auto;
-            background-color: white;
             display: flex;
             flex-direction: column;
-            gap: 15px;
+            gap: 12px;
+            background: #ffffff;
         }
 
-        .message {
-            max-width: 80%;
-            padding: 10px 15px;
-            border-radius: 8px;
-            font-size: 15px;
-            line-height: 1.4;
+        .message { padding: 10px 14px; border-radius: 12px; font-size: 15px; max-width: 85%; line-height: 1.4; }
+
+        .mario-msg { 
+            align-self: flex-start; 
+            background: #f1f1f1; 
+            color: #1a1a1a; 
+            display: flex; 
+            gap: 8px;
         }
 
-        /* Guia Vocacional (Esquerda) */
-        .guide-message {
-            align-self: flex-start;
-            background-color: #f1f1f1;
-            color: #333;
-            display: flex;
-            align-items: flex-start;
+        .mario-msg img { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; }
+
+        .user-msg { 
+            align-self: flex-end; 
+            background: #4f46e5; 
+            color: white; 
+            border-bottom-right-radius: 2px;
         }
 
-        /* Estilo para a foto do MarIO na bolha de chat */
-        .guide-message .bot-avatar {
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            margin-right: 10px;
-            object-fit: cover;
-            border: 2px solid #4f46e5;
-            margin-top: 2px;
-        }
-
-        /* Usuário (Direita) */
-        .user-message {
-            align-self: flex-end;
-            background-color: #4f46e5;
-            color: white;
-            border-top-right-radius: 2px;
-        }
-
-        .error-message {
-            background-color: #fef2f2;
-            color: #ef4444;
-            border: 1px solid #fecaca;
-            text-align: center;
-            max-width: 90%;
-            align-self: center;
-        }
-
-        /* --- ÁREA DE ENTRADA --- */
         #input-area {
             padding: 15px;
-            border-top: 1px solid #eee;
+            background: #f9f9f9;
             display: flex;
             gap: 10px;
-            background-color: #f9f9f9;
+            border-top: 1px solid #eee;
         }
 
-        #user-input {
+        input {
             flex: 1;
-            padding: 12px;
+            padding: 10px;
             border: 1px solid #ddd;
             border-radius: 8px;
-            font-size: 15px;
             outline: none;
         }
 
-        #send-btn {
-            background-color: #4f46e5;
+        button {
+            background: #4f46e5;
             color: white;
             border: none;
+            padding: 10px 18px;
             border-radius: 8px;
-            padding: 0 20px;
-            font-size: 16px;
             cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
         }
 
+        .typing { font-size: 12px; color: #888; font-style: italic; }
     </style>
 </head>
 <body>
 
-    <div id="chat-container">
-        <div id="chat-header">
-            <img src="mario.png" alt="MarIO" class="bot-avatar">
-            <div>
-                <div id="chat-title">Guia Vocacional (MarIO)</div>
-                <div style="font-size: 12px; color: #a5b4fc;">Online e pronto para ajudar</div>
-            </div>
-        </div>
-
-        <div id="chat-box">
-            <div class="message guide-message">
-                <img src="mario.png" alt="MarIO" class="bot-avatar">
-                <div>Oi! Eu sou o MarIO, seu Guia Vocacional. Como posso te chamar?</div>
-            </div>
-        </div>
-
-        <div id="input-area">
-            <input type="text" id="user-input" placeholder="Digite seu nome ou resposta aqui...">
-            <button id="send-btn">
-                <i class="fa-solid fa-paper-plane"></i>
-            </button>
+<div id="chat-container">
+    <div id="chat-header">
+        <img src="mario.png" class="header-img" alt="MarIO">
+        <div>
+            <p style="font-weight: bold;">MarIO</p>
+            <p style="font-size: 12px; opacity: 0.8;">Guia Vocacional I/O</p>
         </div>
     </div>
 
-    <script>
-        const chatBox = document.getElementById('chat-box');
-        const userInput = document.getElementById('user-input');
-        const sendBtn = document.getElementById('send-btn');
+    <div id="chat-box">
+        <div class="message mario-msg">
+            <img src="mario.png">
+            <div>Olá! Sou o MarIO. Vamos descobrir seu caminho profissional? Primeiro, como você se chama?</div>
+        </div>
+    </div>
 
-        // Função para adicionar uma mensagem do Guia
-        function appendGuideMessage(text) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'message guide-message';
+    <div id="input-area">
+        <input type="text" id="user-input" placeholder="Digite aqui..." autofocus>
+        <button onclick="enviar()"><i class="fas fa-paper-plane"></i></button>
+    </div>
+</div>
+
+<script>
+    const chatBox = document.getElementById('chat-box');
+    const input = document.getElementById('user-input');
+
+    async function enviar() {
+        const texto = input.value.trim();
+        if (!texto) return;
+
+        // Add User Message
+        const userDiv = document.createElement('div');
+        userDiv.className = 'message user-msg';
+        userDiv.textContent = texto;
+        chatBox.appendChild(userDiv);
+        input.value = '';
+        chatBox.scrollTop = chatBox.scrollHeight;
+
+        // Add Typing Indicator
+        const typing = document.createElement('div');
+        typing.className = 'message mario-msg typing';
+        typing.id = 'temp-typing';
+        typing.innerHTML = '<img src="mario.png"> <span>MarIO está analisando...</span>';
+        chatBox.appendChild(typing);
+
+        try {
+            const response = await fetch('http://127.0.0.1:8000/conversar', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ texto: texto })
+            });
+            const data = await response.json();
             
-            // Criando a imagem do avatar dinamicamente via JavaScript
-            const avatar = document.createElement('img');
-            avatar.src = 'mario.png';
-            avatar.className = 'bot-avatar';
-            avatar.alt = 'MarIO';
+            document.getElementById('temp-typing').remove();
+
+            // Add MarIO Response
+            const marioDiv = document.createElement('div');
+            marioDiv.className = 'message mario-msg';
+            marioDiv.innerHTML = `<img src="mario.png"> <div>${data.resposta}</div>`;
+            chatBox.appendChild(marioDiv);
             
-            const content = document.createElement('div');
-            content.innerText = text;
-            
-            messageDiv.appendChild(avatar);
-            messageDiv.appendChild(content);
-            chatBox.appendChild(messageDiv);
-            scrollToBottom();
+        } catch (e) {
+            document.getElementById('temp-typing').remove();
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'message mario-msg';
+            errorDiv.textContent = "MarIO: Tive um problema no meu sistema I/O. Pode repetir?";
+            chatBox.appendChild(errorDiv);
         }
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
 
-        function appendUserMessage(text) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'message user-message';
-            messageDiv.innerText = text;
-            chatBox.appendChild(messageDiv);
-            scrollToBottom();
-        }
+    input.addEventListener('keypress', (e) => { if(e.key === 'Enter') enviar(); });
+</script>
 
-        function appendErrorMessage(text) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'message error-message';
-            messageDiv.innerText = text;
-            chatBox.appendChild(messageDiv);
-            scrollToBottom();
-        }
-
-        function scrollToBottom() {
-            chatBox.scrollTop = chatBox.scrollHeight;
-        }
-
-        async function sendMessage() {
-            const message = userInput.value.trim();
-            if (message === '') return; 
-
-            appendUserMessage(message);
-            userInput.value = '';
-
-            const typingIndicator = document.createElement('div');
-            typingIndicator.className = 'message guide-message';
-            typingIndicator.id = 'typing-indicator';
-            
-            // Adicionando o avatar ao indicador de "digitando" também
-            typingIndicator.innerHTML = '<img src="mario.png" class="bot-avatar"><div>Pensando...</div>';
-            chatBox.appendChild(typingIndicator);
-            scrollToBottom();
-
-            try {
-                const response = await fetch('http://127.0.0.1:8000/conversar', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ "texto": message })
-                });
-
-                if (!response.ok) {
-                    throw new Error('Falha na conexão.');
-                }
-
-                const data = await response.json();
-
-                const indicator = document.getElementById('typing-indicator');
-                if (indicator) indicator.remove();
-
-                appendGuideMessage(data.resposta);
-
-            } catch (error) {
-                const indicator = document.getElementById('typing-indicator');
-                if (indicator) indicator.remove();
-                
-                console.error(error);
-                appendErrorMessage('Ops, tive um probleminha técnico. Pode repetir o que disse?');
-            }
-        }
-
-        sendBtn.addEventListener('click', sendMessage);
-
-        userInput.addEventListener('keypress', function (e) {
-            if (e.key === 'Enter') {
-                sendMessage();
-            }
-        });
-    </script>
 </body>
 </html>
