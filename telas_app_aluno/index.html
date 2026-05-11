@@ -1,92 +1,290 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-br">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Guia Vocacional IA</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Guia Vocacional IA - Autoconhecimento e Carreiras</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        /* --- ESTILOS GERAIS E FUNDO CLARO COM ÍCONES --- */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Open Sans', sans-serif;
+        }
+
+        body {
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            /* DESCRIÇÃO DO FUNDO: Um padrão contínuo de pequenos ícones de profissões diversos e suaves (image_6.png, image_7.png, image_12.png, image_13.png), como estetoscópio, capacete de obra, chapéu de chef, paleta de artista e microscópio, em tons de cinza muito claro (transparente a 50%), repetindo-se sobre um fundo branco ou cinza claro (#f9f9f9), criando uma textura visual sutil que remete a carreiras. */
+            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><g fill="%23f0f0f0" fill-opacity="0.5"><path d="M12 1a2 2 0 100 4a2 2 0 000-4zm4 6a2 2 0 100 4a2 2 0 000-4zm-8 4a2 2 0 100 4a2 2 0 000-4zm12 4a2 2 0 100 4a2 2 0 000-4zM8 19a2 2 0 100 4a2 2 0 000-4zm8 4a2 2 0 100 4a2 2 0 000-4zm-8 4a2 2 0 100 4a2 2 0 000-4zm12 4a2 2 0 100 4a2 2 0 000-4z"/></g></svg>'); /* Padrão sutil SVG placeholder */
+            background-color: #f9f9f9;
+            background-repeat: repeat;
+        }
+
+        /* --- TELA DO CHAT --- */
+        #chat-container {
+            width: 420px;
+            height: 600px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* --- CABEÇALHO DO CHAT --- */
+        #chat-header {
+            background-color: #4f46e5;
+            color: white;
+            padding: 15px 20px;
+            display: flex;
+            align-items: center;
+            border-bottom: 1px solid #ddd;
+        }
+
+        #chat-header i {
+            font-size: 24px;
+            margin-right: 15px;
+        }
+
+        #chat-title {
+            font-weight: bold;
+            font-size: 18px;
+        }
+
+        /* --- ÁREA DAS MENSAGENS --- */
+        #chat-box {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            background-color: white;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        /* Estilo das bolhas */
+        .message {
+            max-width: 80%;
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 15px;
+            line-height: 1.4;
+        }
+
+        /* Guia Vocacional (Esquerda) */
+        .guide-message {
+            align-self: flex-start;
+            background-color: #f1f1f1;
+            color: #333;
+            display: flex;
+            align-items: flex-start;
+        }
+
+        .guide-message i {
+            margin-right: 10px;
+            color: #4f46e5;
+            font-size: 18px;
+            margin-top: 2px;
+        }
+
+        /* Usuário (Direita) */
+        .user-message {
+            align-self: flex-end;
+            background-color: #4f46e5;
+            color: white;
+            border-top-right-radius: 2px;
+        }
+
+        /* Mensagem de erro */
+        .error-message {
+            background-color: #fef2f2;
+            color: #ef4444;
+            border: 1px solid #fecaca;
+            text-align: center;
+            max-width: 90%;
+            align-self: center;
+        }
+
+        /* --- ÁREA DE ENTRADA --- */
+        #input-area {
+            padding: 15px;
+            border-top: 1px solid #eee;
+            display: flex;
+            gap: 10px;
+            background-color: #f9f9f9;
+        }
+
+        #user-input {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 15px;
+            outline: none;
+        }
+
+        #user-input:focus {
+            border-color: #4f46e5;
+            box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.1);
+        }
+
+        #send-btn {
+            background-color: #4f46e5;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 0 20px;
+            font-size: 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #send-btn:hover {
+            background-color: #4338ca;
+        }
+
+    </style>
 </head>
-<body class="bg-gray-900 text-white font-sans h-screen flex flex-col items-center justify-center p-4">
+<body>
 
-    <div class="bg-gray-800 w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col h-[80vh]">
-        
-        <div class="p-5 border-b border-gray-700 flex items-center gap-3">
-            <div class="w-10 h-10 bg-indigo-500 rounded-full flex items-center justify-center text-xl">🎓</div>
+    <div id="chat-container">
+        <div id="chat-header">
+            <i class="fa-solid fa-user-graduate"></i>
             <div>
-                <h1 class="text-xl font-bold">Guia Vocacional IA</h1>
-                <p class="text-sm text-gray-400">Online e pronto para ajudar</p>
+                <div id="chat-title">Guia Vocacional IA</div>
+                <div style="font-size: 12px; color: #a5b4fc;">Online</div>
             </div>
         </div>
 
-        <div id="chat-box" class="flex-1 p-5 overflow-y-auto flex flex-col gap-4 space-y-2">
-            <div class="flex items-start gap-3">
-                <div class="bg-indigo-600 p-3 rounded-2xl rounded-tl-none max-w-[80%]">
-                    Olá! Se você tivesse tempo e dinheiro ilimitados, o que passaria o dia fazendo?
-                </div>
+        <div id="chat-box">
+            <div class="message guide-message">
+                <i class="fa-solid fa-user-graduate"></i>
+                <div>Olá! Sou o seu Guia Vocacional IA. Vamos iniciar sua jornada de autoconhecimento? Como posso te chamar?</div>
             </div>
-        </div>
+            </div>
 
-        <div class="p-4 border-t border-gray-700 flex gap-2">
-            <input type="text" id="user-input" class="flex-1 bg-gray-700 text-white rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Digite sua resposta aqui...">
-            <button onclick="enviarMensagem()" class="bg-indigo-500 hover:bg-indigo-600 px-6 py-3 rounded-xl font-semibold transition-all">Enviar</button>
+        <div id="input-area">
+            <input type="text" id="user-input" placeholder="Digite seu nome ou resposta aqui...">
+            <button id="send-btn">
+                <i class="fa-solid fa-paper-plane"></i>
+            </button>
         </div>
     </div>
 
     <script>
         const chatBox = document.getElementById('chat-box');
-        const inputField = document.getElementById('user-input');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
 
-        // Permite enviar com a tecla Enter
-        inputField.addEventListener("keypress", function(event) {
-            if (event.key === "Enter") enviarMensagem();
-        });
+        // Função para adicionar uma mensagem do Guia
+        function appendGuideMessage(text) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message guide-message';
+            
+            const icon = document.createElement('i');
+            icon.className = 'fa-solid fa-user-graduate';
+            
+            const content = document.createElement('div');
+            content.innerText = text;
+            
+            messageDiv.appendChild(icon);
+            messageDiv.appendChild(content);
+            chatBox.appendChild(messageDiv);
+            scrollToBottom();
+        }
 
-        async function enviarMensagem() {
-            const texto = inputField.value.trim();
-            if (!texto) return;
+        // Função para adicionar uma mensagem do Usuário
+        function appendUserMessage(text) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message user-message';
+            messageDiv.innerText = text;
+            chatBox.appendChild(messageDiv);
+            scrollToBottom();
+        }
+
+        // Função para adicionar uma mensagem de erro
+        function appendErrorMessage(text) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message error-message';
+            messageDiv.innerText = text;
+            chatBox.appendChild(messageDiv);
+            scrollToBottom();
+        }
+
+        // Função para rolar o chat para o fim
+        function scrollToBottom() {
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        // --- LÓGICA DE ENVIO E CONEXÃO COM O BACKEND (PYTHON) ---
+        async function sendMessage() {
+            const message = userInput.value.trim();
+            if (message === '') return; // Não envia vazio
 
             // 1. Mostra a mensagem do usuário na tela
-            adicionarBalao(texto, 'usuario');
-            inputField.value = '';
+            appendUserMessage(message);
+            
+            // 2. Limpa o campo de entrada
+            userInput.value = '';
 
-            // 2. Mostra um aviso "Digitando..."
-            const idDigitando = adicionarBalao("Pensando...", 'bot', true);
+            // 3. Adiciona um indicador visual de "digitando..." (Opcional, mas melhora a experiência)
+            const typingIndicator = document.createElement('div');
+            typingIndicator.className = 'message guide-message';
+            typingIndicator.id = 'typing-indicator';
+            typingIndicator.innerHTML = '<i class="fa-solid fa-user-graduate"></i><div>Pensando...</div>';
+            chatBox.appendChild(typingIndicator);
+            scrollToBottom();
 
+            // 4. Faz a chamada POST para o servidor Python local
             try {
-                // 3. Manda a mensagem para o seu Python (FastAPI)
-                const resposta = await fetch("http://localhost:8000/conversar", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ texto: texto })
+                const response = await fetch('http://127.0.0.1:8000/conversar', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ "texto": message })
                 });
-                const dados = await resposta.json();
+
+                if (!response.ok) {
+                    throw new Error('Falha na conexão com o servidor.');
+                }
+
+                const data = await response.json();
+
+                // Remove o indicador "digitando"
+                const indicator = document.getElementById('typing-indicator');
+                if (indicator) indicator.remove();
+
+                // 5. Mostra a resposta do Guia (IA) na tela
+                appendGuideMessage(data.resposta);
+
+            } catch (error) {
+                // Remove o indicador "digitando"
+                const indicator = document.getElementById('typing-indicator');
+                if (indicator) indicator.remove();
                 
-                // 4. Remove o "Pensando..." e mostra a resposta real
-                document.getElementById(idDigitando).remove();
-                adicionarBalao(dados.resposta, 'bot');
-            } catch (erro) {
-                document.getElementById(idDigitando).remove();
-                adicionarBalao("Erro ao conectar com o servidor.", 'bot');
+                console.error(error);
+                appendErrorMessage('Ops, tive um probleminha técnico. Pode repetir o que disse?');
             }
         }
 
-        function adicionarBalao(texto, remetente, isDigitando = false) {
-            const divId = "msg-" + Math.random().toString(36).substr(2, 9);
-            const balao = document.createElement('div');
-            
-            if (remetente === 'usuario') {
-                balao.className = "flex items-end justify-end gap-3";
-                balao.innerHTML = `<div class="bg-gray-700 p-3 rounded-2xl rounded-tr-none max-w-[80%]">${texto}</div>`;
-            } else {
-                balao.className = "flex items-start gap-3";
-                const cor = isDigitando ? "bg-indigo-800 animate-pulse" : "bg-indigo-600";
-                balao.innerHTML = `<div id="${divId}" class="${cor} p-3 rounded-2xl rounded-tl-none max-w-[80%]">${texto}</div>`;
+        // --- EVENT LISTENERS (CLIQUE E ENTER) ---
+        sendBtn.addEventListener('click', sendMessage);
+
+        userInput.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                sendMessage();
             }
-            
-            chatBox.appendChild(balao);
-            chatBox.scrollTop = chatBox.scrollHeight;
-            return divId;
-        }
+        });
+
     </script>
 </body>
 </html>
