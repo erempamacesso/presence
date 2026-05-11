@@ -65,37 +65,52 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
         </div>
     """, unsafe_allow_html=True)
 
-    # ==========================================
+# ==========================================
     # PASSO 1: SELEÇÃO DE EVENTO
     # ==========================================
     if st.session_state.passo_insc == 1:
         st.markdown("### 1. EVENTO")
 
-    # --- BOTAO DE VOLTAR PARA A TELA INICIAL ---
+        # --- BOTAO DE VOLTAR PARA A TELA INICIAL ---
         if st.button("⬅️ Voltar ao Início"):
-            st.session_state.etapa = "ante_sala" # Garante que volta para a tela principal
+            st.session_state.etapa = "ante_sala" 
             st.rerun()
             
-        st.markdown("### 1. EVENTO")
+        st.markdown("### Selecione o evento desejado:")
 
         try:
-            # 1. BUSCAR EVENTOS ATIVOS NO BANCO (Corrigido: db_alunos!)
+            # 1. BUSCAR EVENTOS ATIVOS NO BANCO
             res_eventos = db_alunos.table("feira_eventos").select("*").eq("ativo", True).execute()
             lista_eventos = res_eventos.data
 
             if not lista_eventos:
                 st.info("No momento não há eventos com inscrições abertas.")
             else:
-                # 2. PARA CADA EVENTO ENCONTRADO, FAZEMOS A VERIFICAÇÃO
+                # Pegamos a data de hoje para comparação
+                hoje = datetime.date.today()
+
                 for evento in lista_eventos:
-                    
                     with st.container(border=True):
+                        # --- CONVERSÃO DE DATAS DO BANCO ---
+                        try:
+                            # Converte strings "YYYY-MM-DD" para objetos de data do Python
+                            d_inicio = datetime.datetime.strptime(evento['data_inicio'], "%Y-%m-%d").date()
+                            d_fim = datetime.datetime.strptime(evento['data_fim'], "%Y-%m-%d").date()
+                        except:
+                            # Fallback caso a data no banco esteja com erro
+                            d_inicio, d_fim = hoje, hoje
+
                         st.markdown(f"### {evento['nome']}")
-                        st.caption(f"📅 Inscrições: {evento['data_inicio']} até {evento['data_fim']}")
-                        
-                        # --- 🕵️‍♂️ VERIFICAÇÃO DE BLOQUEIO DE MEMBRO (Aqui sim, db_provas!) ---
+                        st.caption(f"📅 Período: {d_inicio.strftime('%d/%m/%Y')} até {d_fim.strftime('%d/%m/%Y')}")
+
+                        # --- 1ª VERIFICAÇÃO: PERÍODO DE INSCRIÇÃO ---
+                        inscricoes_abertas = d_inicio <= hoje <= d_fim
+                        aguardando_abertura = hoje < d_inicio
+                        ja_encerrou = hoje > d_fim
+
+                        # --- 2ª VERIFICAÇÃO: SE JÁ ESTÁ INSCRITO (db_provas) ---
                         ja_inscrito = False
-                        nome_lider_equipe = "" # Variável para guardar quem é o líder do grupo
+                        nome_lider_equipe = ""
                         
                         res_verificacao = db_provas.table("feira_inscricoes") \
                             .select("nomes_membros") \
@@ -104,38 +119,41 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                         
                         for insc in res_verificacao.data:
                             texto_equipe = insc.get('nomes_membros', '')
-                            # Limpa os nomes para comparar
                             membros_extraidos = [
                                 m.replace(" (Líder)", "").strip() 
                                 for m in texto_equipe.split(",")
                             ]
                             
-                            # Se o aluno logado está na equipe
                             if aluno.get('nome') in membros_extraidos:
                                 ja_inscrito = True
-                                # O líder é sempre o primeiro nome da lista de membros!
                                 nome_lider_equipe = membros_extraidos[0] 
                                 break
 
-                        # --- 🛑 RENDERIZAÇÃO CONDICIONAL DO BOTÃO ---
+                        # --- 🛑 LÓGICA DE EXIBIÇÃO DO STATUS/BOTÃO ---
+                        
                         if ja_inscrito:
-                            # Verifica se o próprio aluno logado é o líder
                             if nome_lider_equipe == aluno.get('nome'):
-                                st.error(f"🚨 **{aluno.get('nome')}**, você já realizou a inscrição da sua equipe como Líder neste evento!")
+                                st.error(f"🚨 Você já inscreveu sua equipe como Líder!")
                             else:
-                                st.error(f"🚨 **{aluno.get('nome')}**, você já faz parte da equipe liderada por **{nome_lider_equipe}** neste evento!")
+                                st.error(f"🚨 Você já está na equipe de **{nome_lider_equipe}**!")
                             
-                            st.button(
-                                "INSCRIÇÃO JÁ REALIZADA", 
-                                key=f"btn_block_{evento['id']}", 
-                                disabled=True, 
-                                use_container_width=True
-                            )
+                            st.button("INSCRIÇÃO JÁ REALIZADA", key=f"btn_insc_{evento['id']}", disabled=True, use_container_width=True)
+
+                        elif aguardando_abertura:
+                            st.warning(f"⏳ As inscrições abrem em {d_inicio.strftime('%d/%m/%Y')}")
+                            st.button("INSCRIÇÕES EM BREVE", key=f"btn_wait_{evento['id']}", disabled=True, use_container_width=True)
+
+                        elif ja_encerrou:
+                            st.error(f"🚫 O prazo de inscrição encerrou em {d_fim.strftime('%d/%m/%Y')}")
+                            st.button("PRAZO ENCERRADO", key=f"btn_end_{evento['id']}", disabled=True, use_container_width=True)
+
                         else:
+                            # TUDO OK: Está no prazo e não está inscrito
                             if st.button(f"INSCREVER-SE EM: {evento['nome']}", type="primary", key=f"btn_{evento['id']}", use_container_width=True):
                                 st.session_state.evento_selecionado = evento
                                 st.session_state.passo_insc = 2
                                 st.rerun()
+
         except Exception as e:
             st.error(f"Erro ao carregar eventos: {e}")
 
