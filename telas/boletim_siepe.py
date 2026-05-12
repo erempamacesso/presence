@@ -77,22 +77,27 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                     mapa_at1 = buscar_nota_simulado("1º Simulado")
                     mapa_at2 = buscar_nota_simulado("2º Simulado")
 
+                    # --- BUSCA NOTAS E ADICIONA NO DICIONÁRIO ---
                     res_notas = supabase.table("notas_atividades").select("*").eq("turma", turma_sel).eq("unidade", "1º Bimestre").execute()
                     m3, m4, m5, mn2, mrec = {}, {}, {}, {}, {}
+                    
                     if res_notas.data:
                         for r in res_notas.data:
                             aid = str(r['aluno_id'])
+                            # Aqui você já adicionou corretamente o mrec[aid]
                             m3[aid], m4[aid], m5[aid], mn2[aid], mrec[aid] = r.get('at3'), r.get('at4'), r.get('at5'), r.get('prova'), r.get('rec')
 
                     df_base = df_turma[['aluno_id', col_n]].copy().rename(columns={col_n: 'nome'})
                     
+                    # --- MAPEIA OS DICIONÁRIOS PARA AS COLUNAS DO DATAFRAME ---
                     df_base['AT1'] = df_base['aluno_id'].astype(str).map(mapa_at1)
                     df_base['AT2'] = df_base['aluno_id'].astype(str).map(mapa_at2)
                     df_base['AT3'] = df_base['aluno_id'].astype(str).map(m3)
                     df_base['AT4'] = df_base['aluno_id'].astype(str).map(m4)
                     df_base['AT5'] = df_base['aluno_id'].astype(str).map(m5)
                     df_base['N2']  = df_base['aluno_id'].astype(str).map(mn2)
-                    df_base['Rec'] = df_base['aluno_id'].astype(str).map(mrec)
+                    # 👇 ADICIONE ESTA LINHA ABAIXO PARA CRIAR A COLUNA NO DATAFRAME
+                    df_base['Rec'] = df_base['aluno_id'].astype(str).map(mrec) 
                     
                     st.session_state[state_key] = df_base.sort_values('nome').reset_index(drop=True)
 
