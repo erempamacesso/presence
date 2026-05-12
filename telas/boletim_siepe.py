@@ -26,22 +26,26 @@ def arredondar_siepe(nota):
     elif decimal in [2, 3, 4, 5, 6]: return float(inteiro + 0.5)
     else: return float(inteiro + 1)
 
-# --- 🎨 FUNÇÃO DE CORES ---
-def aplicar_estilo_notas(styler):
+# --- 🎨 FUNÇÃO DE CORES (CORRIGIDA) ---
+def aplicar_estilo_notas(df):
     """Aplica cor azul para >= 6 e vermelha para < 6"""
     def colorir_valor(val):
         try:
             v = float(val)
-            color = 'blue' if v >= 6.0 else 'red'
-            return f'color: {color}; font-weight: bold;'
+            return 'color: blue; font-weight: bold;' if v >= 6.0 else 'color: red; font-weight: bold;'
         except:
-            return None
+            return ''
     
-    # Tentamos usar .map (Pandas novo) ou .applymap (Pandas antigo) para evitar erros
-    try:
-        return styler.map(colorir_valor, subset=['N1', 'N2', 'Média', 'REC', 'Média Final'])
-    except:
-        return styler.applymap(colorir_valor, subset=['N1', 'N2', 'Média', 'REC', 'Média Final'])
+    # Colunas que queremos colorir
+    colunas_colorir = ['N1', 'N2', 'Média', 'REC', 'Média Final']
+    
+    # Aplicar estilo apenas nas colunas que existem no dataframe
+    colunas_validas = [col for col in colunas_colorir if col in df.columns]
+    
+    if colunas_validas:
+        return df.style.map(colorir_valor, subset=colunas_validas)
+    else:
+        return df.style
 
 def mostrar_tela_boletim(supabase, supabase_alunos):
     st.title("📝 Meu Registro Pessoal de Notas")
@@ -106,7 +110,7 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
         st.subheader(f"📊 Boletim - {turma_sel}")
         if not df_view.empty:
             st.dataframe(
-                aplicar_estilo_notas(df_view.style).format(precision=1),
+                aplicar_estilo_notas(df_view).format(precision=1),
                 column_config={"aluno_id": None},
                 hide_index=True,
                 use_container_width=True
