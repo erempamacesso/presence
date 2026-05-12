@@ -63,11 +63,33 @@ def render_instrucoes(supabase):
             st.rerun()
         return
 
+    # ==========================================================
+    # --- 🛡️ TRAVA DE REENTRADA: VERIFICA SE O ALUNO JÁ FEZ ---
+    # ==========================================================
+    aluno_id = str(aluno['id'])
+    prova_id = str(prova['id'])
+    
+    with st.spinner("Verificando status da avaliação..."):
+        res_check = supabase.table("resultados_provas")\
+            .select("id")\
+            .eq("aluno_id", aluno_id)\
+            .eq("prova_id", prova_id)\
+            .limit(1).execute()
+
+    if res_check.data:
+        st.error("### 🛑 Avaliação já Concluída")
+        st.warning("Você já realizou esta prova e suas respostas foram enviadas. Não é permitido refazer a avaliação.")
+        if st.button("⬅️ Voltar para Atividades", use_container_width=True):
+            st.session_state.etapa = "ante_sala"
+            st.rerun()
+        return # Trava a execução aqui e não exibe o restante da página
+    # ==========================================================
+
     st.title(f"📝 {prova['titulo']}")
 
     # --- 🛡️ BARREIRA DE ACESSO PARA RECUPERAÇÃO ---
     if prova.get('recuperacao') == True:
-        aluno_id = str(aluno['id'])
+        # A variável aluno_id já foi declarada acima na trava de reentrada
         
         # 1. Busca as notas do aluno para calcular a média
         with st.spinner("Validando seu acesso para esta recuperação..."):
