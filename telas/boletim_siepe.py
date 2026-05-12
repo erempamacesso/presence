@@ -78,21 +78,21 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                     mapa_at2 = buscar_nota_simulado("2º Simulado")
 
                     res_notas = supabase.table("notas_atividades").select("*").eq("turma", turma_sel).eq("unidade", "1º Bimestre").execute()
-                    m3, m4, m5, mn2 = {}, {}, {}, {}
+                    m3, m4, m5, mn2, mrec = {}, {}, {}, {}, {}
                     if res_notas.data:
                         for r in res_notas.data:
                             aid = str(r['aluno_id'])
-                            m3[aid], m4[aid], m5[aid], mn2[aid] = r.get('at3'), r.get('at4'), r.get('at5'), r.get('prova')
+                            m3[aid], m4[aid], m5[aid], mn2[aid], mrec[aid] = r.get('at3'), r.get('at4'), r.get('at5'), r.get('prova'), r.get('rec')
 
                     df_base = df_turma[['aluno_id', col_n]].copy().rename(columns={col_n: 'nome'})
                     
-                    # Garantir que comecem como None (NP)
                     df_base['AT1'] = df_base['aluno_id'].astype(str).map(mapa_at1)
                     df_base['AT2'] = df_base['aluno_id'].astype(str).map(mapa_at2)
                     df_base['AT3'] = df_base['aluno_id'].astype(str).map(m3)
                     df_base['AT4'] = df_base['aluno_id'].astype(str).map(m4)
                     df_base['AT5'] = df_base['aluno_id'].astype(str).map(m5)
                     df_base['N2']  = df_base['aluno_id'].astype(str).map(mn2)
+                    df_base['Rec'] = df_base['aluno_id'].astype(str).map(mrec)
                     
                     st.session_state[state_key] = df_base.sort_values('nome').reset_index(drop=True)
 
@@ -124,18 +124,15 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                 edicoes = st.session_state[editor_key].get("edited_rows", {})
                 for row_idx, alteracoes in edicoes.items():
                     for col_name, valor in alteracoes.items():
-                        # Converte para float se houver valor, senão mantém None
                         st.session_state[state_key].at[row_idx, col_name] = float(valor) if valor is not None else None
 
-            # --- CÁLCULOS E ESTILO (VERREDURA AQUI) ---
+            # --- CÁLCULOS E ESTILO ---
             df_view = st.session_state[state_key].copy()
             
-            # min_count=1 evita que NaN + NaN vire 0
             df_view['N1'] = df_view[['AT1', 'AT2', 'AT3', 'AT4', 'AT5']].sum(axis=1, min_count=1).apply(
                 lambda x: arredondar_siepe(x) if pd.notna(x) else None
             )
 
-            # Cálculo de média que preserva o "Vazio" se nada foi feito
             def calcular_media_segura(row):
                 n1, n2 = row['N1'], row['N2']
                 if pd.isna(n1) and pd.isna(n2): return None
@@ -143,7 +140,7 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                 v2 = n2 if pd.notna(n2) else 0.0
                 return arredondar_siepe((v1 + v2) / 2)
 
-            df_view['Média Final'] = df_view.apply(calcular_media_segura, axis=1)
+            df_view['Média'] = df_view.apply(calcular_media_segura, axis=1)
 
             def estilo(val):
                 try:
@@ -152,7 +149,7 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                     return 'color: #9CA3AF;'
                 except: return ''
 
-            df_estilizado = df_view.style.map(estilo, subset=['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N2', 'N1', 'Média Final'])
+            df_estilizado = df_view.style.map(estilo, subset=['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N2', 'N1', 'Média', 'Rec'])
 
             # --- EDITOR DE DADOS ---
             config_cols = {
@@ -164,13 +161,14 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                 "AT5": st.column_config.NumberColumn("AT5", format="%.1f", min_value=0.0, max_value=10.0),
                 "N2": st.column_config.NumberColumn("N2 (PROVA)", format="%.1f", min_value=0.0, max_value=10.0),
                 "N1": st.column_config.NumberColumn("Σ N1 🔒", disabled=True, format="%.1f"),
-                "Média Final": st.column_config.NumberColumn("MÉDIA 🔒", disabled=True, format="%.1f"),
+                "Média": st.column_config.NumberColumn("MÉDIA 🔒", disabled=True, format="%.1f"),
+                "Rec": st.column_config.NumberColumn("REC", format="%.1f", min_value=0.0, max_value=10.0),
             }
 
             st.data_editor(
                 df_estilizado, key=editor_key, hide_index=True, column_config=config_cols, 
                 use_container_width=True, height=(len(df_view) + 1) * 35 + 45,
-                column_order=("nome", "AT1", "AT2", "AT3", "AT4", "AT5", "N2", "N1", "Média Final")
+                column_order=("nome", "AT1", "AT2", "AT3", "AT4", "AT5", "N2", "N1", "Média", "Rec")
             )
 
             # --- BOTÕES DE AÇÃO ---
@@ -179,15 +177,15 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                 if st.button("💾 Salvar no Banco", type="primary", use_container_width=True):
                     dados_limpos = []
                     for _, r in df_view.iterrows():
-                        # Forçar None para garantir que salve NULL no banco (NP)
                         limpar = lambda x: float(x) if pd.notna(x) else None
                         dados_limpos.append({
                             "aluno_id": r['aluno_id'], "turma": turma_sel, "unidade": "1º Bimestre",
                             "at1": limpar(r['AT1']), "at2": limpar(r['AT2']), "at3": limpar(r['AT3']),
-                            "at4": limpar(r['AT4']), "at5": limpar(r['AT5']), "prova": limpar(r['N2'])
+                            "at4": limpar(r['AT4']), "at5": limpar(r['AT5']), "prova": limpar(r['N2']),
+                            "rec": limpar(r['Rec'])
                         })
                     supabase.table("notas_atividades").upsert(dados_limpos, on_conflict="aluno_id, unidade").execute()
-                    st.success("✅ Salvo com distinção de NP!")
+                    st.success("✅ Salvo com sucesso!")
 
             with c2:
                 cfg = MAPA_IDS_SIEPE.get(turma_sel)
