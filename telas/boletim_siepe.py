@@ -26,26 +26,17 @@ def arredondar_siepe(nota):
     elif decimal in [2, 3, 4, 5, 6]: return float(inteiro + 0.5)
     else: return float(inteiro + 1)
 
-# --- 🎨 FUNÇÃO DE CORES (CORRIGIDA) ---
-def aplicar_estilo_notas(df):
-    """Aplica cor azul para >= 6 e vermelha para < 6"""
-    def colorir_valor(val):
-        try:
-            v = float(val)
-            return 'color: blue; font-weight: bold;' if v >= 6.0 else 'color: red; font-weight: bold;'
-        except:
-            return ''
-    
-    # Colunas que queremos colorir
-    colunas_colorir = ['N1', 'N2', 'Média', 'REC', 'Média Final']
-    
-    # Aplicar estilo apenas nas colunas que existem no dataframe
-    colunas_validas = [col for col in colunas_colorir if col in df.columns]
-    
-    if colunas_validas:
-        return df.style.map(colorir_valor, subset=colunas_validas)
-    else:
-        return df.style
+# --- 🎨 FUNÇÃO DE CORES (VERSÃO SIMPLIFICADA E TESTADA) ---
+def colorir_notas(val):
+    """Função para mapear cores nas células"""
+    try:
+        v = float(val)
+        if v >= 6.0:
+            return 'color: blue; font-weight: bold;'
+        else:
+            return 'color: red; font-weight: bold;'
+    except:
+        return ''
 
 def mostrar_tela_boletim(supabase, supabase_alunos):
     st.title("📝 Meu Registro Pessoal de Notas")
@@ -71,6 +62,9 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
         # O PULO DO GATO: Garantimos que a chave do mapa seja sempre STRING para o cruzamento funcionar
         notas_map = {str(n['aluno_id']): n for n in res_notas.data}
         
+        # DEBUG: Mostrar o que foi encontrado
+        st.write(f"DEBUG: {len(notas_map)} registros encontrados no banco")
+        
         # 3. Montagem da Tabela
         alunos_turma = df_alunos[df_alunos['turma'] == turma_sel].sort_values(by="nome")
         rows = []
@@ -79,6 +73,10 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
             id_a = str(aluno['id'])
             # d_nota agora sempre encontrará o ID correto por ser string
             d_nota = notas_map.get(id_a, {})
+            
+            # DEBUG: Mostrar dados do primeiro aluno
+            if len(rows) == 0:
+                st.write(f"DEBUG - Aluno {aluno['nome']} (ID: {id_a}): {d_nota}")
             
             # Pegando valores do banco (usando o nome 'rec' que você confirmou)
             at3 = float(d_nota.get('at3', 0.0) or 0.0)
@@ -109,9 +107,22 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
         # 📊 Visualização Colorida
         st.subheader(f"📊 Boletim - {turma_sel}")
         if not df_view.empty:
+            # VERSÃO 1: Sem estilos (para comparar)
+            st.write("**Versão SEM CORES (dados brutos):**")
             st.dataframe(
-                aplicar_estilo_notas(df_view).format(precision=1),
-                column_config={"aluno_id": None},
+                df_view.drop(columns=['aluno_id']).style.format(precision=1),
+                hide_index=True,
+                use_container_width=True
+            )
+            
+            # VERSÃO 2: Com estilos aplicados
+            st.write("**Versão COM CORES (azul >= 6, vermelho < 6):**")
+            styled_df = (df_view.drop(columns=['aluno_id'])
+                        .style.map(colorir_notas, subset=['N1', 'N2', 'Média', 'REC', 'Média Final'])
+                        .format(precision=1))
+            
+            st.dataframe(
+                styled_df,
                 hide_index=True,
                 use_container_width=True
             )
