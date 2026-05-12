@@ -26,17 +26,19 @@ def arredondar_siepe(nota):
     elif decimal in [2, 3, 4, 5, 6]: return float(inteiro + 0.5)
     else: return float(inteiro + 1)
 
-# --- 🎨 FUNÇÃO DE CORES (VERSÃO SIMPLIFICADA E TESTADA) ---
-def colorir_notas(val):
-    """Função para mapear cores nas células"""
-    try:
-        v = float(val)
-        if v >= 6.0:
-            return 'color: blue; font-weight: bold;'
-        else:
-            return 'color: red; font-weight: bold;'
-    except:
-        return ''
+# --- 🎨 FUNÇÃO DE CORES (NOVO) ---
+def aplicar_estilo_notas(styler):
+    """Aplica cor azul para >= 6 e vermelha para < 6"""
+    def colorir_valor(val):
+        try:
+            v = float(val)
+            color = 'blue' if v >= 6.0 else 'red'
+            return f'color: {color}; font-weight: bold;'
+        except:
+            return None
+            
+    # Aplica nas colunas específicas solicitadas
+    return styler.applymap(colorir_valor, subset=['N1', 'N2', 'Média', 'REC', 'Média Final'])
 
 def mostrar_tela_boletim(supabase, supabase_alunos):
     st.title("📝 Meu Registro Pessoal de Notas")
@@ -56,14 +58,12 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
         turma_sel = col1.selectbox("Selecione a Turma:", turmas)
         unidade_sel = col2.selectbox("Selecione o Bimestre:", ["1", "2", "3", "4"])
         
-        # 2. Busca todas as notas da unidade
-        res_notas = supabase.table("notas_atividades").select("*").eq("unidade", unidade_sel).execute()
+        # 2. Busca notas existentes
+        res_notas = supabase.table("notas_atividades")\
+            .select("aluno_id, at3, at4, at5, prova, recuperacao")\
+            .eq("unidade", unidade_sel).execute()
         
-        # O PULO DO GATO: Garantimos que a chave do mapa seja sempre STRING para o cruzamento funcionar
-        notas_map = {str(n['aluno_id']): n for n in res_notas.data}
-        
-        # DEBUG: Mostrar o que foi encontrado
-        st.write(f"DEBUG: {len(notas_map)} registros encontrados no banco")
+        notas_map = {n['aluno_id']: n for n in res_notas.data}
         
         # 3. Montagem da Tabela
         alunos_turma = df_alunos[df_alunos['turma'] == turma_sel].sort_values(by="nome")
@@ -71,25 +71,19 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
         
         for _, aluno in alunos_turma.iterrows():
             id_a = str(aluno['id'])
-            # d_nota agora sempre encontrará o ID correto por ser string
             d_nota = notas_map.get(id_a, {})
             
-            # DEBUG: Mostrar dados do primeiro aluno
-            if len(rows) == 0:
-                st.write(f"DEBUG - Aluno {aluno['nome']} (ID: {id_a}): {d_nota}")
-            
-            # Pegando valores do banco (usando o nome 'rec' que você confirmou)
             at3 = float(d_nota.get('at3', 0.0) or 0.0)
             at4 = float(d_nota.get('at4', 0.0) or 0.0)
             at5 = float(d_nota.get('at5', 0.0) or 0.0)
             n2  = float(d_nota.get('prova', 0.0) or 0.0)
-            nota_rec = float(d_nota.get('rec', 0.0) or 0.0)
+            rec = float(d_nota.get('recuperacao', 0.0) or 0.0)
             
-            at1, at2 = 0.0, 0.0 
+            at1, at2 = 0.0, 0.0 # Lógica de simulados pode ser inserida aqui
             
             n1_final = arredondar_siepe(at1 + at2 + at3 + at4 + at5)
             media_bim = arredondar_siepe((n1_final + n2) / 2)
-            media_final = max(media_bim, nota_rec) if nota_rec > 0 else media_bim
+            media_final = max(media_bim, rec) if rec > 0 else media_bim
 
             rows.append({
                 "aluno_id": id_a,
@@ -98,37 +92,25 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                 "N1": n1_final,
                 "N2": n2,
                 "Média": media_bim,
-                "REC": nota_rec,
+                "REC": rec,
                 "Média Final": media_final
             })
             
         df_view = pd.DataFrame(rows)
 
-        # 📊 Visualização Colorida
+        # ==========================================================
+        # 📊 VISUALIZAÇÃO COLORIDA (A sua nova tabela)
+        # ==========================================================
         st.subheader(f"📊 Boletim - {turma_sel}")
-        if not df_view.empty:
-            # VERSÃO 1: Sem estilos (para comparar)
-            st.write("**Versão SEM CORES (dados brutos):**")
-            st.dataframe(
-                df_view.drop(columns=['aluno_id']).style.format(precision=1),
-                hide_index=True,
-                use_container_width=True
-            )
-            
-            # VERSÃO 2: Com estilos aplicados
-            st.write("**Versão COM CORES (azul >= 6, vermelho < 6):**")
-            styled_df = (df_view.drop(columns=['aluno_id'])
-                        .style.map(colorir_notas, subset=['N1', 'N2', 'Média', 'REC', 'Média Final'])
-                        .format(precision=1))
-            
-            st.dataframe(
-                styled_df,
-                hide_index=True,
-                use_container_width=True
-            )
+        st.dataframe(
+            aplicar_estilo_notas(df_view.style).format(precision=1),
+            column_config={"aluno_id": None},
+            hide_index=True,
+            use_container_width=True
+        )
 
-        # ✏️ Editor de Notas
-        with st.expander("✏️ Lançar ou Alterar Notas"):
+        # --- ✏️ ÁREA DE EDIÇÃO (Em um expander para não poluir) ---
+        with st.expander("✏️ Clique aqui para Lançar/Alterar Notas"):
             edited_df = st.data_editor(
                 df_view,
                 column_config={
@@ -143,8 +125,9 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                 key="editor_notas"
             )
 
-        # 4. Ações
+        # 4. Ações: Salvar e Exportar
         c1, c2, c3, c4 = st.columns(4)
+        
         with c1:
             if st.button("💾 Salvar Notas", type="primary", use_container_width=True):
                 dados_limpos = []
@@ -157,7 +140,7 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                         "at4": limpar(r['AT4']),
                         "at5": limpar(r['AT5']),
                         "prova": limpar(r['N2']),
-                        "rec": limpar(r['REC']) 
+                        "recuperacao": limpar(r['REC'])
                     })
                 try:
                     supabase.table("notas_atividades").upsert(dados_limpos, on_conflict="aluno_id, unidade").execute()
@@ -171,6 +154,10 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
             with pd.ExcelWriter(out, engine='xlsxwriter') as writer:
                 df_view.drop(columns=['aluno_id']).to_excel(writer, index=False)
             st.download_button("📥 Excel", out.getvalue(), f"Boletim_{turma_sel}.xlsx", use_container_width=True)
+
+        with c4:
+            if st.button("🔄 Recarregar", use_container_width=True):
+                st.rerun()
 
     except Exception as e:
         st.error(f"Ocorreu um erro no boletim: {e}")
