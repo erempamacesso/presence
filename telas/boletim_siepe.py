@@ -26,7 +26,7 @@ def arredondar_siepe(nota):
     elif decimal in [2, 3, 4, 5, 6]: return float(inteiro + 0.5)
     else: return float(inteiro + 1)
 
-# --- 🎨 FUNÇÃO DE CORES ---
+# --- 🎨 FUNÇÃO DE CORES (COMPATÍVEL COM PANDAS NOVO E ANTIGO) ---
 def aplicar_estilo_notas(styler):
     """Aplica cor azul para >= 6 e vermelha para < 6"""
     def colorir_valor(val):
@@ -36,9 +36,15 @@ def aplicar_estilo_notas(styler):
             return f'color: {color}; font-weight: bold;'
         except:
             return None
-            
-    # As colunas aqui referem-se aos nomes que aparecem no DataFrame (Visualização)
-    return styler.applymap(colorir_valor, subset=['N1', 'N2', 'Média', 'REC', 'Média Final'])
+    
+    colunas = ['N1', 'N2', 'Média', 'REC', 'Média Final']
+    
+    # Tenta .map (Pandas 1.5+)
+    try:
+        return styler.map(colorir_valor, subset=colunas)
+    except AttributeError:
+        # Fallback para .applymap (Pandas < 1.5)
+        return styler.applymap(colorir_valor, subset=colunas)
 
 def mostrar_tela_boletim(supabase, supabase_alunos):
     st.title("📝 Meu Registro Pessoal de Notas")
@@ -58,12 +64,12 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
         turma_sel = col1.selectbox("Selecione a Turma:", turmas)
         unidade_sel = col2.selectbox("Selecione o Bimestre:", ["1", "2", "3", "4"])
         
-        # 2. Busca notas existentes (AJUSTADO PARA COLUNA 'rec')
+        # 2. Busca notas existentes
         res_notas = supabase.table("notas_atividades")\
             .select("aluno_id, at3, at4, at5, prova, rec")\
             .eq("unidade", unidade_sel).execute()
         
-        notas_map = {n['aluno_id']: n for n in res_notas.data}
+        notas_map = {str(n['aluno_id']): n for n in res_notas.data}
         
         # 3. Montagem da Tabela
         alunos_turma = df_alunos[df_alunos['turma'] == turma_sel].sort_values(by="nome")
@@ -77,7 +83,7 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
             at4 = float(d_nota.get('at4', 0.0) or 0.0)
             at5 = float(d_nota.get('at5', 0.0) or 0.0)
             n2  = float(d_nota.get('prova', 0.0) or 0.0)
-            nota_rec = float(d_nota.get('rec', 0.0) or 0.0) # <--- Lendo do banco como 'rec'
+            nota_rec = float(d_nota.get('rec', 0.0) or 0.0)
             
             at1, at2 = 0.0, 0.0 
             
@@ -92,13 +98,13 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                 "N1": n1_final,
                 "N2": n2,
                 "Média": media_bim,
-                "REC": nota_rec, # Nome que aparece na tela
+                "REC": nota_rec,
                 "Média Final": media_final
             })
             
         df_view = pd.DataFrame(rows)
 
-        # Visualização Colorida
+        # 📊 Visualização Colorida
         st.subheader(f"📊 Boletim - {turma_sel}")
         st.dataframe(
             aplicar_estilo_notas(df_view.style).format(precision=1),
@@ -107,7 +113,7 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
             use_container_width=True
         )
 
-        # Editor de Notas
+        # ✏️ Editor de Notas
         with st.expander("✏️ Clique aqui para Lançar/Alterar Notas"):
             edited_df = st.data_editor(
                 df_view,
@@ -137,7 +143,7 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                         "at4": limpar(r['AT4']),
                         "at5": limpar(r['AT5']),
                         "prova": limpar(r['N2']),
-                        "rec": limpar(r['REC']) # <--- SALVANDO NO BANCO COMO 'rec'
+                        "rec": limpar(r['REC'])
                     })
                 try:
                     supabase.table("notas_atividades").upsert(dados_limpos, on_conflict="aluno_id, unidade").execute()
