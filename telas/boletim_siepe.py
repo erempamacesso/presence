@@ -181,7 +181,7 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                 "N2": st.column_config.NumberColumn("N2 (PROVA)", format="%.1f", min_value=0.0, max_value=10.0),
                 "N1": st.column_config.NumberColumn("Σ N1 🔒", disabled=True, format="%.1f"),
                 "Média": st.column_config.NumberColumn("MÉDIA 🔒", disabled=True, format="%.1f"),
-                "Rec": st.column_config.NumberColumn("REC", format="%.1f", min_value=0.0, max_value=10.0),
+                "Rec": st.column_config.NumberColumn("REC", format="%.1f", min_value=0.0, max_value=10.0, disabled=True),
             }
 
             st.data_editor(df_estilizado, key=editor_key, hide_index=True, column_config=config_cols, use_container_width=True, height=(len(df_view) + 1) * 35 + 45,
