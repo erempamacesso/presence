@@ -112,6 +112,7 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                         return nota_salva if nota_salva and nota_salva > 0 else None
 
                     df_base['Rec'] = df_base['aluno_id'].apply(definir_rec)
+                    df_base['Rec'] = pd.to_numeric(df_base['Rec'], errors='coerce')
                     
                     st.session_state[state_key] = df_base.sort_values('nome').reset_index(drop=True)
 
@@ -158,11 +159,14 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
             df_view['Média'] = df_view.apply(calcular_media, axis=1)
 
             def estilo(val):
-                try:
-                    if pd.notna(val) and float(val) > 0:
-                        return 'color: #1E40AF; font-weight: bold; background-color: #EFF6FF;'
+                if pd.isna(val) or val == "": 
                     return 'color: #9CA3AF;'
-                except: return ''
+                try:
+                    if float(val) > 0:
+                        return 'background-color: #EFF6FF; color: #1E40AF; font-weight: bold;'
+                except:
+                    pass
+                return 'color: #9CA3AF;'
 
             df_estilizado = df_view.style.map(estilo, subset=['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N2', 'N1', 'Média', 'Rec'])
 
