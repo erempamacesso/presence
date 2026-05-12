@@ -124,12 +124,57 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                             st.rerun()
                     except Exception as e: st.error(f"Erro no CSV: {e}")
 
-            # --- PERSISTÊNCIA DAS EDIÇÕES ---
+            with st.expander("🔄 Sincronizar Recuperação Automaticamente"):
+                if st.button("Buscar Prova de REC e Puxar Notas"):
+                    ano_ref = "2º ano" if "2º" in turma_sel else ("3º ano" if "3º" in turma_sel else "")
+                    
+                    res_prova = supabase.table("modelos_prova")\
+                        .select("id, valor_questao")\
+                        .eq("recuperacao", True)\
+                        .ilike("titulo", f"%{ano_ref}%")\
+                        .execute()
+                    
+                    if res_prova.data:
+                        prova_id = res_prova.data[0]['id']
+                        valor_q = float(res_prova.data[0].get('valor_questao') or 0.5)
+                        st.info(f"🔎 Encontrada Prova de REC (ID: {prova_id})")
+
+                        res_r = supabase.table("resultados_provas")\
+                            .select("aluno_id, acertou")\
+                            .eq("prova_id", prova_id)\
+                            .execute()
+                        
+                        if res_r.data:
+                            df_res = pd.DataFrame(res_r.data)
+                            df_soma = df_res[df_res['acertou'] == True].groupby('aluno_id').size().reset_index(name='total')
+                            
+                            mapa_rec = dict(zip(df_soma['aluno_id'].astype(str), df_soma['total'] * valor_q))
+                            
+                            df_atual = st.session_state[state_key]
+                            for idx, row in df_atual.iterrows():
+                                aid = str(row['aluno_id'])
+                                if aid in mapa_rec:
+                                    df_atual.at[idx, 'Rec'] = arredondar_siepe(mapa_rec[aid])
+                            
+                            st.session_state[state_key] = df_atual
+                            st.success("✅ Notas sincronizadas na tabela! Clique em 'Salvar no Banco' abaixo.")
+                            st.rerun()
+                        else:
+                            st.warning("Nenhum aluno realizou esta prova ainda.")
+                    else:
+                        st.error("Nenhuma prova marcada como 'Recuperação' encontrada para este ano.")
+
+
+            # --- PERSISTÊNCIA DAS EDIÇÕES --- (Isso aqui já existe na sua linha 135)
             if editor_key in st.session_state:
-                edicoes = st.session_state[editor_key].get("edited_rows", {})
-                for row_idx, alteracoes in edicoes.items():
-                    for col_name, valor in alteracoes.items():
-                        st.session_state[state_key].at[row_idx, col_name] = float(valor) if valor is not None else None
+
+
+            # --- PERSISTÊNCIA DAS EDIÇÕES ---
+                if editor_key in st.session_state:
+                    edicoes = st.session_state[editor_key].get("edited_rows", {})
+                    for row_idx, alteracoes in edicoes.items():
+                        for col_name, valor in alteracoes.items():
+                            st.session_state[state_key].at[row_idx, col_name] = float(valor) if valor is not None else None
 
             # --- CÁLCULOS E ESTILO ---
             df_view = st.session_state[state_key].copy()
