@@ -1,17 +1,13 @@
 import streamlit as st
 import pandas as pd
-import io
-import math
+import io, math
 from siepe_api import SiepeClient
 
 # =========================================================
-# CONFIGURAÇÕES
+# CONFIG
 # =========================================================
 
-st.set_page_config(
-    page_title="Registro de Notas",
-    layout="wide"
-)
+st.set_page_config(page_title="Registro de Notas", layout="wide")
 
 MAPA_IDS_SIEPE = {
     "2º A": {
@@ -22,7 +18,6 @@ MAPA_IDS_SIEPE = {
         "dummy": "",
         "bimestre": "1"
     },
-
     "2º B": {
         "turma_id": "2484",
         "disciplina_id": "1132",
@@ -30,35 +25,22 @@ MAPA_IDS_SIEPE = {
         "ew_id": "",
         "dummy": "",
         "bimestre": "1"
-    },
+    }
 }
 
-COLUNAS_NOTAS = [
-    "AT1",
-    "AT2",
-    "AT3",
-    "AT4",
-    "AT5",
-    "N2",
-    "N1",
-    "Média",
-    "Rec"
-]
+ATIVIDADES = ["AT1", "AT2", "AT3", "AT4", "AT5"]
+MEDIAS = ["N1", "N2", "Média", "Rec"]
 
 # =========================================================
-# FUNÇÕES
+# ARREDONDAMENTO
 # =========================================================
 
 def arredondar_siepe(nota):
-    """
-    Arredondamento oficial do SIEPE
-    """
 
     if pd.isna(nota) or nota is None:
         return None
 
     nota = float(nota)
-
     inteiro = math.floor(nota)
     decimal = round((nota - inteiro) * 10)
 
@@ -68,96 +50,79 @@ def arredondar_siepe(nota):
     elif decimal in [2, 3, 4, 5, 6]:
         return float(inteiro + 0.5)
 
-    else:
-        return float(inteiro + 1)
+    return float(inteiro + 1)
 
+# =========================================================
+# ESTILOS
+# =========================================================
 
-def estilo_notas(valor):
+def estilo_atividades(valor):
+
+    if pd.isna(valor):
+        return "color:#9CA3AF;"
+
+    return """
+        background-color:#EFF6FF;
+        color:#1D4ED8;
+        font-weight:bold;
     """
-    Estilo visual das células
-    """
+
+def estilo_medias(valor):
+
+    if pd.isna(valor):
+        return "color:#9CA3AF;"
 
     try:
-
-        if pd.isna(valor):
-            return """
-                color: #9CA3AF;
-            """
 
         valor = float(valor)
 
-        # VERMELHO
         if valor < 6:
             return """
-                background-color: #FEF2F2;
-                color: #DC2626;
-                font-weight: bold;
+                background-color:#FEF2F2;
+                color:#DC2626;
+                font-weight:bold;
             """
 
-        # VERDE
-        if valor >= 8:
-            return """
-                background-color: #ECFDF5;
-                color: #047857;
-                font-weight: bold;
-            """
-
-        # AZUL
         return """
-            background-color: #EFF6FF;
-            color: #1D4ED8;
-            font-weight: bold;
+            background-color:#ECFDF5;
+            color:#047857;
+            font-weight:bold;
         """
 
     except:
-        return "color: #9CA3AF;"
+        return "color:#9CA3AF;"
 
+# =========================================================
+# BUSCAS
+# =========================================================
 
-def buscar_simulado(
-    supabase,
-    ano_ref,
-    termo_simulado,
-    limite=4.0
-):
-    """
-    Busca notas automáticas dos simulados
-    """
-
-    mapa = {}
+def buscar_simulado(supabase, ano_ref, termo, limite=4.0):
 
     try:
 
-        res_prova = (
-            supabase
-            .table("modelos_prova")
+        prova = (
+            supabase.table("modelos_prova")
             .select("id, valor_questao")
-            .ilike("titulo", f"%{ano_ref}%{termo_simulado}%")
+            .ilike("titulo", f"%{ano_ref}%{termo}%")
             .execute()
         )
 
-        if not res_prova.data:
-            return mapa
+        if not prova.data:
+            return {}
 
-        prova = res_prova.data[0]
+        prova = prova.data[0]
 
-        prova_id = prova["id"]
-
-        valor_questao = float(
-            prova.get("valor_questao") or 1.0
-        )
-
-        res_resultados = (
-            supabase
-            .table("resultados_provas")
+        resultados = (
+            supabase.table("resultados_provas")
             .select("aluno_id, acertou")
-            .eq("prova_id", prova_id)
+            .eq("prova_id", prova["id"])
             .execute()
         )
 
-        if not res_resultados.data:
-            return mapa
+        if not resultados.data:
+            return {}
 
-        df = pd.DataFrame(res_resultados.data)
+        df = pd.DataFrame(resultados.data)
 
         df = (
             df[df["acertou"] == True]
@@ -166,69 +131,48 @@ def buscar_simulado(
             .reset_index(name="acertos")
         )
 
+        valor_q = float(prova.get("valor_questao") or 1)
+
         df["nota"] = (
-            (df["acertos"] * valor_questao)
+            (df["acertos"] * valor_q)
             .clip(upper=limite)
             .apply(arredondar_siepe)
         )
 
-        mapa = dict(
-            zip(
-                df["aluno_id"].astype(str),
-                df["nota"]
-            )
-        )
+        return dict(zip(df["aluno_id"].astype(str), df["nota"]))
 
     except Exception as erro:
         st.warning(f"Erro simulados: {erro}")
+        return {}
 
-    return mapa
-
-
-def buscar_recuperacao_automatica(
-    supabase,
-    ano_ref
-):
-    """
-    Busca REC automática
-    """
-
-    mapa = {}
+def buscar_rec_auto(supabase, ano_ref):
 
     try:
 
-        res_prova = (
-            supabase
-            .table("modelos_prova")
+        prova = (
+            supabase.table("modelos_prova")
             .select("id, valor_questao")
             .eq("recuperacao", True)
             .ilike("titulo", f"%{ano_ref}%")
             .execute()
         )
 
-        if not res_prova.data:
-            return mapa
+        if not prova.data:
+            return {}
 
-        prova = res_prova.data[0]
+        prova = prova.data[0]
 
-        prova_id = prova["id"]
-
-        valor_questao = float(
-            prova.get("valor_questao") or 0.5
-        )
-
-        res_resultados = (
-            supabase
-            .table("resultados_provas")
+        resultados = (
+            supabase.table("resultados_provas")
             .select("aluno_id, acertou")
-            .eq("prova_id", prova_id)
+            .eq("prova_id", prova["id"])
             .execute()
         )
 
-        if not res_resultados.data:
-            return mapa
+        if not resultados.data:
+            return {}
 
-        df = pd.DataFrame(res_resultados.data)
+        df = pd.DataFrame(resultados.data)
 
         df = (
             df[df["acertou"] == True]
@@ -237,42 +181,32 @@ def buscar_recuperacao_automatica(
             .reset_index(name="acertos")
         )
 
+        valor_q = float(prova.get("valor_questao") or 0.5)
+
         df["nota"] = (
-            df["acertos"] * valor_questao
+            df["acertos"] * valor_q
         ).apply(arredondar_siepe)
 
-        mapa = dict(
-            zip(
-                df["aluno_id"].astype(str),
-                df["nota"]
-            )
-        )
+        return dict(zip(df["aluno_id"].astype(str), df["nota"]))
 
     except Exception as erro:
         st.warning(f"Erro REC: {erro}")
+        return {}
 
-    return mapa
-
+# =========================================================
+# CÁLCULOS
+# =========================================================
 
 def calcular_n1(df):
 
-    atividades = [
-        "AT1",
-        "AT2",
-        "AT3",
-        "AT4",
-        "AT5"
-    ]
-
     df["N1"] = (
-        df[atividades]
+        df[ATIVIDADES]
         .fillna(0)
         .sum(axis=1)
         .apply(arredondar_siepe)
     )
 
     return df
-
 
 def calcular_media(df):
 
@@ -286,66 +220,30 @@ def calcular_media(df):
 
     return df
 
+# =========================================================
+# LOAD DADOS
+# =========================================================
 
-def carregar_dados_turma(
-    supabase,
-    supabase_alunos,
-    turma
-):
-    """
-    Carrega todos os dados
-    """
+def carregar_dados_turma(supabase, supabase_alunos, turma):
 
-    res_alunos = (
-        supabase_alunos
-        .table("alunos")
+    alunos = (
+        supabase_alunos.table("alunos")
         .select("*")
         .execute()
     )
 
-    df_alunos = pd.DataFrame(res_alunos.data)
+    df_alunos = pd.DataFrame(alunos.data)
+    df_alunos = df_alunos[df_alunos["turma"] == turma].copy()
 
-    df_alunos = (
-        df_alunos[df_alunos["turma"] == turma]
-        .copy()
-    )
+    df_alunos.rename(columns={"id": "aluno_id"}, inplace=True)
 
-    df_alunos = df_alunos.rename(
-        columns={
-            "id": "aluno_id",
-            "nome": "nome"
-        }
-    )
+    ano_ref = "2º ano" if "2º" in turma else "3º ano"
 
-    ano_ref = (
-        "2º ano"
-        if "2º" in turma
-        else "3º ano"
-    )
+    mapa_at1 = buscar_simulado(supabase, ano_ref, "1º Simulado")
+    mapa_at2 = buscar_simulado(supabase, ano_ref, "2º Simulado")
 
-    # =====================================================
-    # SIMULADOS
-    # =====================================================
-
-    mapa_at1 = buscar_simulado(
-        supabase,
-        ano_ref,
-        "1º Simulado"
-    )
-
-    mapa_at2 = buscar_simulado(
-        supabase,
-        ano_ref,
-        "2º Simulado"
-    )
-
-    # =====================================================
-    # NOTAS MANUAIS
-    # =====================================================
-
-    res_notas = (
-        supabase
-        .table("notas_atividades")
+    notas = (
+        supabase.table("notas_atividades")
         .select("*")
         .eq("turma", turma)
         .eq("unidade", "1º Bimestre")
@@ -360,7 +258,7 @@ def carregar_dados_turma(
         "Rec": {}
     }
 
-    for item in res_notas.data:
+    for item in notas.data:
 
         aid = str(item["aluno_id"])
 
@@ -370,193 +268,92 @@ def carregar_dados_turma(
         mapas["N2"][aid] = item.get("prova")
         mapas["Rec"][aid] = item.get("rec")
 
-    # =====================================================
-    # REC AUTOMÁTICA
-    # =====================================================
+    mapa_rec = buscar_rec_auto(supabase, ano_ref)
 
-    mapa_rec_auto = buscar_recuperacao_automatica(
-        supabase,
-        ano_ref
+    df = df_alunos[["aluno_id", "nome"]].copy()
+
+    df["AT1"] = df["aluno_id"].astype(str).map(mapa_at1)
+    df["AT2"] = df["aluno_id"].astype(str).map(mapa_at2)
+
+    for col in ["AT3", "AT4", "AT5", "N2"]:
+        df[col] = df["aluno_id"].astype(str).map(mapas[col])
+
+    df["Rec"] = df["aluno_id"].apply(
+        lambda aid: mapa_rec.get(str(aid), mapas["Rec"].get(str(aid)))
     )
-
-    # =====================================================
-    # MONTAGEM
-    # =====================================================
-
-    df = df_alunos[
-        ["aluno_id", "nome"]
-    ].copy()
-
-    df["AT1"] = (
-        df["aluno_id"]
-        .astype(str)
-        .map(mapa_at1)
-    )
-
-    df["AT2"] = (
-        df["aluno_id"]
-        .astype(str)
-        .map(mapa_at2)
-    )
-
-    for coluna in ["AT3", "AT4", "AT5", "N2"]:
-
-        df[coluna] = (
-            df["aluno_id"]
-            .astype(str)
-            .map(mapas[coluna])
-        )
-
-    def definir_rec(aid):
-
-        aid = str(aid)
-
-        nota_auto = mapa_rec_auto.get(aid)
-
-        if nota_auto is not None:
-            return nota_auto
-
-        return mapas["Rec"].get(aid)
-
-    df["Rec"] = (
-        df["aluno_id"]
-        .apply(definir_rec)
-    )
-
-    # =====================================================
-    # CÁLCULOS
-    # =====================================================
 
     df = calcular_n1(df)
-
     df = calcular_media(df)
 
-    # =====================================================
-    # ORDENA
-    # =====================================================
+    return df.sort_values("nome").reset_index(drop=True)
 
-    df = (
-        df
-        .sort_values("nome")
-        .reset_index(drop=True)
-    )
+# =========================================================
+# SAVE
+# =========================================================
 
-    return df
+def salvar_banco(supabase, df, turma):
 
+    limpar = lambda x: float(x) if pd.notna(x) else None
 
-def salvar_banco(
-    supabase,
-    df,
-    turma
-):
-
-    dados = []
-
-    for _, linha in df.iterrows():
-
-        limpar = (
-            lambda x:
-            float(x)
-            if pd.notna(x)
-            else None
-        )
-
-        dados.append({
-
-            "aluno_id": linha["aluno_id"],
-
-            "turma": turma,
-
-            "unidade": "1º Bimestre",
-
-            "at1": limpar(linha["AT1"]),
-            "at2": limpar(linha["AT2"]),
-            "at3": limpar(linha["AT3"]),
-            "at4": limpar(linha["AT4"]),
-            "at5": limpar(linha["AT5"]),
-
-            "prova": limpar(linha["N2"]),
-
-            "rec": limpar(linha["Rec"])
-        })
+    dados = [{
+        "aluno_id": r["aluno_id"],
+        "turma": turma,
+        "unidade": "1º Bimestre",
+        "at1": limpar(r["AT1"]),
+        "at2": limpar(r["AT2"]),
+        "at3": limpar(r["AT3"]),
+        "at4": limpar(r["AT4"]),
+        "at5": limpar(r["AT5"]),
+        "prova": limpar(r["N2"]),
+        "rec": limpar(r["Rec"])
+    } for _, r in df.iterrows()]
 
     (
-        supabase
-        .table("notas_atividades")
-        .upsert(
-            dados,
-            on_conflict="aluno_id, unidade"
-        )
+        supabase.table("notas_atividades")
+        .upsert(dados, on_conflict="aluno_id, unidade")
         .execute()
     )
-
 
 # =========================================================
 # INTERFACE
 # =========================================================
 
-def mostrar_tela_boletim(
-    supabase,
-    supabase_alunos
-):
+def mostrar_tela_boletim(supabase, supabase_alunos):
 
     st.title("📝 Registro de Notas")
 
-    st.info(
-        """
-        AT1 e AT2 → Simulados
+    st.info("""
+    AT1 e AT2 → Simulados  
+    AT3 até AT5 → Atividades  
+    N2 → Prova  
+    REC → Recuperação automática
+    """)
 
-        AT3 até AT5 → Atividades
-
-        N2 → Prova
-
-        REC → Recuperação automática
-        """
-    )
-
-    # =====================================================
-    # TURMAS
-    # =====================================================
-
-    res = (
-        supabase_alunos
-        .table("alunos")
+    alunos = (
+        supabase_alunos.table("alunos")
         .select("*")
         .execute()
     )
 
-    df_todos = pd.DataFrame(res.data)
+    df_todos = pd.DataFrame(alunos.data)
 
-    turmas = sorted(
-        df_todos["turma"]
-        .dropna()
-        .unique()
-    )
+    turmas = sorted(df_todos["turma"].dropna().unique())
 
-    turma = st.selectbox(
-        "Selecione a turma",
-        turmas
-    )
+    turma = st.selectbox("Selecione a turma", turmas)
 
     if not turma:
         return
 
     state_key = f"df_{turma}"
 
-    # =====================================================
-    # LOAD
-    # =====================================================
-
     if state_key not in st.session_state:
 
         with st.spinner("Carregando dados..."):
 
-            st.session_state[state_key] = (
-                carregar_dados_turma(
-                    supabase,
-                    supabase_alunos,
-                    turma
-                )
+            st.session_state[state_key] = carregar_dados_turma(
+                supabase,
+                supabase_alunos,
+                turma
             )
 
     df = st.session_state[state_key]
@@ -565,15 +362,20 @@ def mostrar_tela_boletim(
     # ESTILO
     # =====================================================
 
-    df_estilo = (
-        df.style.map(
-            estilo_notas,
-            subset=COLUNAS_NOTAS
-        )
+    df_estilo = df.style
+
+    df_estilo = df_estilo.map(
+        estilo_atividades,
+        subset=ATIVIDADES
+    )
+
+    df_estilo = df_estilo.map(
+        estilo_medias,
+        subset=MEDIAS
     )
 
     # =====================================================
-    # CONFIG COLUNAS
+    # CONFIG
     # =====================================================
 
     config = {
@@ -586,6 +388,14 @@ def mostrar_tela_boletim(
             width="large"
         ),
 
+        **{
+            col: st.column_config.NumberColumn(
+                col,
+                format="%.1f"
+            )
+            for col in ["AT3", "AT4", "AT5", "N2"]
+        },
+
         "AT1": st.column_config.NumberColumn(
             "AT1",
             format="%.1f",
@@ -596,26 +406,6 @@ def mostrar_tela_boletim(
             "AT2",
             format="%.1f",
             disabled=True
-        ),
-
-        "AT3": st.column_config.NumberColumn(
-            "AT3",
-            format="%.1f"
-        ),
-
-        "AT4": st.column_config.NumberColumn(
-            "AT4",
-            format="%.1f"
-        ),
-
-        "AT5": st.column_config.NumberColumn(
-            "AT5",
-            format="%.1f"
-        ),
-
-        "N2": st.column_config.NumberColumn(
-            "N2",
-            format="%.1f"
         ),
 
         "N1": st.column_config.NumberColumn(
@@ -650,12 +440,7 @@ def mostrar_tela_boletim(
         height=700
     )
 
-    # =====================================================
-    # RECÁLCULO
-    # =====================================================
-
     editado = calcular_n1(editado)
-
     editado = calcular_media(editado)
 
     st.session_state[state_key] = editado
@@ -666,113 +451,66 @@ def mostrar_tela_boletim(
 
     c1, c2, c3 = st.columns(3)
 
-    # =====================================================
-    # SALVAR
-    # =====================================================
-
     with c1:
 
-        if st.button(
-            "💾 Salvar",
-            type="primary",
-            use_container_width=True
-        ):
+        if st.button("💾 Salvar", type="primary", use_container_width=True):
 
             try:
-
-                salvar_banco(
-                    supabase,
-                    editado,
-                    turma
-                )
-
-                st.success(
-                    "Notas salvas com sucesso."
-                )
+                salvar_banco(supabase, editado, turma)
+                st.success("Notas salvas com sucesso.")
 
             except Exception as erro:
-
-                st.error(
-                    f"Erro ao salvar: {erro}"
-                )
-
-    # =====================================================
-    # SIEPE
-    # =====================================================
+                st.error(f"Erro ao salvar: {erro}")
 
     with c2:
 
         cfg = MAPA_IDS_SIEPE.get(turma)
 
-        if cfg:
+        if cfg and st.button(
+            "🚀 Sincronizar SIEPE",
+            use_container_width=True
+        ):
 
-            if st.button(
-                "🚀 Sincronizar SIEPE",
-                use_container_width=True
-            ):
+            try:
 
-                try:
+                client = SiepeClient()
 
-                    client = SiepeClient()
+                usuario = st.secrets["SIEPE_USER"]
+                senha = st.secrets["SIEPE_PASS"]
 
-                    usuario = st.secrets["SIEPE_USER"]
-                    senha = st.secrets["SIEPE_PASS"]
+                with st.spinner("Sincronizando..."):
 
-                    with st.spinner("Sincronizando..."):
+                    ok, _ = client.fazer_login(usuario, senha)
 
-                        ok, _ = client.fazer_login(
-                            usuario,
-                            senha
+                    if ok:
+
+                        client.iniciar_robo_navegacao()
+
+                        sucesso, msg = (
+                            client.sincronizar_dataframe_ao_siepe_final(
+                                editado,
+                                cfg
+                            )
                         )
 
-                        if ok:
+                        st.success(msg) if sucesso else st.error(msg)
 
-                            client.iniciar_robo_navegacao()
+                    else:
+                        st.error("Falha login SIEPE")
 
-                            sucesso, msg = (
-                                client
-                                .sincronizar_dataframe_ao_siepe_final(
-                                    editado,
-                                    cfg
-                                )
-                            )
-
-                            if sucesso:
-                                st.success(msg)
-                            else:
-                                st.error(msg)
-
-                        else:
-                            st.error(
-                                "Falha login SIEPE"
-                            )
-
-                except Exception as erro:
-
-                    st.error(
-                        f"Erro SIEPE: {erro}"
-                    )
-
-    # =====================================================
-    # EXCEL
-    # =====================================================
+            except Exception as erro:
+                st.error(f"Erro SIEPE: {erro}")
 
     with c3:
 
         output = io.BytesIO()
 
-        with pd.ExcelWriter(
-            output,
-            engine="xlsxwriter"
-        ) as writer:
+        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
 
             (
                 editado
                 .drop(columns=["aluno_id"])
-                .to_excel(
-                    writer,
-                    index=False
-                )
+                .to_excel(writer, index=False)
             )
 
         st.download_button(
