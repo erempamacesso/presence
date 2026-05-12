@@ -77,31 +77,25 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                     mapa_at1 = buscar_nota_simulado("1º Simulado")
                     mapa_at2 = buscar_nota_simulado("2º Simulado")
 
-                    # --- BUSCA NOTAS E ADICIONA NO DICIONÁRIO ---
                     res_notas = supabase.table("notas_atividades").select("*").eq("turma", turma_sel).eq("unidade", "1º Bimestre").execute()
                     m3, m4, m5, mn2, mrec = {}, {}, {}, {}, {}
-                    
                     if res_notas.data:
                         for r in res_notas.data:
                             aid = str(r['aluno_id'])
-                            # Aqui você já adicionou corretamente o mrec[aid]
                             m3[aid], m4[aid], m5[aid], mn2[aid], mrec[aid] = r.get('at3'), r.get('at4'), r.get('at5'), r.get('prova'), r.get('rec')
 
                     df_base = df_turma[['aluno_id', col_n]].copy().rename(columns={col_n: 'nome'})
-                    
-                    # --- MAPEIA OS DICIONÁRIOS PARA AS COLUNAS DO DATAFRAME ---
                     df_base['AT1'] = df_base['aluno_id'].astype(str).map(mapa_at1)
                     df_base['AT2'] = df_base['aluno_id'].astype(str).map(mapa_at2)
                     df_base['AT3'] = df_base['aluno_id'].astype(str).map(m3)
                     df_base['AT4'] = df_base['aluno_id'].astype(str).map(m4)
                     df_base['AT5'] = df_base['aluno_id'].astype(str).map(m5)
                     df_base['N2']  = df_base['aluno_id'].astype(str).map(mn2)
-                    # 👇 ADICIONE ESTA LINHA ABAIXO PARA CRIAR A COLUNA NO DATAFRAME
-                    df_base['Rec'] = df_base['aluno_id'].astype(str).map(mrec) 
+                    df_base['Rec'] = df_base['aluno_id'].astype(str).map(mrec)
                     
                     st.session_state[state_key] = df_base.sort_values('nome').reset_index(drop=True)
 
-            # --- LÓGICA DE IMPORTAR E SOMAR ---
+            # --- IMPORTAR CSV ---
             with st.expander("📥 Importar e SOMAR Notas (N2) via CSV"):
                 arquivo_csv = st.file_uploader("Upload CSV", type="csv", key=f"up_{turma_sel}")
                 if arquivo_csv and st.button("🚀 Processar e Somar"):
@@ -113,84 +107,53 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                             df_csv['n_match'] = df_csv['Name'].astype(str).str.strip().str.lower()
                             df_atual['n_match'] = df_atual['nome'].astype(str).str.strip().str.lower()
                             mapa_csv = dict(zip(df_csv['n_match'], df_csv['QUÍMICA']))
-                            
                             for idx, row in df_atual.iterrows():
-                                nome = row['n_match']
-                                if nome in mapa_csv:
+                                if row['n_match'] in mapa_csv:
                                     v_atual = float(row['N2']) if pd.notna(row['N2']) else 0.0
-                                    df_atual.at[idx, 'N2'] = v_atual + float(mapa_csv[nome])
-                            
+                                    df_atual.at[idx, 'N2'] = v_atual + float(mapa_csv[row['n_match']])
                             st.session_state[state_key] = df_atual.drop(columns=['n_match'])
                             st.rerun()
                     except Exception as e: st.error(f"Erro no CSV: {e}")
 
+            # --- SINCRONIZAR RECUPERAÇÃO ---
             with st.expander("🔄 Sincronizar Recuperação Automaticamente"):
                 if st.button("Buscar Prova de REC e Puxar Notas"):
                     ano_ref = "2º ano" if "2º" in turma_sel else ("3º ano" if "3º" in turma_sel else "")
-                    
-                    res_prova = supabase.table("modelos_prova")\
-                        .select("id, valor_questao")\
-                        .eq("recuperacao", True)\
-                        .ilike("titulo", f"%{ano_ref}%")\
-                        .execute()
+                    res_prova = supabase.table("modelos_prova").select("id, valor_questao").eq("recuperacao", True).ilike("titulo", f"%{ano_ref}%").execute()
                     
                     if res_prova.data:
-                        prova_id = res_prova.data[0]['id']
-                        valor_q = float(res_prova.data[0].get('valor_questao') or 0.5)
-                        st.info(f"🔎 Encontrada Prova de REC (ID: {prova_id})")
-
-                        res_r = supabase.table("resultados_provas")\
-                            .select("aluno_id, acertou")\
-                            .eq("prova_id", prova_id)\
-                            .execute()
-                        
+                        p_id, v_q = res_prova.data[0]['id'], float(res_prova.data[0].get('valor_questao') or 0.5)
+                        res_r = supabase.table("resultados_provas").select("aluno_id, acertou").eq("prova_id", p_id).execute()
                         if res_r.data:
                             df_res = pd.DataFrame(res_r.data)
                             df_soma = df_res[df_res['acertou'] == True].groupby('aluno_id').size().reset_index(name='total')
-                            
-                            mapa_rec = dict(zip(df_soma['aluno_id'].astype(str), df_soma['total'] * valor_q))
-                            
+                            mapa_rec = dict(zip(df_soma['aluno_id'].astype(str), df_soma['total'] * v_q))
                             df_atual = st.session_state[state_key]
                             for idx, row in df_atual.iterrows():
                                 aid = str(row['aluno_id'])
-                                if aid in mapa_rec:
+                                if aid in mapa_rec and mapa_rec[aid] > 0:
                                     df_atual.at[idx, 'Rec'] = arredondar_siepe(mapa_rec[aid])
-                            
+                                else:
+                                    df_atual.at[idx, 'Rec'] = None
                             st.session_state[state_key] = df_atual
-                            st.success("✅ Notas sincronizadas na tabela! Clique em 'Salvar no Banco' abaixo.")
                             st.rerun()
-                        else:
-                            st.warning("Nenhum aluno realizou esta prova ainda.")
-                    else:
-                        st.error("Nenhuma prova marcada como 'Recuperação' encontrada para este ano.")
+                    else: st.error("Nenhuma prova de REC encontrada.")
 
-
-            # --- PERSISTÊNCIA DAS EDIÇÕES --- (Isso aqui já existe na sua linha 135)
+            # --- PERSISTÊNCIA E CÁLCULOS ---
             if editor_key in st.session_state:
+                edicoes = st.session_state[editor_key].get("edited_rows", {})
+                for row_idx, alteracoes in edicoes.items():
+                    for col_name, valor in alteracoes.items():
+                        st.session_state[state_key].at[row_idx, col_name] = float(valor) if valor is not None else None
 
-
-            # --- PERSISTÊNCIA DAS EDIÇÕES ---
-                if editor_key in st.session_state:
-                    edicoes = st.session_state[editor_key].get("edited_rows", {})
-                    for row_idx, alteracoes in edicoes.items():
-                        for col_name, valor in alteracoes.items():
-                            st.session_state[state_key].at[row_idx, col_name] = float(valor) if valor is not None else None
-
-            # --- CÁLCULOS E ESTILO ---
             df_view = st.session_state[state_key].copy()
+            df_view['N1'] = df_view[['AT1', 'AT2', 'AT3', 'AT4', 'AT5']].sum(axis=1, min_count=1).apply(lambda x: arredondar_siepe(x) if pd.notna(x) else None)
             
-            df_view['N1'] = df_view[['AT1', 'AT2', 'AT3', 'AT4', 'AT5']].sum(axis=1, min_count=1).apply(
-                lambda x: arredondar_siepe(x) if pd.notna(x) else None
-            )
-
-            def calcular_media_segura(row):
-                n1, n2 = row['N1'], row['N2']
-                if pd.isna(n1) and pd.isna(n2): return None
-                v1 = n1 if pd.notna(n1) else 0.0
-                v2 = n2 if pd.notna(n2) else 0.0
-                return arredondar_siepe((v1 + v2) / 2)
-
-            df_view['Média'] = df_view.apply(calcular_media_segura, axis=1)
+            def calcular_media(row):
+                if pd.isna(row['N1']) and pd.isna(row['N2']): return None
+                return arredondar_siepe(((row['N1'] or 0.0) + (row['N2'] or 0.0)) / 2)
+            
+            df_view['Média'] = df_view.apply(calcular_media, axis=1)
 
             def estilo(val):
                 try:
@@ -201,7 +164,7 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
 
             df_estilizado = df_view.style.map(estilo, subset=['AT1', 'AT2', 'AT3', 'AT4', 'AT5', 'N2', 'N1', 'Média', 'Rec'])
 
-            # --- EDITOR DE DADOS ---
+            # --- EDITOR ---
             config_cols = {
                 "aluno_id": None, "nome": st.column_config.TextColumn("ESTUDANTE", disabled=True, width="medium"),
                 "AT1": st.column_config.NumberColumn("AT1", format="%.1f", disabled=True),
@@ -215,13 +178,10 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                 "Rec": st.column_config.NumberColumn("REC", format="%.1f", min_value=0.0, max_value=10.0),
             }
 
-            st.data_editor(
-                df_estilizado, key=editor_key, hide_index=True, column_config=config_cols, 
-                use_container_width=True, height=(len(df_view) + 1) * 35 + 45,
-                column_order=("nome", "AT1", "AT2", "AT3", "AT4", "AT5", "N2", "N1", "Média", "Rec")
-            )
+            st.data_editor(df_estilizado, key=editor_key, hide_index=True, column_config=config_cols, use_container_width=True, height=(len(df_view) + 1) * 35 + 45,
+                           column_order=("nome", "AT1", "AT2", "AT3", "AT4", "AT5", "N2", "N1", "Média", "Rec"))
 
-            # --- BOTÕES DE AÇÃO ---
+            # --- BOTÕES ---
             c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
             with c1:
                 if st.button("💾 Salvar no Banco", type="primary", use_container_width=True):
@@ -235,19 +195,18 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                             "rec": limpar(r['Rec'])
                         })
                     supabase.table("notas_atividades").upsert(dados_limpos, on_conflict="aluno_id, unidade").execute()
-                    st.success("✅ Salvo com sucesso!")
+                    st.success("✅ Salvo!")
 
             with c2:
                 cfg = MAPA_IDS_SIEPE.get(turma_sel)
                 if cfg and st.button("🚀 Sincronizar SIEPE", use_container_width=True):
                     client = SiepeClient()
-                    with st.spinner("Enviando..."):
+                    with st.spinner("Sincronizando..."):
                         u, s = st.secrets["SIEPE_USER"], st.secrets["SIEPE_PASS"]
-                        log, _ = client.fazer_login(u, s)
-                        if log and client.iniciar_robo_navegacao():
+                        if client.fazer_login(u, s)[0] and client.iniciar_robo_navegacao():
                             suc, msg = client.sincronizar_dataframe_ao_siepe_final(df_view, cfg)
                             st.success(msg) if suc else st.error(msg)
-
+            
             with c3:
                 out = io.BytesIO()
                 with pd.ExcelWriter(out, engine='xlsxwriter') as writer:
