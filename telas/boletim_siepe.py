@@ -44,12 +44,13 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
         turma_sel = col1.selectbox("Selecione a Turma:", turmas)
         unidade_sel = col2.selectbox("Selecione o Bimestre:", ["1", "2", "3", "4"])
         
-        # 2. Busca notas existentes (Incluindo a nova coluna recuperacao)
+        # 2. Busca notas existentes (Usando a coluna 'rec' correta)
         res_notas = supabase.table("notas_atividades")\
-            .select("aluno_id, at3, at4, at5, prova, recuperacao")\
+            .select("aluno_id, at3, at4, at5, prova, rec")\
             .eq("unidade", unidade_sel).execute()
         
-        notas_map = {n['aluno_id']: n for n in res_notas.data}
+        # Garantimos que a chave seja string para não ocultar as notas por erro de tipo
+        notas_map = {str(n['aluno_id']): n for n in res_notas.data}
         
         # 3. Montagem da Tabela
         alunos_turma = df_alunos[df_alunos['turma'] == turma_sel].sort_values(by="nome")
@@ -59,24 +60,18 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
             id_a = str(aluno['id'])
             d_nota = notas_map.get(id_a, {})
             
-            # Notas Manuais e Recuperação
+            # Notas e Recuperação (lendo de 'rec')
             at3 = float(d_nota.get('at3', 0.0) or 0.0)
             at4 = float(d_nota.get('at4', 0.0) or 0.0)
             at5 = float(d_nota.get('at5', 0.0) or 0.0)
             n2  = float(d_nota.get('prova', 0.0) or 0.0)
-            rec = float(d_nota.get('recuperacao', 0.0) or 0.0)
+            rec_valor = float(d_nota.get('rec', 0.0) or 0.0)
             
-            # Simulados (AT1 e AT2 - Se você tiver lógica automática, insira aqui)
             at1, at2 = 0.0, 0.0 
             
-            # Cálculos
-            n1_soma = at1 + at2 + at3 + at4 + at5
-            n1_final = arredondar_siepe(n1_soma)
+            n1_final = arredondar_siepe(at1 + at2 + at3 + at4 + at5)
             media_bim = arredondar_siepe((n1_final + n2) / 2)
-            
-            # Lógica da Média Final com Recuperação:
-            # Se a nota da REC for maior que a média do bimestre, ela substitui.
-            media_final = max(media_bim, rec) if rec > 0 else media_bim
+            media_final = max(media_bim, rec_valor) if rec_valor > 0 else media_bim
 
             rows.append({
                 "aluno_id": id_a,
@@ -85,29 +80,30 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                 "N1": n1_final,
                 "N2": n2,
                 "Média": media_bim,
-                "REC": rec,
+                "REC": rec_valor,
                 "Média Final": media_final
             })
             
         df_view = pd.DataFrame(rows)
-        
-        # Editor de dados
+
+        # 4. Exibição e Edição (Sem as cores que causavam erro)
+        st.subheader(f"📊 Boletim - {turma_sel}")
         edited_df = st.data_editor(
             df_view,
             column_config={
                 "aluno_id": None,
                 "N1": st.column_config.NumberColumn(disabled=True),
                 "Média": st.column_config.NumberColumn(disabled=True),
-                "Média Final": st.column_config.NumberColumn(disabled=True, help="Resultado após Recuperação"),
+                "Média Final": st.column_config.NumberColumn(disabled=True),
                 "REC": st.column_config.NumberColumn("REC", min_value=0, max_value=10, step=0.5)
             },
             hide_index=True,
-            use_container_width=True
+            use_container_width=True,
+            key="editor_notas"
         )
 
-        # 4. Ações: Salvar e Exportar
+        # 5. Ações: Salvar
         c1, c2, c3, c4 = st.columns(4)
-        
         with c1:
             if st.button("💾 Salvar Notas", type="primary", use_container_width=True):
                 dados_limpos = []
@@ -120,28 +116,20 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
                         "at4": limpar(r['AT4']),
                         "at5": limpar(r['AT5']),
                         "prova": limpar(r['N2']),
-                        "recuperacao": limpar(r['REC']) # <--- SALVANDO RECUPERAÇÃO
+                        "rec": limpar(r['REC']) # Salva na coluna 'rec'
                     })
                 try:
                     supabase.table("notas_atividades").upsert(dados_limpos, on_conflict="aluno_id, unidade").execute()
-                    st.success("✅ Notas e Recuperação salvas!")
+                    st.success("✅ Notas salvas com sucesso!")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Erro ao salvar: {e}")
 
-        with c2:
-            # Lógica de sincronização com o SIEPE (opcional)
-            st.button("🚀 Sincronizar SIEPE", disabled=True, use_container_width=True)
-
         with c3:
             out = io.BytesIO()
             with pd.ExcelWriter(out, engine='xlsxwriter') as writer:
-                edited_df.drop(columns=['aluno_id']).to_excel(writer, index=False)
+                df_view.drop(columns=['aluno_id']).to_excel(writer, index=False)
             st.download_button("📥 Excel", out.getvalue(), f"Boletim_{turma_sel}.xlsx", use_container_width=True)
-
-        with c4:
-            if st.button("🔄 Recarregar", use_container_width=True):
-                st.rerun()
 
     except Exception as e:
         st.error(f"Ocorreu um erro no boletim: {e}")
