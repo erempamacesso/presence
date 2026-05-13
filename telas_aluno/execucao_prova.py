@@ -237,12 +237,16 @@ def render_prova(supabase):
         finalizar_prova(supabase)
 
 def finalizar_prova(supabase):
-    """Processa as respostas e salva no banco de dados."""
+    """
+    Processa as respostas e salva no banco de dados.
+    Se for uma prova de recuperação, computa a nota e salva em notas_atividades.rec
+    """
     prova = st.session_state.prova_config
     aluno = st.session_state.aluno
     questoes = st.session_state.questoes_carregadas
     
     dados_insercao = []
+    acertos_totais = 0
     
     with st.spinner("Enviando suas respostas..."):
         for q in questoes:
@@ -256,6 +260,7 @@ def finalizar_prova(supabase):
             if letra_aluno and gabarito:
                 if str(letra_aluno).strip().upper() == str(gabarito).strip().upper():
                     acertou = True
+                    acertos_totais += 1
             
             dados_insercao.append({
                 "aluno_id": str(aluno['id']),
@@ -266,15 +271,53 @@ def finalizar_prova(supabase):
             })
         
         try:
-            # Salva resultados
+            # 1️⃣ SALVA RESULTADOS NA TABELA resultados_provas
             supabase.table("resultados_provas").insert(dados_insercao).execute()
             
-            # Limpa dados da prova da sessão
+            # 2️⃣ SE FOR RECUPERAÇÃO, CALCULA E SALVA A NOTA
+            if prova.get('recuperacao') == True:
+                # Calcula a nota de recuperação
+                valor_questao = float(prova.get('valor_questao', 1.0))
+                nota_recuperacao = acertos_totais * valor_questao
+                
+                # Limita a nota a 10 (máximo)
+                nota_recuperacao = min(nota_recuperacao, 10.0)
+                
+                aluno_id = str(aluno['id'])
+                
+                # Busca o registro de notas do aluno para atualizar
+                # (precisamos saber qual unidade atualizar - usaremos a unidade 1 como padrão)
+                try:
+                    res_check = supabase.table("notas_atividades")\
+                        .select("id")\
+                        .eq("aluno_id", aluno_id)\
+                        .eq("unidade", "1º Bimestre")\
+                        .single().execute()
+                    
+                    if res_check.data:
+                        # Atualiza o campo 'rec' com a nota de recuperação
+                        supabase.table("notas_atividades")\
+                            .update({"rec": nota_recuperacao})\
+                            .eq("aluno_id", aluno_id)\
+                            .eq("unidade", "1º Bimestre")\
+                            .execute()
+                        
+                        st.session_state.nota_recuperacao_salva = nota_recuperacao
+                    else:
+                        st.warning("⚠️ Registro de notas não encontrado para atualização de recuperação.")
+                
+                except Exception as e:
+                    st.warning(f"⚠️ Não foi possível salvar nota de recuperação: {e}")
+            
+            # 3️⃣ LIMPA DADOS DA PROVA DA SESSÃO
             keys_to_clear = ['questoes_carregadas', 'respostas_aluno', 'inicio_prova', 'prova_config']
             for k in keys_to_clear:
-                if k in st.session_state: del st.session_state[k]
-                
+                if k in st.session_state: 
+                    del st.session_state[k]
+            
+            # 4️⃣ REDIRECIONA PARA RESULTADO FINAL
             st.session_state.etapa = "resultado_final"
             st.rerun()
+            
         except Exception as e:
-            st.error(f"Erro ao salvar resultados: {e}")
+            st.error(f"❌ Erro ao salvar resultados: {e}")
