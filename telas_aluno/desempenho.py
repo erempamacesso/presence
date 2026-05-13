@@ -51,23 +51,17 @@ def buscar_todas_notas(db_provas, aluno_id, unidade):
     return at1, at2, at3, at4, at5, n2
 
 def buscar_notas_recuperacao(db_provas, aluno_id, unidade):
-    """
-    LÓGICA RECUPERAÇÃO: Busca acertos e multiplica pelo valor_questao da prova de REC.
-    """
     rec = 0.0
     try:
         unidade_str = f"{unidade}º"
-        # 1. Localiza as provas de Recuperação e captura o 'valor_questao'
         res_p = db_provas.table("modelos_prova").select("id, valor_questao")\
             .ilike("titulo", f"%{unidade_str}%")\
             .ilike("titulo", "%RECUPERAÇÃO%").execute()
             
         if res_p.data:
-            # Criamos um mapeamento de id da prova para o valor da questão
             mapa_valores = {p['id']: float(p.get('valor_questao') or 0.0) for p in res_p.data}
             prova_ids = list(mapa_valores.keys())
             
-            # 2. Busca cada acerto individual (TRUE) para somar os valores
             res_r = db_provas.table("resultados_provas")\
                 .select("prova_id")\
                 .eq("aluno_id", aluno_id)\
@@ -77,7 +71,6 @@ def buscar_notas_recuperacao(db_provas, aluno_id, unidade):
             if res_r.data:
                 for registro in res_r.data:
                     p_id = registro['prova_id']
-                    # Soma o valor da questão correspondente àquela prova
                     rec += mapa_valores.get(p_id, 0.0)
     except:
         pass
@@ -94,46 +87,56 @@ def mostrar_tela_desempenho(db_alunos, db_provas):
     
     col_un, _ = st.columns([1, 2])
     with col_un:
-        unidade_sel = st.selectbox(
-            "Selecione o Bimestre:", 
-            ["1", "2", "3", "4"], 
-            index=0,
-            key="unidade_selector"
-        )
+        unidade_sel = st.selectbox("Selecione o Bimestre:", ["1", "2", "3", "4"], index=0)
     
-    # Busca de dados
+    # 1. Busca de dados
     at1, at2, at3, at4, at5, n2 = buscar_todas_notas(db_provas, aluno_id, unidade_sel)
-    rec = buscar_notas_recuperacao(db_provas, aluno_id, unidade_sel)
+    nota_rec = buscar_notas_recuperacao(db_provas, aluno_id, unidade_sel)
     
-    # Cálculos seguindo a regra: N2 Final é a maior entre a Prova e a Recuperação
-    soma_n1_bruta = at1 + at2 + at3 + at4 + at5
-    soma_n1 = arredondar_siepe(soma_n1_bruta)
-    n2_final = max(n2, rec) if rec > 0 else n2
-    media_final = arredondar_siepe((soma_n1 + n2_final) / 2) if (soma_n1 + n2_final) > 0 else 0.0
+    # 2. Lógica de Cálculos
+    soma_n1 = arredondar_siepe(at1 + at2 + at3 + at4 + at5)
+    media_original = arredondar_siepe((soma_n1 + n2) / 2) if (soma_n1 + n2) > 0 else 0.0
     
-    # Exibição de métricas
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Soma N1", f"{soma_n1:.1f}")
-    col2.metric("Nota N2", f"{n2_final:.1f}")
-    col3.metric("Média Final", f"{media_final:.1f}")
+    # Determinação do Status de Recuperação
+    status_rec = "NÃO REALIZADA"
+    media_final = media_original
+    cor_media = "normal"
+
+    if nota_rec > 0:
+        if nota_rec > media_original:
+            status_rec = "✅ RECUPERADO"
+            media_final = nota_rec # A nota da REC substitui a média se for maior
+            cor_media = "inverse" # Destaque visual
+        else:
+            status_rec = "❌ NÃO RECUPERADO"
+
+    # 3. Exibição de métricas
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Soma N1", f"{soma_n1:.1f}")
+    c2.metric("Nota N2", f"{n2:.1f}")
+    c3.metric("Recuperação", f"{nota_rec:.1f}")
+    c4.metric("Média Final", f"{media_final:.1f}", delta="Recuperado" if status_rec == "✅ RECUPERADO" else None)
     
     st.write("---")
     
-    # Tabela detalhada
+    # 4. Tabela Detalhada
     df_exibicao = pd.DataFrame({
-        "Simulado 1 (AT1)": [f"{at1:.1f}"],
-        "Simulado 2 (AT2)": [f"{at2:.1f}"],
-        "Qualitativa (AT3)": [f"{at3:.1f}"],
-        "Atividade (AT4)": [f"{at4:.1f}"],
-        "Outros (AT5)": [f"{at5:.1f}"],
-        "N1 Total": [f"{soma_n1:.1f}"],
+        "Simulado 1": [f"{at1:.1f}"],
+        "Simulado 2": [f"{at2:.1f}"],
+        "Qualitativa": [f"{at3:.1f}"],
+        "Atividade": [f"{at4:.1f}"],
+        "Outros": [f"{at5:.1f}"],
         "N2 Prova": [f"{n2:.1f}"],
-        "Recuperação": [f"{rec:.1f}" if rec > 0 else "0.0"],
+        "Nota REC": [f"{nota_rec:.1f}"],
+        "Status REC": [status_rec],
         "Média Final": [f"{media_final:.1f}"]
     })
     st.table(df_exibicao)
 
-    if media_final >= 6.0:
-        st.success(f"Excelente! Você atingiu a média necessária.")
-    elif (soma_n1 + n2_final) > 0:
-        st.warning(f"Sua média está abaixo de 6.0.")
+    # Destaque final
+    if status_rec == "✅ RECUPERADO":
+        st.success(f"🎉 Resultado: O aluno recuperou a nota! Média Final atualizada para {media_final:.1f}")
+    elif media_final >= 6.0:
+        st.info(f"Média superior a 6.0. Aluno aprovado.")
+    elif (soma_n1 + n2) > 0:
+        st.warning(f"Atenção: Média inferior a 6.0.")
