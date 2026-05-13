@@ -57,11 +57,14 @@ def buscar_todas_notas(db_provas, aluno_id, unidade):
     at1, at2, at3, at4, at5, n2 = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
     
     try:
+        # Converte unidade para o formato correto: "1" → "1º Bimestre"
+        unidade_formatada = f"{unidade}º Bimestre"
+        
         # Busca TODAS as notas de uma vez na tabela notas_atividades
         res_notas = db_provas.table("notas_atividades")\
             .select("at1, at2, at3, at4, at5, prova")\
             .eq("aluno_id", aluno_id)\
-            .eq("unidade", str(unidade)).execute()
+            .eq("unidade", unidade_formatada).execute()
         
         if res_notas.data and len(res_notas.data) > 0:
             dados = res_notas.data[0]
@@ -91,10 +94,13 @@ def buscar_notas_recuperacao(db_provas, aluno_id, unidade):
     rec = 0.0
     
     try:
+        # Converte unidade para o formato correto: "1" → "1º Bimestre"
+        unidade_formatada = f"{unidade}º Bimestre"
+        
         res_rec = db_provas.table("notas_atividades")\
             .select("rec")\
             .eq("aluno_id", aluno_id)\
-            .eq("unidade", str(unidade)).execute()
+            .eq("unidade", unidade_formatada).execute()
         
         if res_rec.data and len(res_rec.data) > 0:
             rec = validar_nota(res_rec.data[0].get('rec'))
