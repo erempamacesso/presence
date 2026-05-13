@@ -93,50 +93,51 @@ def mostrar_tela_desempenho(db_alunos, db_provas):
     at1, at2, at3, at4, at5, n2 = buscar_todas_notas(db_provas, aluno_id, unidade_sel)
     nota_rec = buscar_notas_recuperacao(db_provas, aluno_id, unidade_sel)
     
-    # 2. Lógica de Cálculos
-    soma_n1 = arredondar_siepe(at1 + at2 + at3 + at4 + at5)
+    # 2. Lógica de Cálculos (Padrão SIEPE)
+    soma_n1_bruta = at1 + at2 + at3 + at4 + at5
+    soma_n1 = arredondar_siepe(soma_n1_bruta)
     media_original = arredondar_siepe((soma_n1 + n2) / 2) if (soma_n1 + n2) > 0 else 0.0
     
-    # Determinação do Status de Recuperação
     status_rec = "NÃO REALIZADA"
     media_final = media_original
-    cor_media = "normal"
 
     if nota_rec > 0:
         if nota_rec > media_original:
             status_rec = "✅ RECUPERADO"
-            media_final = nota_rec # A nota da REC substitui a média se for maior
-            cor_media = "inverse" # Destaque visual
+            media_final = nota_rec
         else:
             status_rec = "❌ NÃO RECUPERADO"
 
-    # 3. Exibição de métricas
+    # 3. Métricas de Resumo
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Soma N1", f"{soma_n1:.1f}")
     c2.metric("Nota N2", f"{n2:.1f}")
-    c3.metric("Recuperação", f"{nota_rec:.1f}")
-    c4.metric("Média Final", f"{media_final:.1f}", delta="Recuperado" if status_rec == "✅ RECUPERADO" else None)
+    c3.metric("REC", f"{nota_rec:.1f}")
+    c4.metric("Média Final", f"{media_final:.1f}")
     
     st.write("---")
     
-    # 4. Tabela Detalhada
+    # 4. Tabela Detalhada com Sequência SIEPE
     df_exibicao = pd.DataFrame({
-        "Simulado 1": [f"{at1:.1f}"],
-        "Simulado 2": [f"{at2:.1f}"],
-        "Qualitativa": [f"{at3:.1f}"],
-        "Atividade": [f"{at4:.1f}"],
-        "Outros": [f"{at5:.1f}"],
-        "N2 Prova": [f"{n2:.1f}"],
+        "AT1": [f"{at1:.1f}"],
+        "AT2": [f"{at2:.1f}"],
+        "AT3": [f"{at3:.1f}"],
+        "AT4": [f"{at4:.1f}"],
+        "AT5": [f"{at5:.1f}"],
+        "N1": [f"{soma_n1:.1f}"],
+        "N2": [f"{n2:.1f}"],
         "Nota REC": [f"{nota_rec:.1f}"],
         "Status REC": [status_rec],
         "Média Final": [f"{media_final:.1f}"]
     })
+    
+    # Exibe a tabela sem o índice lateral
     st.table(df_exibicao)
 
-    # Destaque final
+    # Feedback visual para o aluno
     if status_rec == "✅ RECUPERADO":
-        st.success(f"🎉 Resultado: O aluno recuperou a nota! Média Final atualizada para {media_final:.1f}")
+        st.success(f"🎉 Parabéns! Média Final atualizada pela Recuperação: {media_final:.1f}")
     elif media_final >= 6.0:
-        st.info(f"Média superior a 6.0. Aluno aprovado.")
+        st.info(f"Aluno aprovado com média {media_final:.1f}")
     elif (soma_n1 + n2) > 0:
-        st.warning(f"Atenção: Média inferior a 6.0.")
+        st.warning(f"Atenção: Média atual {media_final:.1f} está abaixo de 6.0.")
