@@ -5,59 +5,114 @@ import math
 
 # --- FUNÇÃO OFICIAL DE ARREDONDAMENTO SIEPE ---
 def arredondar_siepe(nota):
-    if pd.isna(nota): return nota
+    if pd.isna(nota):
+        return nota
     nota = float(nota)
     inteiro = math.floor(nota)
     decimal = round((nota - inteiro) * 10)
-    if decimal in [0, 1]: return float(inteiro)
-    elif decimal in [2, 3, 4, 5, 6]: return float(inteiro + 0.5)
-    else: return float(inteiro + 1)
+    if decimal in [0, 1]:
+        return float(inteiro)
+    elif decimal in [2, 3, 4, 5, 6]:
+        return float(inteiro + 0.5)
+    else:
+        return float(inteiro + 1)
+
+
+def eh_recuperacao(prova):
+    return prova.get("recuperacao") is True or str(prova.get("recuperacao")).lower() == "true"
+
+
+def buscar_resultados_da_prova(supabase, prova_id_original):
+    """Busca resultados tolerando prova_id salvo como texto ou número."""
+    prova_id_texto = str(prova_id_original)
+    registros = []
+
+    try:
+        res_texto = supabase.table("resultados_provas") \
+            .select("aluno_id, questao_id, acertou, prova_id") \
+            .eq("prova_id", prova_id_texto) \
+            .execute()
+        registros.extend(res_texto.data or [])
+    except Exception:
+        pass
+
+    if prova_id_original != prova_id_texto:
+        try:
+            res_original = supabase.table("resultados_provas") \
+                .select("aluno_id, questao_id, acertou, prova_id") \
+                .eq("prova_id", prova_id_original) \
+                .execute()
+            registros.extend(res_original.data or [])
+        except Exception:
+            pass
+
+    vistos = set()
+    unicos = []
+    for item in registros:
+        chave = (
+            str(item.get("aluno_id")),
+            str(item.get("questao_id")),
+            str(item.get("prova_id")),
+        )
+        if chave not in vistos:
+            vistos.add(chave)
+            unicos.append(item)
+    return unicos
+
 
 def mostrar_tela_analise(supabase, supabase_alunos):
     st.markdown("## 📊 Análise de Dados e Notas")
-    
+
     try:
         # 1. BUSCA DE DADOS MESTRE (Modelos e Alunos)
-        res_p_modelos = supabase.table("modelos_prova").select("id, titulo, valor_questao").order("id", desc=True).execute()
+        res_p_modelos = supabase.table("modelos_prova") \
+            .select("id, titulo, valor_questao, recuperacao") \
+            .order("id", desc=True) \
+            .execute()
         res_alunos_base = supabase_alunos.table("alunos").select("id, turma, nome").execute()
-        
+
         if not res_p_modelos.data:
             st.warning("Nenhuma prova encontrada no banco de dados.")
             return
 
         # SELETOR DE PROVA
-        provas_dict = {p['titulo']: p for p in res_p_modelos.data}
+        provas_dict = {}
+        for p in res_p_modelos.data:
+            tag_rec = " [RECUPERAÇÃO]" if eh_recuperacao(p) else ""
+            rotulo = f"ID {p['id']} - {p.get('titulo', 'Sem título')}{tag_rec}"
+            provas_dict[rotulo] = p
+
         prova_nome = st.selectbox("🎯 Selecione a Prova para Monitorar:", list(provas_dict.keys()))
         prova_obj = provas_dict[prova_nome]
-        id_prova = prova_obj['id']
+        id_prova = prova_obj["id"]
+
+        if eh_recuperacao(prova_obj):
+            st.info("Esta atividade está marcada como recuperação.")
 
         # 2. BUSCA DE RESULTADOS (Cálculo antes de mostrar qualquer gráfico)
-        
-        # ↓↓ INÍCIO DA ALTERAÇÃO 1 ↓↓
-        # Trocamos o "*" por "aluno_id, questao_id, acertou" para garantir que teremos a ID da questão
-        res_res = supabase.table("resultados_provas").select("aluno_id, questao_id, acertou").eq("prova_id", id_prova).execute()
-        # ↑↑ FIM DA ALTERAÇÃO 1 ↑↑
+        resultados_prova = buscar_resultados_da_prova(supabase, id_prova)
 
-        if not res_res.data or not res_alunos_base.data:
+        if not resultados_prova or not res_alunos_base.data:
             st.info("ℹ️ Ainda não existem envios para esta prova.")
             return
 
         # --- PROCESSAMENTO DE DADOS (O Coração do Dashboard) ---
-        df_res = pd.DataFrame(res_res.data)
+        df_res = pd.DataFrame(resultados_prova)
         df_alunos = pd.DataFrame(res_alunos_base.data)
-        
+
         # Ajuste de tipos para o Merge
-        df_res['aluno_id'] = df_res['aluno_id'].astype(str)
-        df_alunos['id'] = df_alunos['id'].astype(str)
+        df_res["aluno_id"] = df_res["aluno_id"].astype(str)
+        df_res["questao_id"] = df_res["questao_id"].astype(str)
+        df_alunos["id"] = df_alunos["id"].astype(str)
 
         # Cálculo de pontos e notas
-        valor_q = float(prova_obj.get('valor_questao', 1.0))
-        df_res['pontos'] = df_res['acertou'].apply(lambda x: 1 if x is True else 0)
-        
+        valor_q = float(prova_obj.get("valor_questao", 1.0) or 1.0)
+        df_res["pontos"] = df_res["acertou"].apply(lambda x: 1 if x is True else 0)
+
         # Agrupa por aluno para somar acertos
-        df_notas = df_res.groupby('aluno_id').agg(total_acertos=('pontos', 'sum')).reset_index()
-        df_notas['nota_final'] = (df_notas['total_acertos'] * valor_q).apply(arredondar_siepe)
-        
+        df_notas = df_res.groupby("aluno_id").agg(total_acertos=("pontos", "sum")).reset_index()
+        df_notas["nota_final"] = (df_notas["total_acertos"] * valor_q).apply(arredondar_siepe)
+
         # Criação do dataframe principal (df_final agora existe ANTES dos gráficos)
         df_final = pd.merge(df_alunos, df_notas, left_on="id", right_on="aluno_id")
 
@@ -70,76 +125,77 @@ def mostrar_tela_analise(supabase, supabase_alunos):
         # ---------------------------------------------------------
         st.markdown("---")
         st.subheader("📈 Desempenho e Progresso por Turma")
-        
+
         g1, g2 = st.columns(2)
-        
+
         with g1:
             # Média de notas por turma
-            df_media = df_final.groupby('turma')['nota_final'].mean().reset_index()
+            df_media = df_final.groupby("turma")["nota_final"].mean().reset_index()
             st.write("**Média de Notas**")
-            st.bar_chart(data=df_media, x='turma', y='nota_final', color="#2b83ba")
+            st.bar_chart(data=df_media, x="turma", y="nota_final", color="#2b83ba")
             st.caption("Desempenho acadêmico médio de cada turma.")
 
         with g2:
             # Total de alunos que fizeram por turma
-            df_participacao = df_final.drop_duplicates(subset=['aluno_id']).groupby('turma').size().reset_index(name='total')
+            df_participacao = df_final.drop_duplicates(subset=["aluno_id"]).groupby("turma").size().reset_index(name="total")
             st.write("**Total de Participantes**")
-            st.bar_chart(data=df_participacao, x='turma', y='total', color="#abdda4")
+            st.bar_chart(data=df_participacao, x="turma", y="total", color="#abdda4")
             st.caption("Quantidade de alunos que concluíram a prova.")
 
         st.markdown("---")
 
         # ↓↓ INÍCIO DO NOVO COMANDO: RAIO-X PEDAGÓGICO ↓↓
         st.subheader("🧠 Raio-X Pedagógico (Onde a turma precisa de ajuda?)")
-        
+
         try:
             # Pega os IDs de todas as questões que apareceram nesses resultados
-            if 'questao_id' in df_res.columns:
-                ids_questoes_feitas = df_res['questao_id'].dropna().unique().tolist()
-                
+            if "questao_id" in df_res.columns:
+                ids_questoes_feitas = df_res["questao_id"].dropna().unique().tolist()
+
                 if ids_questoes_feitas:
                     # Busca na tabela de questões qual é o 'assunto' de cada questão
                     res_assuntos = supabase.table("questoes").select("id, assunto").in_("id", ids_questoes_feitas).execute()
-                    
+
                     if res_assuntos.data:
                         df_questoes = pd.DataFrame(res_assuntos.data)
                         df_questoes = df_questoes.rename(columns={"id": "questao_id"})
-                        
+                        df_questoes["questao_id"] = df_questoes["questao_id"].astype(str)
+
                         # Preenche assuntos vazios com 'Sem classificação'
-                        df_questoes['assunto'] = df_questoes['assunto'].fillna("Assunto não categorizado")
-                        
+                        df_questoes["assunto"] = df_questoes["assunto"].fillna("Assunto não categorizado")
+
                         # Cruza quem acertou/errou com o assunto da questão
                         df_cruzado = pd.merge(df_res, df_questoes, on="questao_id", how="left")
-                        
+
                         # Calcula a PORCENTAGEM de acerto por assunto
-                        df_desempenho_assunto = df_cruzado.groupby("assunto")['pontos'].mean().reset_index()
-                        df_desempenho_assunto['taxa_acerto'] = df_desempenho_assunto['pontos'] * 100
-                        
+                        df_desempenho_assunto = df_cruzado.groupby("assunto")["pontos"].mean().reset_index()
+                        df_desempenho_assunto["taxa_acerto"] = df_desempenho_assunto["pontos"] * 100
+
                         # Separa os assuntos críticos (menos de 50% de acerto) dos dominados
                         df_desempenho_assunto = df_desempenho_assunto.sort_values(by="taxa_acerto", ascending=True)
-                        
+
                         st.write("Porcentagem de acertos da turma em cada competência avaliada:")
-                        
+
                         # Exibe o gráfico de barras
                         st.bar_chart(
-                            data=df_desempenho_assunto, 
-                            x="taxa_acerto", 
-                            y="assunto", 
+                            data=df_desempenho_assunto,
+                            x="taxa_acerto",
+                            y="assunto",
                             color="#f46d43"
                         )
-                        
+
                         # Alertar o professor sobre os tópicos mais fracos
-                        assuntos_criticos = df_desempenho_assunto[df_desempenho_assunto['taxa_acerto'] < 50]['assunto'].tolist()
+                        assuntos_criticos = df_desempenho_assunto[df_desempenho_assunto["taxa_acerto"] < 50]["assunto"].tolist()
                         if assuntos_criticos:
                             st.error(f"🚨 **Alerta de Revisão!** A turma teve menos de 50% de aproveitamento nos seguintes assuntos: **{', '.join(assuntos_criticos)}**")
                         else:
                             st.success("✨ Excelente! A turma teve mais de 50% de aproveitamento em todos os assuntos avaliados.")
             else:
                 st.info("A coluna 'questao_id' não foi encontrada para gerar o gráfico.")
-                        
+
         except Exception as e:
             st.info(f"Para ver o gráfico, certifique-se de que a tabela 'questoes' possui a coluna 'assunto'. (Detalhe: {e})")
-            
+
         st.markdown("---")
         # ↑↑ FIM DO NOVO COMANDO: RAIO-X PEDAGÓGICO ↑↑
 
@@ -161,14 +217,14 @@ def mostrar_tela_analise(supabase, supabase_alunos):
                     "nota_final": st.column_config.NumberColumn("Nota Final (SIEPE)", format="%.1f")
                 }
             )
-            
+
             # Exportação Excel
             output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                for turma in sorted(df_final['turma'].unique()):
-                    df_turma = df_final[df_final['turma'] == turma].copy()
+            with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+                for turma in sorted(df_final["turma"].unique()):
+                    df_turma = df_final[df_final["turma"] == turma].copy()
                     df_turma.to_excel(writer, sheet_name=f"Turma {turma}", index=False)
-            
+
             st.download_button(
                 label="📥 Baixar Relatório Completo (.xlsx)",
                 data=output.getvalue(),
@@ -178,16 +234,23 @@ def mostrar_tela_analise(supabase, supabase_alunos):
 
         with col_monitor:
             st.subheader("👥 Status de Envio")
-            # Lista estilizada igual à sua imagem de referência
-            stats = df_final.drop_duplicates(subset=['aluno_id']).groupby('turma').size().reset_index(name='qtd')
-            
+            if st.button("🔄 Atualizar agora", use_container_width=True):
+                st.rerun()
+
+            alunos_concluintes = df_final.drop_duplicates(subset=["aluno_id"]).sort_values(["turma", "nome"])
+            stats = alunos_concluintes.groupby("turma").size().reset_index(name="qtd")
+
             for _, row in stats.iterrows():
+                nomes_turma = alunos_concluintes[alunos_concluintes["turma"] == row["turma"]]["nome"].tolist()
                 st.markdown(f"""
                     <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 5px solid #2b83ba; margin-bottom: 10px;">
                         <span style="color: #6c757d; font-size: 14px;">TURMA {row['turma']}</span><br>
                         <span style="font-size: 22px; font-weight: bold; color: #1e293b;">{row['qtd']} Alunos Concluíram</span>
                     </div>
                 """, unsafe_allow_html=True)
+                with st.expander("Ver alunos", expanded=True):
+                    for nome in nomes_turma:
+                        st.write(f"✅ {nome}")
 
     except Exception as e:
         st.error(f"❌ Ocorreu um erro no processamento: {e}")
