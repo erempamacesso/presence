@@ -6,10 +6,10 @@ import random
 import ast
 import math
 
-# --- FUNÇÃO OFICIAL DE ARREDONDAMENTO SIEPE (Necessária para a barreira e gravação) ---
+# --- FUNÇÃO OFICIAL DE ARREDONDAMENTO SIEPE ---
 def arredondar_siepe(nota):
     """
-    Regra de arredondamento:
+    Regra de arredondamento oficial do SIEPE:
     ,0 e ,1 -> ,0
     ,2 a ,6 -> ,5
     ,7 a ,9 -> +1,0 (próximo número inteiro)
@@ -25,7 +25,7 @@ def arredondar_siepe(nota):
         return float(inteiro)
     elif decimal in [2, 3, 4, 5, 6]:
         return float(inteiro + 0.5)
-    else: # 7, 8, 9, 10
+    else:
         return float(inteiro + 1)
 
 def limpar_html(html):
@@ -64,14 +64,15 @@ def render_instrucoes(supabase):
         return
 
     # ==========================================================
-    # --- 🛡️ TRAVA DE REENTRADA: VERIFICA SE O ALUNO JÁ FEZ ---
+    # --- 🛡️ TRAVA DE REENTRADA TOTALMENTE BLINDADA ---
     # ==========================================================
     aluno_id = str(aluno['id'])
     prova_id = str(prova['id'])
     
     with st.spinner("Verificando status da avaliação..."):
+        # Buscamos 'aluno_id' em vez de 'id' para evitar falhas caso a coluna id tenha outro nome
         res_check = supabase.table("resultados_provas")\
-            .select("id")\
+            .select("aluno_id")\
             .eq("aluno_id", aluno_id)\
             .eq("prova_id", prova_id)\
             .limit(1).execute()
@@ -82,33 +83,24 @@ def render_instrucoes(supabase):
         if st.button("⬅️ Voltar para Atividades", use_container_width=True):
             st.session_state.etapa = "ante_sala"
             st.rerun()
-        return # Trava a execução aqui e não exibe o restante da página
+        return 
     # ==========================================================
 
     st.title(f"📝 {prova['titulo']}")
 
     # --- 🛡️ BARREIRA DE ACESSO PARA RECUPERAÇÃO ---
     if prova.get('recuperacao') == True:
-        # A variável aluno_id já foi declarada acima na trava de reentrada
-        
-        # 1. Busca as notas do aluno para calcular a média
         with st.spinner("Validando seu acesso para esta recuperação..."):
             res_notas = supabase.table("notas_atividades").select("*").eq("aluno_id", aluno_id).execute()
             
             media_atual = 0.0
             if res_notas.data:
-                # Pegamos a primeira linha (ajuste conforme a unidade se necessário)
                 n = res_notas.data[0]
-                
-                # Cálculo de N1 (AT1+AT2+AT3+AT4+AT5) e N2 (Prova)
-                # Tratando nulos como 0.0
                 at_soma = sum([float(n.get(f'at{i}', 0) or 0) for i in range(1, 6)])
                 n1 = arredondar_siepe(at_soma)
                 n2 = float(n.get('prova', 0) or 0)
-                
                 media_atual = arredondar_siepe((n1 + n2) / 2)
 
-            # 2. Lógica de Bloqueio
             if media_atual >= 6.0:
                 st.error("### 🔒 Acesso Restrito")
                 st.warning(f"Olá {aluno['nome']}, sua média atual é **{media_atual:.1f}**. "
@@ -117,11 +109,10 @@ def render_instrucoes(supabase):
                 if st.button("⬅️ Voltar para Atividades"):
                     st.session_state.etapa = "ante_sala"
                     st.rerun()
-                st.stop() # Impede a renderização do botão de iniciar
+                st.stop()
             else:
                 st.success(f"✅ Recuperação Liberada! (Sua média: {media_atual:.1f})")
 
-    # --- INSTRUÇÕES PADRÃO ---
     st.info("Por favor, leia as instruções abaixo antes de começar.")
     
     col1, col2 = st.columns(2)
@@ -137,7 +128,7 @@ def render_instrucoes(supabase):
         st.markdown("""
         **Orientações Importantes:**
         - Não atualize a página durante a prova.
-        - O cronômetro inicia ao clicar no botão abaixo.
+        - O cronômetro inicia ao clicar do botão abaixo.
         - Verifique sua conexão com a internet.
         """)
 
@@ -146,7 +137,6 @@ def render_instrucoes(supabase):
     if st.button("🚀 INICIAR PROVA AGORA", type="primary", use_container_width=True):
         st.session_state.etapa = "em_prova"
         st.session_state.inicio_prova = datetime.now().isoformat()
-        # Inicializa o dicionário de respostas se não existir
         if 'respostas_aluno' not in st.session_state:
             st.session_state.respostas_aluno = {}
         st.rerun()
@@ -162,12 +152,10 @@ def render_prova(supabase):
         st.rerun()
         return
 
-    # --- CÁLCULO DO TEMPO RESTANTE ---
     inicio = datetime.fromisoformat(st.session_state.inicio_prova)
     tempo_passado = (datetime.now() - inicio).total_seconds() / 60
     tempo_restante = int(prova['tempo_duracao'] - tempo_passado)
 
-    # Header da Prova com Cronômetro
     c1, c2 = st.columns([3, 1])
     with c1:
         st.title(f"📖 {prova['titulo']}")
@@ -182,14 +170,12 @@ def render_prova(supabase):
         finalizar_prova(supabase)
         return
 
-    # --- RENDERIZAÇÃO DAS QUESTÕES ---
     questoes = st.session_state.get('questoes_carregadas', [])
     
     if not questoes:
         with st.spinner("Carregando questões..."):
             res_q = supabase.table("questoes").select("*").in_("id", prova['questoes_ids']).execute()
             questoes = res_q.data
-            # Opcional: Randomizar ordem das questões
             random.shuffle(questoes)
             st.session_state.questoes_carregadas = questoes
 
@@ -198,7 +184,6 @@ def render_prova(supabase):
             st.markdown(f"**Questão {i+1}**")
             st.write(limpar_html(q['enunciado']))
             
-            # Tratamento das alternativas
             alts = q.get('alternativas', {})
             if isinstance(alts, str):
                 try: alts = ast.literal_eval(alts)
@@ -213,7 +198,6 @@ def render_prova(supabase):
                     opcoes.append(label)
                     mapeamento[label] = letra
             
-            # Recupera resposta anterior se houver
             idx_anterior = None
             resp_salva = st.session_state.respostas_aluno.get(str(q['id']))
             if resp_salva:
@@ -237,7 +221,7 @@ def render_prova(supabase):
         finalizar_prova(supabase)
 
 def finalizar_prova(supabase):
-    """Processa as respostas e salva no banco de dados."""
+    """Processa as respostas e salva no banco de dados sem quebrar registros existentes."""
     prova = st.session_state.prova_config
     aluno = st.session_state.aluno
     questoes = st.session_state.questoes_carregadas
@@ -248,8 +232,6 @@ def finalizar_prova(supabase):
         for q in questoes:
             id_q = str(q['id'])
             letra_aluno = st.session_state.respostas_aluno.get(id_q)
-            
-            # Gabarito pode estar em diferentes campos dependendo do seu banco
             gabarito = q.get('resposta_correta') or q.get('gabarito') or q.get('resposta')
             
             acertou = False
@@ -266,19 +248,17 @@ def finalizar_prova(supabase):
             })
         
         try:
-            # Salva resultados detalhados na tabela 'resultados_provas'
+            # 1. Salva os resultados detalhados normalmente
             supabase.table("resultados_provas").insert(dados_insercao).execute()
             
             # =========================================================================
-            # 🚀 CÁLCULO E INSERÇÃO AUTOMÁTICA DA RECUPERAÇÃO NO BOLETIM
+            # 🚀 SALVAMENTO AUTOMÁTICO PROTEGIDO (NÃO GERA CORES OU ZERA COLUNAS)
             # =========================================================================
             if prova.get('recuperacao') == True:
-                # Conta os acertos obtidos na tentativa atual localmente
                 acertos = sum(1 for d in dados_insercao if d.get("acertou") == True)
                 valor_q = float(prova.get('valor_questao') or 0.5)
                 nota_rec = arredondar_siepe(acertos * valor_q)
                 
-                # Tenta identificar o Bimestre correto cadastrado na prova, ou deduz pelo título
                 unidade_nota = prova.get('unidade')
                 if not unidade_nota:
                     unidade_nota = "1º Bimestre"
@@ -290,19 +270,30 @@ def finalizar_prova(supabase):
                     elif "4º" in titulo_prova:
                         unidade_nota = "4º Bimestre"
                 
-                # Prepara a estrutura do payload respeitando o banco de dados
-                dados_rec = {
-                    "aluno_id": str(aluno['id']),
-                    "unidade": unidade_nota,
-                    "rec": nota_rec
-                }
+                # 🛡️ PASSO CHAVE: Verifica localmente se a linha do aluno já existe no bimestre
+                chk_nota = supabase.table("notas_atividades")\
+                    .select("aluno_id")\
+                    .eq("aluno_id", str(aluno['id']))\
+                    .eq("unidade", unidade_nota)\
+                    .execute()
                 
-                # Vincula a turma se ela estiver mapeada no objeto do aluno
-                if 'turma' in aluno:
-                    dados_rec["turma"] = str(aluno['turma'])
-                
-                # Executa o upsert. Se o aluno já possuir linha, atualiza a coluna 'rec' sem mexer nas outras notas
-                supabase.table("notas_atividades").upsert(dados_rec, on_conflict="aluno_id, unidade").execute()
+                if chk_nota.data:
+                    # Se a linha EXISTE, fazemos UPDATE. O update altera APENAS a coluna 'rec' e preserva as outras intactas!
+                    supabase.table("notas_atividades")\
+                        .update({"rec": nota_rec})\
+                        .eq("aluno_id", str(aluno['id']))\
+                        .eq("unidade", unidade_nota)\
+                        .execute()
+                else:
+                    # Se NÃO existe, insere o registro inicial básico
+                    dados_inserir = {
+                        "aluno_id": str(aluno['id']),
+                        "unidade": unidade_nota,
+                        "rec": nota_rec
+                    }
+                    if 'turma' in aluno:
+                        dados_inserir["turma"] = str(aluno['turma'])
+                    supabase.table("notas_atividades").insert(dados_inserir).execute()
             # =========================================================================
             
             # Limpa dados da prova da sessão
