@@ -6,7 +6,7 @@ import random
 import ast
 import math
 
-# --- FUNÇÃO OFICIAL DE ARREDONDAMENTO SIEPE (Necessária para a barreira) ---
+# --- FUNÇÃO OFICIAL DE ARREDONDAMENTO SIEPE (Necessária para a barreira e gravação) ---
 def arredondar_siepe(nota):
     """
     Regra de arredondamento:
@@ -266,8 +266,44 @@ def finalizar_prova(supabase):
             })
         
         try:
-            # Salva resultados
+            # Salva resultados detalhados na tabela 'resultados_provas'
             supabase.table("resultados_provas").insert(dados_insercao).execute()
+            
+            # =========================================================================
+            # 🚀 CÁLCULO E INSERÇÃO AUTOMÁTICA DA RECUPERAÇÃO NO BOLETIM
+            # =========================================================================
+            if prova.get('recuperacao') == True:
+                # Conta os acertos obtidos na tentativa atual localmente
+                acertos = sum(1 for d in dados_insercao if d.get("acertou") == True)
+                valor_q = float(prova.get('valor_questao') or 0.5)
+                nota_rec = arredondar_siepe(acertos * valor_q)
+                
+                # Tenta identificar o Bimestre correto cadastrado na prova, ou deduz pelo título
+                unidade_nota = prova.get('unidade')
+                if not unidade_nota:
+                    unidade_nota = "1º Bimestre"
+                    titulo_prova = str(prova.get('titulo', '')).upper()
+                    if "2º" in titulo_prova:
+                        unidade_nota = "2º Bimestre"
+                    elif "3º" in titulo_prova:
+                        unidade_nota = "3º Bimestre"
+                    elif "4º" in titulo_prova:
+                        unidade_nota = "4º Bimestre"
+                
+                # Prepara a estrutura do payload respeitando o banco de dados
+                dados_rec = {
+                    "aluno_id": str(aluno['id']),
+                    "unidade": unidade_nota,
+                    "rec": nota_rec
+                }
+                
+                # Vincula a turma se ela estiver mapeada no objeto do aluno
+                if 'turma' in aluno:
+                    dados_rec["turma"] = str(aluno['turma'])
+                
+                # Executa o upsert. Se o aluno já possuir linha, atualiza a coluna 'rec' sem mexer nas outras notas
+                supabase.table("notas_atividades").upsert(dados_rec, on_conflict="aluno_id, unidade").execute()
+            # =========================================================================
             
             # Limpa dados da prova da sessão
             keys_to_clear = ['questoes_carregadas', 'respostas_aluno', 'inicio_prova', 'prova_config']
