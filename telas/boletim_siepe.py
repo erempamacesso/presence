@@ -108,7 +108,7 @@ def buscar_resultados_por_provas(supabase, prova_ids, somente_acertos=False):
     if not ids_texto:
         return []
 
-    query = supabase.table("resultados_provas").select("aluno_id, prova_id, acertou")
+    query = supabase.table("resultados_provas").select("aluno_id, prova_id, questao_id, acertou")
     query = query.in_("prova_id", ids_texto)
     if somente_acertos:
         query = query.eq("acertou", True)
@@ -147,10 +147,14 @@ def calcular_recuperacoes(supabase, ano_ref, unidade_label=None):
     df = pd.DataFrame(resultados)
     df["aluno_id"] = df["aluno_id"].astype(str)
     df["prova_id"] = df["prova_id"].astype(str)
+    df["questao_id"] = df["questao_id"].astype(str)
+
+    # Conta cada questão acertada uma única vez por aluno/prova.
+    df = df.drop_duplicates(subset=["aluno_id", "prova_id", "questao_id"])
     df["valor"] = df["prova_id"].map(mapa_valores).fillna(0.0)
 
     notas = df.groupby("aluno_id")["valor"].sum().reset_index()
-    notas["nota"] = notas["valor"].apply(arredondar_siepe)
+    notas["nota"] = notas["valor"].clip(upper=10).apply(arredondar_siepe)
     return dict(zip(notas["aluno_id"].astype(str), notas["nota"]))
 
 

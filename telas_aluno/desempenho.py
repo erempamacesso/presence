@@ -82,7 +82,7 @@ def buscar_notas_recuperacao(db_provas, aluno_id, unidade):
 
         res_r = (
             db_provas.table("resultados_provas")
-            .select("prova_id")
+            .select("prova_id, questao_id")
             .eq("aluno_id", str(aluno_id))
             .in_("prova_id", prova_ids)
             .eq("acertou", True)
@@ -90,12 +90,18 @@ def buscar_notas_recuperacao(db_provas, aluno_id, unidade):
         )
 
         if res_r.data:
+            vistos = set()
             for registro in res_r.data:
                 p_id = str(registro['prova_id'])
+                q_id = str(registro.get('questao_id'))
+                chave = (p_id, q_id)
+                if chave in vistos:
+                    continue
+                vistos.add(chave)
                 rec += mapa_valores.get(p_id, 0.0)
     except:
         pass
-    return arredondar_siepe(rec)
+    return arredondar_siepe(min(rec, 10.0))
 
 def mostrar_tela_desempenho(db_alunos, db_provas):
     st.subheader("📊 Meu Desempenho Acadêmico")

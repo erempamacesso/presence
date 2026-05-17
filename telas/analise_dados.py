@@ -116,6 +116,24 @@ def carregar_notas_recuperacao_consolidadas(supabase, prova):
         })
     return pd.DataFrame(dados)
 
+
+
+def recalcular_notas_recuperacao_analise(df_res, valor_q):
+    if df_res.empty:
+        return pd.DataFrame(columns=["aluno_id", "nota_calculada"])
+
+    df_calc = df_res[df_res["acertou"] == True].copy()
+    if df_calc.empty:
+        return pd.DataFrame(columns=["aluno_id", "nota_calculada"])
+
+    df_calc["aluno_id"] = df_calc["aluno_id"].astype(str)
+    df_calc["prova_id"] = df_calc["prova_id"].astype(str)
+    df_calc["questao_id"] = df_calc["questao_id"].astype(str)
+    df_calc = df_calc.drop_duplicates(subset=["aluno_id", "prova_id", "questao_id"])
+    notas = df_calc.groupby("aluno_id").size().reset_index(name="acertos_unicos")
+    notas["nota_calculada"] = (notas["acertos_unicos"] * valor_q).clip(upper=10).apply(arredondar_siepe)
+    return notas[["aluno_id", "nota_calculada"]]
+
 def mostrar_tela_analise(supabase, supabase_alunos):
     st.markdown("## 📊 Análise de Dados e Notas")
 
@@ -169,11 +187,19 @@ def mostrar_tela_analise(supabase, supabase_alunos):
             df_res = pd.DataFrame(columns=["aluno_id", "questao_id", "acertou", "prova_id", "pontos"])
             df_notas = pd.DataFrame(columns=["aluno_id", "total_acertos", "nota_final"])
 
-        if eh_recuperacao(prova_obj) and not df_rec.empty:
-            df_notas = pd.merge(df_notas, df_rec, on="aluno_id", how="outer")
+        if eh_recuperacao(prova_obj):
+            df_calc_rec = recalcular_notas_recuperacao_analise(df_res, valor_q)
+            if not df_rec.empty:
+                df_notas = pd.merge(df_notas, df_rec, on="aluno_id", how="outer")
+            if not df_calc_rec.empty:
+                df_notas = pd.merge(df_notas, df_calc_rec, on="aluno_id", how="outer")
             df_notas["total_acertos"] = df_notas["total_acertos"].fillna(0).astype(int)
-            df_notas["nota_final"] = df_notas["nota_rec"].combine_first(df_notas["nota_final"])
-            df_notas = df_notas.drop(columns=["nota_rec"])
+            if "nota_calculada" in df_notas.columns:
+                df_notas["nota_final"] = df_notas["nota_calculada"].combine_first(df_notas["nota_final"])
+                df_notas = df_notas.drop(columns=["nota_calculada"])
+            if "nota_rec" in df_notas.columns:
+                df_notas["nota_final"] = df_notas["nota_final"].combine_first(df_notas["nota_rec"])
+                df_notas = df_notas.drop(columns=["nota_rec"])
 
         # Criação do dataframe principal (df_final agora existe ANTES dos gráficos)
         df_final = pd.merge(df_alunos, df_notas, left_on="id", right_on="aluno_id", how="right")
