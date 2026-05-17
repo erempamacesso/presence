@@ -29,6 +29,19 @@ def validar_nota(valor):
     except (ValueError, TypeError):
         return 0.0
 
+def termos_unidade_rec(unidade):
+    numero = str(unidade)[:1]
+    return [
+        f"{numero}º BIMESTRE", f"{numero}Âº BIMESTRE",
+        f"{numero}º TRIMESTRE", f"{numero}Âº TRIMESTRE",
+        f"{numero} BIMESTRE", f"{numero} TRIMESTRE",
+    ]
+
+
+def titulo_tem_unidade_rec(titulo, unidade):
+    titulo_norm = str(titulo or "").upper()
+    return any(termo in titulo_norm for termo in termos_unidade_rec(unidade))
+
 def buscar_todas_notas(db_provas, aluno_id, unidade):
     at1, at2, at3, at4, at5, n2 = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
     try:
@@ -53,28 +66,36 @@ def buscar_todas_notas(db_provas, aluno_id, unidade):
 def buscar_notas_recuperacao(db_provas, aluno_id, unidade):
     rec = 0.0
     try:
-        unidade_str = f"{unidade}º"
-        res_p = db_provas.table("modelos_prova").select("id, valor_questao")\
-            .ilike("titulo", f"%{unidade_str}%")\
-            .ilike("titulo", "%RECUPERAÇÃO%").execute()
-            
-        if res_p.data:
-            mapa_valores = {p['id']: float(p.get('valor_questao') or 0.0) for p in res_p.data}
-            prova_ids = list(mapa_valores.keys())
-            
-            res_r = db_provas.table("resultados_provas")\
-                .select("prova_id")\
-                .eq("aluno_id", aluno_id)\
-                .in_("prova_id", prova_ids)\
-                .eq("acertou", True).execute()
-            
-            if res_r.data:
-                for registro in res_r.data:
-                    p_id = registro['prova_id']
-                    rec += mapa_valores.get(p_id, 0.0)
+        res_p = (
+            db_provas.table("modelos_prova")
+            .select("id, valor_questao, titulo")
+            .eq("recuperacao", True)
+            .execute()
+        )
+
+        provas_rec = [p for p in (res_p.data or []) if titulo_tem_unidade_rec(p.get('titulo'), unidade)]
+        if not provas_rec:
+            return 0.0
+
+        mapa_valores = {str(p['id']): float(p.get('valor_questao') or 0.0) for p in provas_rec}
+        prova_ids = list(mapa_valores.keys())
+
+        res_r = (
+            db_provas.table("resultados_provas")
+            .select("prova_id")
+            .eq("aluno_id", str(aluno_id))
+            .in_("prova_id", prova_ids)
+            .eq("acertou", True)
+            .execute()
+        )
+
+        if res_r.data:
+            for registro in res_r.data:
+                p_id = str(registro['prova_id'])
+                rec += mapa_valores.get(p_id, 0.0)
     except:
         pass
-    return rec
+    return arredondar_siepe(rec)
 
 def mostrar_tela_desempenho(db_alunos, db_provas):
     st.subheader("📊 Meu Desempenho Acadêmico")

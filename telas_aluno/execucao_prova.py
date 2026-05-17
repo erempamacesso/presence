@@ -76,8 +76,67 @@ def campo_hora_prova(prova, candidatos):
             return campo
     return None
 
+def valor_booleano(valor):
+    if valor is True:
+        return True
+    if isinstance(valor, str):
+        return valor.strip().lower() in ["true", "1", "sim", "s", "yes"]
+    return False
+
+
+def unidade_da_prova(prova):
+    unidade = prova.get('unidade')
+    if unidade:
+        return str(unidade)
+
+    titulo = str(prova.get('titulo', '')).upper()
+    referencias = [
+        ("4", ["4º BIMESTRE", "4Âº BIMESTRE", "4º TRIMESTRE", "4Âº TRIMESTRE", "4 BIMESTRE", "4 TRIMESTRE"]),
+        ("3", ["3º BIMESTRE", "3Âº BIMESTRE", "3º TRIMESTRE", "3Âº TRIMESTRE", "3 BIMESTRE", "3 TRIMESTRE"]),
+        ("2", ["2º BIMESTRE", "2Âº BIMESTRE", "2º TRIMESTRE", "2Âº TRIMESTRE", "2 BIMESTRE", "2 TRIMESTRE"]),
+        ("1", ["1º BIMESTRE", "1Âº BIMESTRE", "1º TRIMESTRE", "1Âº TRIMESTRE", "1 BIMESTRE", "1 TRIMESTRE"]),
+    ]
+    for numero, termos in referencias:
+        if any(termo in titulo for termo in termos):
+            return f"{numero}º Bimestre"
+    return "1º Bimestre"
+
+
+def salvar_nota_recuperacao(supabase, aluno, prova, nota_rec):
+    aluno_id = str(aluno['id'])
+    unidade_nota = unidade_da_prova(prova)
+    turma = str(aluno.get('turma', '')).strip()
+
+    dados_rec = {"rec": float(nota_rec)}
+    if turma:
+        dados_rec["turma"] = turma
+
+    chk_nota = (
+        supabase.table("notas_atividades")
+        .select("id, aluno_id")
+        .eq("aluno_id", aluno_id)
+        .eq("unidade", unidade_nota)
+        .limit(1)
+        .execute()
+    )
+
+    if chk_nota.data:
+        (
+            supabase.table("notas_atividades")
+            .update(dados_rec)
+            .eq("aluno_id", aluno_id)
+            .eq("unidade", unidade_nota)
+            .execute()
+        )
+    else:
+        dados_rec.update({
+            "aluno_id": aluno_id,
+            "unidade": unidade_nota,
+        })
+        supabase.table("notas_atividades").insert(dados_rec).execute()
+
 def prova_disponivel_agora(prova):
-    if not prova.get("ativa", True):
+    if not valor_booleano(prova.get("ativa", True)) and prova.get("ativa") is not None:
         return False
 
     agora = datetime.now()
@@ -152,7 +211,7 @@ def render_instrucoes(supabase):
     st.title(f"📝 {prova['titulo']}")
 
     # --- 🛡️ BARREIRA DE ACESSO POR MÉDIA (EXCLUSIVO PARA RECUPERAÇÃO) ---
-    if prova.get('recuperacao') == True:
+    if valor_booleano(prova.get('recuperacao')):
         with st.spinner("Validando sua média para esta recuperação..."):
             res_notas = supabase.table("notas_atividades").select("*").eq("aluno_id", aluno_id).execute()
             
@@ -318,47 +377,11 @@ def finalizar_prova(supabase):
             # =========================================================================
             # 🚀 PROCESSAMENTO INTEGRAL E ULTRA PROTEGIDO DA RECUPERAÇÃO
             # =========================================================================
-            if prova.get('recuperacao') == True:
+            if valor_booleano(prova.get('recuperacao')):
                 acertos = sum(1 for d in dados_insercao if d.get("acertou") == True)
                 valor_q = float(prova.get('valor_questao') or 0.5)
                 nota_rec = arredondar_siepe(acertos * valor_q)
-                
-                unidade_nota = prova.get('unidade')
-                if not unidade_nota:
-                    unidade_nota = "1º Bimestre"
-                    titulo_prova = str(prova.get('titulo', '')).upper()
-                    if "2º" in titulo_prova:
-                        unidade_nota = "2º Bimestre"
-                    elif "3º" in titulo_prova:
-                        unidade_nota = "3º Bimestre"
-                    elif "4º" in titulo_prova:
-                        unidade_nota = "4º Bimestre"
-                
-                # 🛡️ CHECAGEM CIRÚRGICA: Vê se o aluno já tem registro de nota neste bimestre
-                chk_nota = supabase.table("notas_atividades")\
-                    .select("aluno_id")\
-                    .eq("aluno_id", str(aluno['id']))\
-                    .eq("unidade", unidade_nota)\
-                    .execute()
-                
-                if chk_nota.data:
-                    # O aluno JÁ POSSUI notas gravadas. Usamos UPDATE para alterar APENAS o campo 'rec'
-                    # e garantir que 'at1', 'at2', 'at3', 'at4', 'at5' e 'prova' fiquem INTOCADOS!
-                    supabase.table("notas_atividades")\
-                        .update({"rec": nota_rec})\
-                        .eq("aluno_id", str(aluno['id']))\
-                        .eq("unidade", unidade_nota)\
-                        .execute()
-                else:
-                    # Se o aluno estranhamente não possuir linha nenhuma, insere o registro base
-                    dados_inserir = {
-                        "aluno_id": str(aluno['id']),
-                        "unidade": unidade_nota,
-                        "rec": nota_rec
-                    }
-                    if 'turma' in aluno:
-                        dados_inserir["turma"] = str(aluno['turma'])
-                    supabase.table("notas_atividades").insert(dados_inserir).execute()
+                salvar_nota_recuperacao(supabase, aluno, prova, nota_rec)
             # =========================================================================
             
             # Limpa dados da prova da sessão

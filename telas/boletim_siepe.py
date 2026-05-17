@@ -82,6 +82,105 @@ def estilo_medias(valor):
         return "color:#9CA3AF;"
 
 # =========================================================
+# HELPERS DE RECUPERACAO
+# =========================================================
+
+def normalizar_id(valor):
+    return str(valor).strip() if valor is not None else ""
+
+
+def termos_unidade(unidade_label):
+    numero = str(unidade_label)[:1]
+    return [
+        f"{numero}º BIMESTRE", f"{numero}Âº BIMESTRE",
+        f"{numero}º TRIMESTRE", f"{numero}Âº TRIMESTRE",
+        f"{numero} BIMESTRE", f"{numero} TRIMESTRE",
+    ]
+
+
+def titulo_tem_unidade(titulo, unidade_label):
+    titulo_norm = str(titulo or "").upper()
+    return any(termo in titulo_norm for termo in termos_unidade(unidade_label))
+
+
+def buscar_resultados_por_provas(supabase, prova_ids, somente_acertos=False):
+    ids_texto = [normalizar_id(pid) for pid in prova_ids if normalizar_id(pid)]
+    if not ids_texto:
+        return []
+
+    query = supabase.table("resultados_provas").select("aluno_id, prova_id, acertou")
+    query = query.in_("prova_id", ids_texto)
+    if somente_acertos:
+        query = query.eq("acertou", True)
+    res = query.execute()
+    return res.data or []
+
+
+def calcular_recuperacoes(supabase, ano_ref, unidade_label=None):
+    provas = (
+        supabase.table("modelos_prova")
+        .select("id, valor_questao, titulo")
+        .eq("recuperacao", True)
+        .ilike("titulo", f"%{ano_ref}%")
+        .execute()
+    )
+
+    if not provas.data:
+        return {}
+
+    provas_rec = provas.data
+    if unidade_label:
+        provas_rec = [p for p in provas_rec if titulo_tem_unidade(p.get("titulo"), unidade_label)]
+
+    if not provas_rec:
+        return {}
+
+    mapa_valores = {
+        normalizar_id(p["id"]): float(p.get("valor_questao") or 0.5)
+        for p in provas_rec
+    }
+
+    resultados = buscar_resultados_por_provas(supabase, list(mapa_valores.keys()), somente_acertos=True)
+    if not resultados:
+        return {}
+
+    df = pd.DataFrame(resultados)
+    df["aluno_id"] = df["aluno_id"].astype(str)
+    df["prova_id"] = df["prova_id"].astype(str)
+    df["valor"] = df["prova_id"].map(mapa_valores).fillna(0.0)
+
+    notas = df.groupby("aluno_id")["valor"].sum().reset_index()
+    notas["nota"] = notas["valor"].apply(arredondar_siepe)
+    return dict(zip(notas["aluno_id"].astype(str), notas["nota"]))
+
+
+def sincronizar_recuperacoes_turma(supabase, supabase_alunos, turma, unidade_label):
+    ano_ref = "2º ano" if "2" in str(turma) else "3º ano"
+    mapa_rec = calcular_recuperacoes(supabase, ano_ref, unidade_label)
+    if not mapa_rec:
+        return 0
+
+    alunos = supabase_alunos.table("alunos").select("id, turma").eq("turma", turma).execute()
+    ids_turma = {normalizar_id(a.get("id")) for a in (alunos.data or [])}
+
+    dados = []
+    for aluno_id, nota in mapa_rec.items():
+        if aluno_id not in ids_turma:
+            continue
+        dados.append({
+            "aluno_id": aluno_id,
+            "turma": turma,
+            "unidade": unidade_label,
+            "rec": float(nota) if nota is not None else None,
+        })
+
+    if not dados:
+        return 0
+
+    supabase.table("notas_atividades").upsert(dados, on_conflict="aluno_id, unidade").execute()
+    return len(dados)
+
+# =========================================================
 # BUSCAS AUTOMÁTICAS (SIMULADOS E REC)
 # =========================================================
 
@@ -124,51 +223,9 @@ def buscar_simulado(supabase, ano_ref, termo, limite=4.0):
         st.warning(f"Erro simulados: {erro}")
         return {}
 
-def buscar_rec_auto(supabase, ano_ref):
+def buscar_rec_auto(supabase, ano_ref, unidade_label=None):
     try:
-        provas = (
-            supabase.table("modelos_prova")
-            .select("id, valor_questao, titulo")
-            .eq("recuperacao", True)
-            .ilike("titulo", f"%{ano_ref}%")
-            .execute()
-        )
-
-        if not provas.data:
-            return {}
-
-        prova_ids = [p["id"] for p in provas.data]
-
-        resultados = (
-            supabase.table("resultados_provas")
-            .select("aluno_id, prova_id, acertou")
-            .in_("prova_id", prova_ids)
-            .eq("acertou", True)
-            .execute()
-        )
-
-        if not resultados.data:
-            return {}
-
-        df = pd.DataFrame(resultados.data)
-
-        mapa_valores = {
-            p["id"]: float(p.get("valor_questao") or 0.5)
-            for p in provas.data
-        }
-
-        df["valor"] = df["prova_id"].map(mapa_valores)
-
-        notas = (
-            df.groupby("aluno_id")["valor"]
-            .sum()
-            .reset_index()
-        )
-
-        notas["nota"] = notas["valor"].apply(arredondar_siepe)
-
-        return dict(zip(notas["aluno_id"].astype(str), notas["nota"]))
-
+        return calcular_recuperacoes(supabase, ano_ref, unidade_label)
     except Exception as erro:
         st.warning(f"Erro REC: {erro}")
         return {}
@@ -235,7 +292,7 @@ def carregar_dados_turma(supabase, supabase_alunos, turma, unidade_label):
         mapas["N2"][aid] = item.get("prova")
         mapas["Rec"][aid] = item.get("rec")
 
-    mapa_rec = buscar_rec_auto(supabase, ano_ref)
+    mapa_rec = buscar_rec_auto(supabase, ano_ref, unidade_label)
 
     df = df_alunos[["aluno_id", "nome"]].copy()
     df["AT1"] = df["aluno_id"].astype(str).map(mapa_at1)
@@ -361,6 +418,18 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
     st.session_state[state_key] = editado
 
     st.divider()
+    if st.button("🔄 Sincronizar recuperações no banco", use_container_width=True):
+        try:
+            qtd = sincronizar_recuperacoes_turma(supabase, supabase_alunos, turma, unidade_sel)
+            st.session_state.pop(state_key, None)
+            if qtd:
+                st.success(f"Recuperações sincronizadas para {qtd} aluno(s).")
+            else:
+                st.info("Nenhuma recuperação encontrada para sincronizar nesta turma/bimestre.")
+            st.rerun()
+        except Exception as erro:
+            st.error(f"Erro ao sincronizar recuperações: {erro}")
+
     c1, c2, c3 = st.columns(3)
 
     with c1:
