@@ -340,10 +340,10 @@ def mostrar_tela_boletim(supabase, supabase_alunos):
     st.title("📝 Registro de Notas")
 
     st.info("""
-    AT1 e AT2 → Simulados  
-    AT3 até AT5 → Atividades  
-    N2 → Prova  
-    REC → Recuperação automática
+    N1 = soma de AT1 + AT2 + AT3 + AT4 + AT5
+    N2 = nota da prova importada pelo CSV
+    Média = média aritmética entre N1 e N2
+    REC = nota da recuperação
     """)
 
     alunos = (

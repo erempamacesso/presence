@@ -60,13 +60,69 @@ def buscar_resultados_da_prova(supabase, prova_id_original):
     return unicos
 
 
+
+
+def unidade_da_prova_analise(prova):
+    titulo = str(prova.get("titulo", "")).upper()
+    referencias = [
+        ("4", ["4º BIMESTRE", "4Âº BIMESTRE", "4º TRIMESTRE", "4Âº TRIMESTRE", "4 BIMESTRE", "4 TRIMESTRE"]),
+        ("3", ["3º BIMESTRE", "3Âº BIMESTRE", "3º TRIMESTRE", "3Âº TRIMESTRE", "3 BIMESTRE", "3 TRIMESTRE"]),
+        ("2", ["2º BIMESTRE", "2Âº BIMESTRE", "2º TRIMESTRE", "2Âº TRIMESTRE", "2 BIMESTRE", "2 TRIMESTRE"]),
+        ("1", ["1º BIMESTRE", "1Âº BIMESTRE", "1º TRIMESTRE", "1Âº TRIMESTRE", "1 BIMESTRE", "1 TRIMESTRE"]),
+    ]
+    for numero, termos in referencias:
+        if any(termo in titulo for termo in termos):
+            return f"{numero}º Bimestre"
+    return "1º Bimestre"
+
+
+def prefixo_turma_da_prova(prova):
+    serie = str(prova.get("serie", ""))
+    titulo = str(prova.get("titulo", ""))
+    base = serie or titulo
+    if "3" in base:
+        return "3"
+    if "2" in base:
+        return "2"
+    if "1" in base:
+        return "1"
+    return ""
+
+
+def carregar_notas_recuperacao_consolidadas(supabase, prova):
+    unidade = unidade_da_prova_analise(prova)
+    prefixo_turma = prefixo_turma_da_prova(prova)
+
+    query = supabase.table("notas_atividades").select("aluno_id, turma, rec").eq("unidade", unidade)
+    if prefixo_turma:
+        query = query.ilike("turma", f"{prefixo_turma}%")
+    res = query.execute()
+
+    dados = []
+    for item in (res.data or []):
+        rec = item.get("rec")
+        if rec is None:
+            continue
+        try:
+            rec_float = float(rec)
+        except (TypeError, ValueError):
+            continue
+        if rec_float <= 0:
+            continue
+        dados.append({
+            "aluno_id": str(item.get("aluno_id")),
+            "turma_rec": item.get("turma"),
+            "nota_rec": rec_float,
+        })
+    return pd.DataFrame(dados)
+
 def mostrar_tela_analise(supabase, supabase_alunos):
     st.markdown("## 📊 Análise de Dados e Notas")
 
     try:
         # 1. BUSCA DE DADOS MESTRE (Modelos e Alunos)
         res_p_modelos = supabase.table("modelos_prova") \
-            .select("id, titulo, valor_questao, recuperacao") \
+            .select("id, titulo, valor_questao, recuperacao, serie") \
             .order("id", desc=True) \
             .execute()
         res_alunos_base = supabase_alunos.table("alunos").select("id, turma, nome").execute()
@@ -91,30 +147,41 @@ def mostrar_tela_analise(supabase, supabase_alunos):
 
         # 2. BUSCA DE RESULTADOS (Cálculo antes de mostrar qualquer gráfico)
         resultados_prova = buscar_resultados_da_prova(supabase, id_prova)
+        df_rec = carregar_notas_recuperacao_consolidadas(supabase, prova_obj) if eh_recuperacao(prova_obj) else pd.DataFrame()
 
-        if not resultados_prova or not res_alunos_base.data:
+        if (not resultados_prova and df_rec.empty) or not res_alunos_base.data:
             st.info("ℹ️ Ainda não existem envios para esta prova.")
             return
 
         # --- PROCESSAMENTO DE DADOS (O Coração do Dashboard) ---
-        df_res = pd.DataFrame(resultados_prova)
         df_alunos = pd.DataFrame(res_alunos_base.data)
-
-        # Ajuste de tipos para o Merge
-        df_res["aluno_id"] = df_res["aluno_id"].astype(str)
-        df_res["questao_id"] = df_res["questao_id"].astype(str)
         df_alunos["id"] = df_alunos["id"].astype(str)
-
-        # Cálculo de pontos e notas
         valor_q = float(prova_obj.get("valor_questao", 1.0) or 1.0)
-        df_res["pontos"] = df_res["acertou"].apply(lambda x: 1 if x is True else 0)
 
-        # Agrupa por aluno para somar acertos
-        df_notas = df_res.groupby("aluno_id").agg(total_acertos=("pontos", "sum")).reset_index()
-        df_notas["nota_final"] = (df_notas["total_acertos"] * valor_q).apply(arredondar_siepe)
+        if resultados_prova:
+            df_res = pd.DataFrame(resultados_prova)
+            df_res["aluno_id"] = df_res["aluno_id"].astype(str)
+            df_res["questao_id"] = df_res["questao_id"].astype(str)
+            df_res["pontos"] = df_res["acertou"].apply(lambda x: 1 if x is True else 0)
+            df_notas = df_res.groupby("aluno_id").agg(total_acertos=("pontos", "sum")).reset_index()
+            df_notas["nota_final"] = (df_notas["total_acertos"] * valor_q).apply(arredondar_siepe)
+        else:
+            df_res = pd.DataFrame(columns=["aluno_id", "questao_id", "acertou", "prova_id", "pontos"])
+            df_notas = pd.DataFrame(columns=["aluno_id", "total_acertos", "nota_final"])
+
+        if eh_recuperacao(prova_obj) and not df_rec.empty:
+            df_notas = pd.merge(df_notas, df_rec, on="aluno_id", how="outer")
+            df_notas["total_acertos"] = df_notas["total_acertos"].fillna(0).astype(int)
+            df_notas["nota_final"] = df_notas["nota_rec"].combine_first(df_notas["nota_final"])
+            df_notas = df_notas.drop(columns=["nota_rec"])
 
         # Criação do dataframe principal (df_final agora existe ANTES dos gráficos)
-        df_final = pd.merge(df_alunos, df_notas, left_on="id", right_on="aluno_id")
+        df_final = pd.merge(df_alunos, df_notas, left_on="id", right_on="aluno_id", how="right")
+        if "turma_rec" in df_final.columns:
+            df_final["turma"] = df_final["turma"].fillna(df_final["turma_rec"])
+            df_final = df_final.drop(columns=["turma_rec"])
+        df_final["nome"] = df_final["nome"].fillna("Aluno ID " + df_final["aluno_id"].astype(str))
+        df_final["turma"] = df_final["turma"].fillna("Sem turma")
 
         if df_final.empty:
             st.warning("Não foi possível cruzar os dados dos alunos com os resultados.")
@@ -214,7 +281,7 @@ def mostrar_tela_analise(supabase, supabase_alunos):
                     "nome": "Estudante",
                     "turma": "Turma",
                     "total_acertos": "Acertos",
-                    "nota_final": st.column_config.NumberColumn("Nota Final (SIEPE)", format="%.1f")
+                    "nota_final": st.column_config.NumberColumn("Nota da Atividade", format="%.1f")
                 }
             )
 
