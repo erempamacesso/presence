@@ -126,37 +126,49 @@ def buscar_simulado(supabase, ano_ref, termo, limite=4.0):
 
 def buscar_rec_auto(supabase, ano_ref):
     try:
-        # Busca na tabela correta 'modelos_prova' se é recuperação
-        prova = (
+        provas = (
             supabase.table("modelos_prova")
-            .select("id, valor_questao")
+            .select("id, valor_questao, titulo")
             .eq("recuperacao", True)
             .ilike("titulo", f"%{ano_ref}%")
             .execute()
         )
-        if not prova.data:
+
+        if not provas.data:
             return {}
 
-        prova = prova.data[0]
+        prova_ids = [p["id"] for p in provas.data]
+
         resultados = (
             supabase.table("resultados_provas")
-            .select("aluno_id, acertou")
-            .eq("prova_id", prova["id"])
+            .select("aluno_id, prova_id, acertou")
+            .in_("prova_id", prova_ids)
+            .eq("acertou", True)
             .execute()
         )
+
         if not resultados.data:
             return {}
 
         df = pd.DataFrame(resultados.data)
-        df = (
-            df[df["acertou"] == True]
-            .groupby("aluno_id")
-            .size()
-            .reset_index(name="acertos")
+
+        mapa_valores = {
+            p["id"]: float(p.get("valor_questao") or 0.5)
+            for p in provas.data
+        }
+
+        df["valor"] = df["prova_id"].map(mapa_valores)
+
+        notas = (
+            df.groupby("aluno_id")["valor"]
+            .sum()
+            .reset_index()
         )
-        valor_q = float(prova.get("valor_questao") or 0.5)
-        df["nota"] = (df["acertos"] * valor_q).apply(arredondar_siepe)
-        return dict(zip(df["aluno_id"].astype(str), df["nota"]))
+
+        notas["nota"] = notas["valor"].apply(arredondar_siepe)
+
+        return dict(zip(notas["aluno_id"].astype(str), notas["nota"]))
+
     except Exception as erro:
         st.warning(f"Erro REC: {erro}")
         return {}
