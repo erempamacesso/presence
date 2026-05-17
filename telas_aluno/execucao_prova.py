@@ -9,7 +9,7 @@ import math
 # --- FUNÇÃO OFICIAL DE ARREDONDAMENTO SIEPE ---
 def arredondar_siepe(nota):
     """
-    Regra de arredondamento oficial do SIEPE:
+    Regra de arredondamento:
     ,0 e ,1 -> ,0
     ,2 a ,6 -> ,5
     ,7 a ,9 -> +1,0 (próximo número inteiro)
@@ -25,7 +25,7 @@ def arredondar_siepe(nota):
         return float(inteiro)
     elif decimal in [2, 3, 4, 5, 6]:
         return float(inteiro + 0.5)
-    else:
+    else: # 7, 8, 9, 10
         return float(inteiro + 1)
 
 def limpar_html(html):
@@ -64,13 +64,13 @@ def render_instrucoes(supabase):
         return
 
     # ==========================================================
-    # --- 🛡️ TRAVA DE REENTRADA TOTALMENTE BLINDADA ---
+    # 🛡️ TRAVA DE REEXECUÇÃO CORRIGIDA E BLINDADA
     # ==========================================================
     aluno_id = str(aluno['id'])
     prova_id = str(prova['id'])
     
-    with st.spinner("Verificando status da avaliação..."):
-        # Buscamos 'aluno_id' em vez de 'id' para evitar falhas caso a coluna id tenha outro nome
+    with st.spinner("Verificando se você já realizou esta atividade..."):
+        # Selecionamos a coluna 'aluno_id' que sabemos com 100% de certeza que existe na tabela
         res_check = supabase.table("resultados_provas")\
             .select("aluno_id")\
             .eq("aluno_id", aluno_id)\
@@ -79,18 +79,18 @@ def render_instrucoes(supabase):
 
     if res_check.data:
         st.error("### 🛑 Avaliação já Concluída")
-        st.warning("Você já realizou esta prova e suas respostas foram enviadas. Não é permitido refazer a avaliação.")
-        if st.button("⬅️ Voltar para Atividades", use_container_width=True):
+        st.warning("Você já realizou esta prova e suas respostas foram salvas no sistema. Não é permitido refazer a avaliação.")
+        if st.button("⬅️ Voltar para a Lista de Atividades", use_container_width=True):
             st.session_state.etapa = "ante_sala"
             st.rerun()
-        return 
+        return # Trava completamente a renderização e o botão de iniciar abaixo
     # ==========================================================
 
     st.title(f"📝 {prova['titulo']}")
 
-    # --- 🛡️ BARREIRA DE ACESSO PARA RECUPERAÇÃO ---
+    # --- 🛡️ BARREIRA DE ACESSO POR MÉDIA (EXCLUSIVO PARA RECUPERAÇÃO) ---
     if prova.get('recuperacao') == True:
-        with st.spinner("Validando seu acesso para esta recuperação..."):
+        with st.spinner("Validando sua média para esta recuperação..."):
             res_notas = supabase.table("notas_atividades").select("*").eq("aluno_id", aluno_id).execute()
             
             media_atual = 0.0
@@ -111,8 +111,9 @@ def render_instrucoes(supabase):
                     st.rerun()
                 st.stop()
             else:
-                st.success(f"✅ Recuperação Liberada! (Sua média: {media_atual:.1f})")
+                st.success(f"✅ Recuperação Liberada! (Sua média atual é: {media_atual:.1f})")
 
+    # --- INSTRUÇÕES PADRÃO ---
     st.info("Por favor, leia as instruções abaixo antes de começar.")
     
     col1, col2 = st.columns(2)
@@ -128,7 +129,7 @@ def render_instrucoes(supabase):
         st.markdown("""
         **Orientações Importantes:**
         - Não atualize a página durante a prova.
-        - O cronômetro inicia ao clicar do botão abaixo.
+        - O cronômetro inicia ao clicar no botão abaixo.
         - Verifique sua conexão com a internet.
         """)
 
@@ -221,7 +222,7 @@ def render_prova(supabase):
         finalizar_prova(supabase)
 
 def finalizar_prova(supabase):
-    """Processa as respostas e salva no banco de dados sem quebrar registros existentes."""
+    """Processa as respostas e salva no banco de dados com segurança cirúrgica."""
     prova = st.session_state.prova_config
     aluno = st.session_state.aluno
     questoes = st.session_state.questoes_carregadas
@@ -248,11 +249,11 @@ def finalizar_prova(supabase):
             })
         
         try:
-            # 1. Salva os resultados detalhados normalmente
+            # 1. Salva os resultados das questões individuais
             supabase.table("resultados_provas").insert(dados_insercao).execute()
             
             # =========================================================================
-            # 🚀 SALVAMENTO AUTOMÁTICO PROTEGIDO (NÃO GERA CORES OU ZERA COLUNAS)
+            # 🚀 PROCESSAMENTO INTEGRAL E ULTRA PROTEGIDO DA RECUPERAÇÃO
             # =========================================================================
             if prova.get('recuperacao') == True:
                 acertos = sum(1 for d in dados_insercao if d.get("acertou") == True)
@@ -270,7 +271,7 @@ def finalizar_prova(supabase):
                     elif "4º" in titulo_prova:
                         unidade_nota = "4º Bimestre"
                 
-                # 🛡️ PASSO CHAVE: Verifica localmente se a linha do aluno já existe no bimestre
+                # 🛡️ CHECAGEM CIRÚRGICA: Vê se o aluno já tem registro de nota neste bimestre
                 chk_nota = supabase.table("notas_atividades")\
                     .select("aluno_id")\
                     .eq("aluno_id", str(aluno['id']))\
@@ -278,14 +279,15 @@ def finalizar_prova(supabase):
                     .execute()
                 
                 if chk_nota.data:
-                    # Se a linha EXISTE, fazemos UPDATE. O update altera APENAS a coluna 'rec' e preserva as outras intactas!
+                    # O aluno JÁ POSSUI notas gravadas. Usamos UPDATE para alterar APENAS o campo 'rec'
+                    # e garantir que 'at1', 'at2', 'at3', 'at4', 'at5' e 'prova' fiquem INTOCADOS!
                     supabase.table("notas_atividades")\
                         .update({"rec": nota_rec})\
                         .eq("aluno_id", str(aluno['id']))\
                         .eq("unidade", unidade_nota)\
                         .execute()
                 else:
-                    # Se NÃO existe, insere o registro inicial básico
+                    # Se o aluno estranhamente não possuir linha nenhuma, insere o registro base
                     dados_inserir = {
                         "aluno_id": str(aluno['id']),
                         "unidade": unidade_nota,
