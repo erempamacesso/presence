@@ -5,6 +5,7 @@ import re
 import random
 import ast
 import math
+from datetime import time as dt_time
 
 # --- FUNÇÃO OFICIAL DE ARREDONDAMENTO SIEPE ---
 def arredondar_siepe(nota):
@@ -51,6 +52,51 @@ def extrair_texto_alternativa(conteudo):
                 pass
     return str(conteudo)
 
+def converter_data_prova(data_val):
+    if not data_val or str(data_val).lower() == "none":
+        return None
+    try:
+        return datetime.strptime(str(data_val)[:10], "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+def converter_hora_prova(hora_val):
+    if not hora_val or str(hora_val).lower() == "none":
+        return None
+    for formato in ("%H:%M:%S", "%H:%M"):
+        try:
+            return datetime.strptime(str(hora_val)[:8], formato).time()
+        except Exception:
+            pass
+    return None
+
+def campo_hora_prova(prova, candidatos):
+    for campo in candidatos:
+        if campo in prova:
+            return campo
+    return None
+
+def prova_disponivel_agora(prova):
+    if not prova.get("ativa", True):
+        return False
+
+    agora = datetime.now()
+    data_inicio = converter_data_prova(prova.get("data_inicio"))
+    data_fim = converter_data_prova(prova.get("data_limite"))
+    campo_inicio = campo_hora_prova(prova, ["hora_inicio", "horario_inicio"])
+    campo_fim = campo_hora_prova(
+        prova,
+        ["hora_limite", "horario_limite", "hora_fim", "horario_fim", "hora_termino", "horario_termino"]
+    )
+    hora_inicio = converter_hora_prova(prova.get(campo_inicio)) if campo_inicio else dt_time(0, 0)
+    hora_fim = converter_hora_prova(prova.get(campo_fim)) if campo_fim else dt_time(23, 59, 59)
+
+    if data_inicio and agora < datetime.combine(data_inicio, hora_inicio):
+        return False
+    if data_fim and agora > datetime.combine(data_fim, hora_fim):
+        return False
+    return True
+
 def render_instrucoes(supabase):
     """Tela de orientações antes do início da prova com barreira de nota."""
     prova = st.session_state.get('prova_config')
@@ -59,6 +105,23 @@ def render_instrucoes(supabase):
     if not prova or not aluno:
         st.error("⚠️ Erro ao carregar configurações da prova ou dados do aluno.")
         if st.button("Voltar"):
+            st.session_state.etapa = "ante_sala"
+            st.rerun()
+        return
+
+    try:
+        res_prova_atual = supabase.table("modelos_prova").select("*").eq("id", prova["id"]).limit(1).execute()
+        if res_prova_atual.data:
+            prova = res_prova_atual.data[0]
+            st.session_state.prova_config = prova
+    except Exception:
+        pass
+
+    if not prova_disponivel_agora(prova):
+        st.error("### 🔒 Prova indisponível")
+        st.warning("Esta prova foi desativada ou o horário programado para acesso já encerrou.")
+        if st.button("⬅️ Voltar para a Lista de Atividades", use_container_width=True):
+            st.session_state.prova_config = None
             st.session_state.etapa = "ante_sala"
             st.rerun()
         return

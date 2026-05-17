@@ -1,5 +1,50 @@
 import streamlit as st
+from datetime import datetime, time as dt_time
 from telas_aluno.desempenho import mostrar_tela_desempenho
+
+def _converter_data(data_val):
+    if not data_val or str(data_val).lower() == "none":
+        return None
+    try:
+        return datetime.strptime(str(data_val)[:10], "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+def _converter_hora(hora_val):
+    if not hora_val or str(hora_val).lower() == "none":
+        return None
+    for formato in ("%H:%M:%S", "%H:%M"):
+        try:
+            return datetime.strptime(str(hora_val)[:8], formato).time()
+        except Exception:
+            pass
+    return None
+
+def _campo_existente(prova, candidatos):
+    for campo in candidatos:
+        if campo in prova:
+            return campo
+    return None
+
+def _prova_disponivel_agora(prova):
+    agora = datetime.now()
+    data_inicio = _converter_data(prova.get("data_inicio"))
+    data_fim = _converter_data(prova.get("data_limite"))
+
+    campo_hora_inicio = _campo_existente(prova, ["hora_inicio", "horario_inicio"])
+    campo_hora_fim = _campo_existente(
+        prova,
+        ["hora_limite", "horario_limite", "hora_fim", "horario_fim", "hora_termino", "horario_termino"]
+    )
+
+    hora_inicio = _converter_hora(prova.get(campo_hora_inicio)) if campo_hora_inicio else dt_time(0, 0)
+    hora_fim = _converter_hora(prova.get(campo_hora_fim)) if campo_hora_fim else dt_time(23, 59, 59)
+
+    if data_inicio and agora < datetime.combine(data_inicio, hora_inicio):
+        return False
+    if data_fim and agora > datetime.combine(data_fim, hora_fim):
+        return False
+    return True
 
 def mostrar_tela_dashboard(db_alunos, db_provas):
     aluno = st.session_state.aluno
@@ -150,8 +195,10 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
         try:
             res = db_provas.table("modelos_prova").select("*").eq("serie", serie_aluno).eq("ativa", True).execute()
             
-            if res.data:
-                for prova in res.data:
+            provas_disponiveis = [prova for prova in (res.data or []) if _prova_disponivel_agora(prova)]
+
+            if provas_disponiveis:
+                for prova in provas_disponiveis:
                     with st.container(border=True):
                         st.markdown(f"""
                             <div style="padding: 5px;">
