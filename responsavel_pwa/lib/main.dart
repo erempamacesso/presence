@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -126,19 +128,57 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   final _controller = TextEditingController();
+  Timer? _debounce;
+  List<Map<String, dynamic>> _resultados = [];
   bool _loading = false;
+  bool _buscando = false;
   String? _erro;
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _controller.dispose();
     super.dispose();
   }
 
+  void _onBuscaChanged(String value) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 450), () {
+      _buscarPorNome(value);
+    });
+  }
+
+  Future<void> _buscarPorNome(String value) async {
+    final termo = value.trim();
+    final apenasNumeros = termo.replaceAll(RegExp(r'\D'), '');
+
+    if (termo.length < 3 || apenasNumeros == termo) {
+      if (mounted) setState(() => _resultados = []);
+      return;
+    }
+
+    setState(() {
+      _buscando = true;
+      _erro = null;
+    });
+
+    try {
+      final alunos = await _buscarAlunosPorInicioDoNome(termo);
+      if (mounted) setState(() => _resultados = alunos);
+    } catch (error) {
+      if (mounted) setState(() => _erro = 'Erro ao buscar estudante: $error');
+    } finally {
+      if (mounted) setState(() => _buscando = false);
+    }
+  }
+
   Future<void> _entrar() async {
-    final matricula = _controller.text.replaceAll(RegExp(r'\D'), '').trim();
+    final texto = _controller.text.trim();
+    final matricula = texto.replaceAll(RegExp(r'\D'), '').trim();
     if (matricula.isEmpty) {
-      setState(() => _erro = 'Informe a matrícula do estudante.');
+      setState(
+        () => _erro = 'Digite a matrícula ou pelo menos 3 letras do nome.',
+      );
       return;
     }
 
@@ -159,6 +199,15 @@ class _LoginPageState extends State<LoginPage> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _selecionarAluno(Map<String, dynamic> aluno) async {
+    final matricula = aluno['numero_matricula']?.toString();
+    if (matricula == null || matricula.trim().isEmpty) {
+      setState(() => _erro = 'Este estudante está sem matrícula cadastrada.');
+      return;
+    }
+    await widget.onLogin(matricula.trim());
   }
 
   @override
@@ -190,15 +239,39 @@ class _LoginPageState extends State<LoginPage> {
                   const SizedBox(height: 24),
                   TextField(
                     controller: _controller,
-                    keyboardType: TextInputType.number,
-                    textInputAction: TextInputAction.done,
+                    keyboardType: TextInputType.text,
+                    textInputAction: TextInputAction.search,
                     decoration: const InputDecoration(
-                      labelText: 'Matrícula do estudante',
+                      labelText: 'Matrícula ou início do nome',
                       border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.badge_outlined),
+                      prefixIcon: Icon(Icons.search),
                     ),
+                    onChanged: _onBuscaChanged,
                     onSubmitted: (_) => _entrar(),
                   ),
+                  if (_buscando) ...[
+                    const SizedBox(height: 12),
+                    const LinearProgressIndicator(),
+                  ],
+                  if (_resultados.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Card(
+                      child: Column(
+                        children: _resultados
+                            .map(
+                              (aluno) => ListTile(
+                                leading: const Icon(Icons.person_outline),
+                                title: Text(aluno['nome']?.toString() ?? ''),
+                                subtitle: Text(
+                                  'Turma ${aluno['turma'] ?? '-'} • Matrícula ${aluno['numero_matricula'] ?? '-'}',
+                                ),
+                                onTap: () => _selecionarAluno(aluno),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ),
+                  ],
                   if (_erro != null) ...[
                     const SizedBox(height: 12),
                     Text(_erro!, style: const TextStyle(color: Colors.red)),
@@ -473,6 +546,18 @@ Future<Map<String, dynamic>?> _buscarAlunoPorMatricula(String matricula) async {
       .eq('numero_matricula', matricula)
       .maybeSingle();
   return res;
+}
+
+Future<List<Map<String, dynamic>>> _buscarAlunosPorInicioDoNome(
+  String termo,
+) async {
+  final res = await Supabase.instance.client
+      .from('alunos')
+      .select('id, nome, turma, numero_matricula')
+      .ilike('nome', '${termo.trim()}%')
+      .order('nome')
+      .limit(12);
+  return List<Map<String, dynamic>>.from(res);
 }
 
 String _formatarData(dynamic value) {
