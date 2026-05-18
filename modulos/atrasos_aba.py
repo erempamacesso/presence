@@ -196,6 +196,32 @@ def _registrar_atraso(supabase, aluno, data_atraso, hora_chegada, motivo, regist
     supabase.table(TABELA_ATRASOS).insert(dados).execute()
 
 
+def _criar_notificacao_atraso(supabase, aluno, hora_chegada, total_apos_registro):
+    nome = _normalizar_texto(aluno.get("nome"))
+    if total_apos_registro >= 3:
+        titulo = "Atenção: limite de atrasos atingido"
+        mensagem = (
+            f"O(a) estudante {nome} chegou atrasado(a) hoje às {hora_chegada.strftime('%H:%M')} "
+            f"e atingiu {total_apos_registro} atrasos no ano. A coordenação solicita acompanhamento da família."
+        )
+    else:
+        titulo = "Chegada com atraso"
+        mensagem = (
+            f"O(a) estudante {nome} chegou atrasado(a) hoje às {hora_chegada.strftime('%H:%M')}. "
+            f"Total de atrasos no ano: {total_apos_registro}."
+        )
+    dados = {
+        "aluno_id": str(aluno.get("id")),
+        "aluno_nome": nome,
+        "turma": _normalizar_texto(aluno.get("turma")),
+        "tipo": "atraso",
+        "titulo": titulo,
+        "mensagem": mensagem,
+        "origem": "registro_atrasos",
+    }
+    supabase.table("notificacoes_responsaveis").insert(dados).execute()
+
+
 def _mensagem_familia(aluno, total_atrasos):
     nome = _normalizar_texto(aluno.get("nome"))
     turma = _normalizar_texto(aluno.get("turma"))
@@ -356,6 +382,10 @@ def exibir_atrasos(supabase):
                 registrado_por,
                 total_apos_registro,
             )
+            try:
+                _criar_notificacao_atraso(supabase, aluno, hora_chegada, total_apos_registro)
+            except Exception as erro_notif:
+                st.warning(f"Atraso registrado, mas a notificação do responsável não foi criada: {erro_notif}")
             st.success("Atraso registrado com sucesso.")
             st.rerun()
         except Exception as erro:

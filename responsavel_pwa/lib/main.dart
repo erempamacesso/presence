@@ -1,0 +1,513 @@
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
+const supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  if (supabaseUrl.isEmpty || supabaseAnonKey.isEmpty) {
+    runApp(const ConfigErrorApp());
+    return;
+  }
+
+  await Supabase.initialize(url: supabaseUrl, anonKey: supabaseAnonKey);
+  runApp(const ResponsavelApp());
+}
+
+class ConfigErrorApp extends StatelessWidget {
+  const ConfigErrorApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        body: Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(
+              'Configure SUPABASE_URL e SUPABASE_ANON_KEY usando --dart-define.',
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class ResponsavelApp extends StatelessWidget {
+  const ResponsavelApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    const seed = Color(0xFF0F766E);
+    return MaterialApp(
+      title: 'EREM PAM Família',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: seed),
+        useMaterial3: true,
+        scaffoldBackgroundColor: const Color(0xFFF3F4F6),
+        cardTheme: const CardThemeData(
+          elevation: 0,
+          margin: EdgeInsets.zero,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(14)),
+          ),
+        ),
+      ),
+      home: const AppGate(),
+    );
+  }
+}
+
+class AppGate extends StatefulWidget {
+  const AppGate({super.key});
+
+  @override
+  State<AppGate> createState() => _AppGateState();
+}
+
+class _AppGateState extends State<AppGate> {
+  String? _matricula;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _matricula = prefs.getString('matricula_aluno');
+      _loading = false;
+    });
+  }
+
+  Future<void> _saveMatricula(String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('matricula_aluno', value);
+    setState(() => _matricula = value);
+  }
+
+  Future<void> _logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('matricula_aluno');
+    setState(() => _matricula = null);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (_matricula == null || _matricula!.isEmpty) {
+      return LoginPage(onLogin: _saveMatricula);
+    }
+    return HomePage(matricula: _matricula!, onLogout: _logout);
+  }
+}
+
+class LoginPage extends StatefulWidget {
+  const LoginPage({super.key, required this.onLogin});
+
+  final Future<void> Function(String matricula) onLogin;
+
+  @override
+  State<LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
+  final _controller = TextEditingController();
+  bool _loading = false;
+  String? _erro;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _entrar() async {
+    final matricula = _controller.text.replaceAll(RegExp(r'\D'), '').trim();
+    if (matricula.isEmpty) {
+      setState(() => _erro = 'Informe a matrícula do estudante.');
+      return;
+    }
+
+    setState(() {
+      _loading = true;
+      _erro = null;
+    });
+
+    try {
+      final aluno = await _buscarAlunoPorMatricula(matricula);
+      if (aluno == null) {
+        setState(() => _erro = 'Matrícula não encontrada.');
+        return;
+      }
+      await widget.onLogin(matricula);
+    } catch (error) {
+      setState(() => _erro = 'Erro ao consultar matrícula: $error');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Icon(Icons.school, size: 54, color: Color(0xFF0F766E)),
+                  const SizedBox(height: 16),
+                  Text(
+                    'EREM PAM Família',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Acompanhe comunicados, atrasos e avisos importantes do estudante.',
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  TextField(
+                    controller: _controller,
+                    keyboardType: TextInputType.number,
+                    textInputAction: TextInputAction.done,
+                    decoration: const InputDecoration(
+                      labelText: 'Matrícula do estudante',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.badge_outlined),
+                    ),
+                    onSubmitted: (_) => _entrar(),
+                  ),
+                  if (_erro != null) ...[
+                    const SizedBox(height: 12),
+                    Text(_erro!, style: const TextStyle(color: Colors.red)),
+                  ],
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: _loading ? null : _entrar,
+                    child: _loading
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Entrar'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class HomePage extends StatefulWidget {
+  const HomePage({super.key, required this.matricula, required this.onLogout});
+
+  final String matricula;
+  final Future<void> Function() onLogout;
+
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  Map<String, dynamic>? _aluno;
+  List<Map<String, dynamic>> _notificacoes = [];
+  bool _loading = true;
+  String? _erro;
+
+  @override
+  void initState() {
+    super.initState();
+    _carregar();
+  }
+
+  Future<void> _carregar() async {
+    setState(() {
+      _loading = true;
+      _erro = null;
+    });
+
+    try {
+      final aluno = await _buscarAlunoPorMatricula(widget.matricula);
+      if (aluno == null) {
+        setState(() => _erro = 'Matrícula não encontrada.');
+        return;
+      }
+
+      final alunoId = aluno['id'].toString();
+      final notificacoes = await Supabase.instance.client
+          .from('notificacoes_responsaveis')
+          .select()
+          .eq('aluno_id', alunoId)
+          .order('criado_em', ascending: false)
+          .limit(50);
+
+      setState(() {
+        _aluno = aluno;
+        _notificacoes = List<Map<String, dynamic>>.from(notificacoes);
+      });
+    } catch (error) {
+      setState(() => _erro = 'Erro ao carregar dados: $error');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('EREM PAM Família'),
+        actions: [
+          IconButton(onPressed: _carregar, icon: const Icon(Icons.refresh)),
+          IconButton(
+            onPressed: widget.onLogout,
+            icon: const Icon(Icons.logout),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: _carregar,
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              if (_loading)
+                const Padding(
+                  padding: EdgeInsets.all(32),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (_erro != null)
+                _InfoCard(icon: Icons.error_outline, text: _erro!)
+              else ...[
+                _AlunoHeader(aluno: _aluno!),
+                const SizedBox(height: 16),
+                _InstallHint(),
+                const SizedBox(height: 16),
+                Text(
+                  'Comunicados',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 10),
+                if (_notificacoes.isEmpty)
+                  const _InfoCard(
+                    icon: Icons.notifications_none,
+                    text: 'Ainda não há comunicados para este estudante.',
+                  )
+                else
+                  ..._notificacoes.map(
+                    (item) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _NotificationCard(item: item),
+                    ),
+                  ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AlunoHeader extends StatelessWidget {
+  const _AlunoHeader({required this.aluno});
+
+  final Map<String, dynamic> aluno;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            const CircleAvatar(radius: 28, child: Icon(Icons.person)),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    aluno['nome']?.toString() ?? 'Estudante',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text('Turma ${aluno['turma'] ?? '-'}'),
+                  Text('Matrícula ${aluno['numero_matricula'] ?? '-'}'),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InstallHint extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return const Card(
+      child: Padding(
+        padding: EdgeInsets.all(14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.install_mobile, color: Color(0xFF0F766E)),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Para instalar: abra o menu do navegador e toque em “Adicionar à tela inicial”.',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NotificationCard extends StatelessWidget {
+  const _NotificationCard({required this.item});
+
+  final Map<String, dynamic> item;
+
+  @override
+  Widget build(BuildContext context) {
+    final tipo = item['tipo']?.toString() ?? 'comunicado';
+    final titulo = item['titulo']?.toString() ?? 'Comunicado';
+    final mensagem = item['mensagem']?.toString() ?? '';
+    final criadoEm = _formatarData(item['criado_em']);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(_iconeTipo(tipo), color: _corTipo(tipo)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    titulo,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(mensagem),
+            const SizedBox(height: 10),
+            Text(
+              criadoEm,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: Colors.grey.shade700),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InfoCard extends StatelessWidget {
+  const _InfoCard({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Row(
+          children: [
+            Icon(icon, color: const Color(0xFF0F766E)),
+            const SizedBox(width: 12),
+            Expanded(child: Text(text)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+Future<Map<String, dynamic>?> _buscarAlunoPorMatricula(String matricula) async {
+  final res = await Supabase.instance.client
+      .from('alunos')
+      .select()
+      .eq('numero_matricula', matricula)
+      .maybeSingle();
+  return res;
+}
+
+String _formatarData(dynamic value) {
+  if (value == null) return '';
+  final parsed = DateTime.tryParse(value.toString());
+  if (parsed == null) return value.toString();
+  return DateFormat("dd/MM/yyyy 'às' HH:mm").format(parsed.toLocal());
+}
+
+IconData _iconeTipo(String tipo) {
+  switch (tipo) {
+    case 'atraso':
+      return Icons.schedule;
+    case 'falta':
+      return Icons.event_busy;
+    case 'ocorrencia':
+      return Icons.report_problem_outlined;
+    case 'nota':
+      return Icons.assignment_outlined;
+    default:
+      return Icons.campaign_outlined;
+  }
+}
+
+Color _corTipo(String tipo) {
+  switch (tipo) {
+    case 'atraso':
+      return Colors.orange.shade700;
+    case 'falta':
+      return Colors.red.shade700;
+    case 'ocorrencia':
+      return Colors.deepOrange.shade700;
+    case 'nota':
+      return Colors.blue.shade700;
+    default:
+      return const Color(0xFF0F766E);
+  }
+}
