@@ -3,6 +3,7 @@ from urllib.parse import quote
 
 import pandas as pd
 import streamlit as st
+from fpdf import FPDF
 
 try:
     from modulos.fotograma_aba import limpar_texto, listar_fotos_github
@@ -78,6 +79,38 @@ def _periodo_semana(data_ref):
     inicio = data_ref - datetime.timedelta(days=data_ref.weekday())
     fim = inicio + datetime.timedelta(days=6)
     return inicio, fim
+
+
+def _gerar_pdf_atrasados(data_ref, registros):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", "B", 14)
+    pdf.cell(190, 10, "Registro de Estudantes Atrasados", ln=True, align="C")
+    pdf.set_font("Arial", "", 10)
+    pdf.cell(190, 8, f"Data: {data_ref.strftime('%d/%m/%Y')}", ln=True, align="C")
+    pdf.ln(4)
+
+    pdf.set_font("Arial", "B", 9)
+    pdf.cell(75, 8, "Estudante", 1)
+    pdf.cell(25, 8, "Turma", 1)
+    pdf.cell(25, 8, "Chegada", 1)
+    pdf.cell(65, 8, "Observacao", 1, ln=True)
+
+    pdf.set_font("Arial", "", 8)
+    if registros.empty:
+        pdf.cell(190, 8, "Nenhum atraso registrado.", 1, ln=True)
+    else:
+        for _, row in registros.iterrows():
+            nome = str(row.get("aluno_nome", ""))[:42]
+            turma = str(row.get("turma", ""))[:12]
+            chegada = _formatar_hora_br(row.get("hora_chegada"))
+            motivo = str(row.get("motivo", "") or "")[:38]
+            pdf.cell(75, 8, nome, 1)
+            pdf.cell(25, 8, turma, 1)
+            pdf.cell(25, 8, chegada, 1)
+            pdf.cell(65, 8, motivo, 1, ln=True)
+
+    return pdf.output(dest="S").encode("latin-1", errors="replace")
 
 
 def _preparar_datas_df(df):
@@ -241,7 +274,9 @@ def exibir_atrasos(supabase):
         st.info("Nenhuma turma encontrada no cadastro de alunos.")
         return
 
-    c_turma, c_data, c_hora = st.columns([2, 1, 1])
+    registrado_por = st.selectbox("Identifique-se", ["LYLIAN CABRAL", "LOURENÇA MUNIZ"])
+
+    c_turma, c_data, c_hora = st.columns([1.4, 0.8, 0.8])
     with c_turma:
         turma_sel = st.selectbox("Turma", turmas)
     with c_data:
@@ -264,12 +299,19 @@ def exibir_atrasos(supabase):
     with c_aluno:
         aluno_label = st.selectbox("Estudante", list(opcoes.keys()))
         aluno = opcoes[aluno_label]
-        registrado_por = st.text_input("Registrado por", placeholder="Coordenação")
         motivo = st.text_input("Motivo/observação", placeholder="Opcional")
     with c_foto:
         foto = _obter_foto(aluno)
         if foto:
-            st.image(foto, caption=_normalizar_texto(aluno.get("nome")), use_container_width=True)
+            st.markdown(
+                f"""
+                <div style="text-align:center;">
+                    <img src="{foto}" style="width:88px; height:88px; object-fit:cover; border-radius:10px; border:1px solid #d1d5db;">
+                    <div style="font-size:11px; line-height:1.1; margin-top:4px;">{_normalizar_texto(aluno.get("nome"))[:28]}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
         else:
             st.info("Sem foto cadastrada.")
 
@@ -277,19 +319,21 @@ def exibir_atrasos(supabase):
     total_mes = _contar_no_df(df_atrasos, aluno.get("id"), inicio_mes, hoje)
     total_ano = _contar_atrasos_aluno(supabase, aluno.get("id"), inicio_ano, hoje)
     total_apos_registro = total_ano + 1
+    atrasos_restantes = max(0, 3 - total_apos_registro)
 
-    m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("Atrasos na semana", total_semana)
-    m2.metric("Atrasos no mês", total_mes)
-    m3.metric("Atrasos no ano", total_ano)
-    m4.metric("Após este registro", total_apos_registro)
-    m5.metric("Limite para contato", "3")
+    indicadores = pd.DataFrame(
+        [
+            {"Indicador": "ATRS SEMANA", "Valor": total_semana, "Indicador ": "ATRS MÊS", "Valor ": total_mes},
+            {"Indicador": "ATRS ATUAIS", "Valor": total_apos_registro, "Indicador ": "ATRS RESTANTES", "Valor ": atrasos_restantes},
+        ]
+    )
+    st.dataframe(indicadores, use_container_width=True, hide_index=True)
 
     if hora_chegada <= HORA_LIMITE:
         st.info("O horário atual está antes ou exatamente em 07h45. Confirme se este registro deve mesmo ser tratado como atraso.")
 
-    if total_apos_registro >= 3:
-        st.warning("Este estudante atingirá 3 ou mais atrasos. A família deve ser acionada.")
+    if atrasos_restantes == 0:
+        st.error("INFORMAR OS PAIS: este estudante atingiu o limite de 3 atrasos.")
         mensagem = _mensagem_familia(aluno, total_apos_registro)
         st.text_area("Mensagem sugerida para WhatsApp/ligação", value=mensagem, height=110)
 
@@ -357,3 +401,13 @@ def exibir_atrasos(supabase):
             use_container_width=True,
             hide_index=True,
         )
+
+    registros_hoje = df_atrasos[df_atrasos["data_atraso_dt"].dt.date == hoje].copy()
+    pdf_atrasados = _gerar_pdf_atrasados(hoje, registros_hoje)
+    st.download_button(
+        "Gerar PDF com os atrasados de hoje",
+        data=pdf_atrasados,
+        file_name=f"atrasados_{hoje.strftime('%d_%m_%Y')}.pdf",
+        mime="application/pdf",
+        use_container_width=True,
+    )
