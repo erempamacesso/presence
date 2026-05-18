@@ -77,7 +77,7 @@ def exibir_importacao(supabase):
                 dados_lidos.append({
                     "nome":             nome_limpo,
                     "turma":            turma_f,
-                    "numero_matricula": matricula,
+                    "matricula":        matricula,
                     "data_nascimento":  nascimento,
                     "sexo":             sexo,
                     "situacao":         situacao,
@@ -148,10 +148,10 @@ def exibir_importacao(supabase):
 
                 with st.spinner("Buscando alunos no Supabase..."):
                     res_bd = supabase.table("alunos").select(
-                        "nome, turma, numero_matricula, data_nascimento, sexo"
+                        "nome, turma, matricula, data_nascimento, sexo"
                     ).execute()
                     df_bd = pd.DataFrame(res_bd.data) if res_bd.data else pd.DataFrame(
-                        columns=["nome", "turma", "numero_matricula", "data_nascimento", "sexo"]
+                        columns=["nome", "turma", "matricula", "data_nascimento", "sexo"]
                     )
 
                 nomes_excel = set(df_excel["nome"])
@@ -171,7 +171,7 @@ def exibir_importacao(supabase):
 
                 mask_incompletos = df_comuns_bd.apply(
                     lambda r: (
-                        campo_vazio(r.get("numero_matricula"))
+                        campo_vazio(r.get("matricula"))
                         or campo_vazio(r.get("data_nascimento"))
                         or campo_vazio(r.get("sexo"))
                     ),
@@ -181,7 +181,7 @@ def exibir_importacao(supabase):
 
                 def quais_faltam(r):
                     faltando = []
-                    if campo_vazio(r.get("numero_matricula")): faltando.append("matrícula")
+                    if campo_vazio(r.get("matricula")): faltando.append("matrícula")
                     if campo_vazio(r.get("data_nascimento")):  faltando.append("nascimento")
                     if campo_vazio(r.get("sexo")):             faltando.append("sexo")
                     return ", ".join(faltando)
@@ -209,7 +209,7 @@ def exibir_importacao(supabase):
                 with st.expander(f"🟢 A) Alunos NOVOS — presentes na planilha, ausentes no banco ({len(novos)})", expanded=True):
                     if novos:
                         df_novos_exib = df_excel[df_excel["nome"].isin(novos)][
-                            ["nome", "turma", "numero_matricula", "data_nascimento", "sexo"]
+                            ["nome", "turma", "matricula", "data_nascimento", "sexo"]
                         ].sort_values("turma")
                         st.dataframe(df_novos_exib, hide_index=True, use_container_width=True)
                     else:
@@ -226,7 +226,7 @@ def exibir_importacao(supabase):
 
                 with st.expander(f"🟡 C) DADOS INCOMPLETOS — no banco e na planilha, mas faltando campos ({len(df_incompletos)})", expanded=True):
                     if not df_incompletos.empty:
-                        cols_exib = ["nome", "turma", "numero_matricula", "data_nascimento", "sexo", "campos_faltando"]
+                        cols_exib = ["nome", "turma", "matricula", "data_nascimento", "sexo", "campos_faltando"]
                         st.dataframe(
                             df_incompletos[cols_exib].sort_values("turma"),
                             hide_index=True,
@@ -288,7 +288,7 @@ def exibir_importacao(supabase):
                         if novos:
                             registros_novos = (
                                 df_excel_s[df_excel_s["nome"].isin(novos)]
-                                [["nome", "turma", "numero_matricula", "data_nascimento", "sexo"]]
+                                [["nome", "turma", "matricula", "data_nascimento", "sexo"]]
                                 .to_dict("records")
                             )
                             
