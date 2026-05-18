@@ -21,6 +21,7 @@ try:
     from modulos.busca_ativa import exibir_busca_ativa
     from modulos.aee import exibir_painel_aee
     from modulos.ocorrencias_aba import exibir_ocorrencias
+    from modulos.atrasos_aba import exibir_atrasos
     from modulos.gestao_feira import exibir_gestao_feira 
 except Exception as e:
     st.error(f"🚨 Erro ao carregar os módulos das telas: {e}")
@@ -80,6 +81,7 @@ with st.sidebar:
     st.button("📸 Fotograma", on_click=mudar_pagina, args=('fotograma',), use_container_width=True)
     st.button("🧩 AEE & Inclusão", on_click=mudar_pagina, args=('aee',), use_container_width=True)
     st.button("🚨 Ocorrências", on_click=mudar_pagina, args=('ocorrencias',), use_container_width=True)
+    st.button("⏰ Atrasos", on_click=mudar_pagina, args=('atrasos',), use_container_width=True)
     st.button("📝 Gestão de Alunos", on_click=mudar_pagina, args=('cadastro',), use_container_width=True)
     st.button("📅 Reservas", on_click=mudar_pagina, args=('reservas',), use_container_width=True)
     
@@ -149,6 +151,9 @@ elif st.session_state.pagina == 'aee':
 
 elif st.session_state.pagina == 'ocorrencias':
     exibir_ocorrencias(supabase)
+
+elif st.session_state.pagina == 'atrasos':
+    exibir_atrasos(supabase)
     
 elif st.session_state.pagina == 'cadastro':
     exibir_cadastro(supabase)
