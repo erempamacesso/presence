@@ -332,7 +332,7 @@ class _ResponsavelCadastroPageState extends State<ResponsavelCadastroPage> {
                               child: ListView.separated(
                                 shrinkWrap: true,
                                 itemCount: _alunosEncontrados.length,
-                                separatorBuilder: (_, __) =>
+                                separatorBuilder: (_, _1) =>
                                     const Divider(height: 1),
                                 itemBuilder: (context, index) {
                                   final al = _alunosEncontrados[index];

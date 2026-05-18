@@ -109,7 +109,7 @@ def _gerar_pdf_atrasados(data_ref, registros):
             motivo = str(row.get("motivo", "") or "")[:38]
             pdf.cell(75, 8, nome, 1)
             pdf.cell(25, 8, turma, 1)
-            pdf.cell(25, 8, llegada, 1)
+            pdf.cell(25, 8, chegada, 1)
             pdf.cell(65, 8, motivo, 1, ln=True)
 
     return pdf.output(dest="S").encode("latin-1", errors="replace")
