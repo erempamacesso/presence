@@ -18,7 +18,7 @@ def mostrar_tela_lista_matriculas(supabase_alunos):
             # --- MAPEAMENTO EXATO (Baseado no seu Supabase) ---
             col_t = 'turma' 
             col_n = 'nome' 
-            col_m = 'numero_matricula' # <-- Agora sim, o nome exato!
+            col_m = 'matricula' 
 
             if col_t not in df_alunos.columns or col_n not in df_alunos.columns:
                 st.error("Erro técnico: Colunas 'nome' ou 'turma' não encontradas. Verifique o banco.")

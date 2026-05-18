@@ -63,7 +63,7 @@ def exibir_importacao(supabase):
                 dados_lidos.append({
                     "nome":             nome_limpo,
                     "turma":            turma_f,
-                    "numero_matricula": matricula,
+                    "matricula":        matricula,
                     "data_nascimento":  nascimento,
                     "sexo":             sexo,
                     "situacao":         situacao,
@@ -98,8 +98,8 @@ def exibir_importacao(supabase):
 
             if st.button("🔍 Iniciar Cruzamento", type="primary"):
                 with st.spinner("Analisando e mesclando dados..."):
-                    res_bd = supabase.table("alunos").select("nome, turma, numero_matricula, data_nascimento, sexo").execute()
-                    df_bd = pd.DataFrame(res_bd.data) if res_bd.data else pd.DataFrame(columns=["nome", "turma", "numero_matricula", "data_nascimento", "sexo"])
+                    res_bd = supabase.table("alunos").select("nome, turma, matricula, data_nascimento, sexo").execute()
+                    df_bd = pd.DataFrame(res_bd.data) if res_bd.data else pd.DataFrame(columns=["nome", "turma", "matricula", "data_nascimento", "sexo"])
 
                 nomes_excel = set(df_excel["nome"])
                 nomes_bd    = set(df_bd["nome"]) if not df_bd.empty else set()
@@ -115,7 +115,7 @@ def exibir_importacao(supabase):
                     df_final_idx = df_final.set_index("nome")
 
                     # Se o Excel veio vazio, mas o Banco tem a info, salva a info do banco!
-                    for col in ["numero_matricula", "data_nascimento", "sexo"]:
+                    for col in ["matricula", "data_nascimento", "sexo"]:
                         df_final_idx[col] = df_final_idx[col].replace(r'^\s*$', np.nan, regex=True) # Troca vazio por NaN
                         if col in df_bd_idx.columns:
                             df_final_idx[col] = df_final_idx[col].fillna(df_bd_idx[col])
@@ -130,7 +130,7 @@ def exibir_importacao(supabase):
                     return val is None or str(val).strip() == "" or str(val).strip().upper() in ("NAN", "NONE", "NAT")
 
                 mask_incompletos = df_final.apply(
-                    lambda r: campo_vazio(r.get("numero_matricula")) or campo_vazio(r.get("data_nascimento")) or campo_vazio(r.get("sexo")),
+                    lambda r: campo_vazio(r.get("matricula")) or campo_vazio(r.get("data_nascimento")) or campo_vazio(r.get("sexo")),
                     axis=1
                 )
                 df_incompletos = df_final[mask_incompletos].copy()
@@ -174,7 +174,7 @@ def exibir_importacao(supabase):
                 
                 # Editor de dados interativo do Streamlit
                 df_editado = st.data_editor(
-                    df_incompletos[["nome", "turma", "numero_matricula", "data_nascimento", "sexo"]],
+                    df_incompletos[["nome", "turma", "matricula", "data_nascimento", "sexo"]],
                     disabled=["nome", "turma"], # Bloqueia nome e turma para o usuário não quebrar a sincronização
                     hide_index=True,
                     use_container_width=True,
@@ -211,7 +211,7 @@ def exibir_importacao(supabase):
 
                     # 3. ATUALIZAR TODOS OS ALUNOS (Upsert Geral)
                     # Isso garante que quem mudou de turma, atualizou no Excel ou foi digitado na tela será salvo.
-                    registros_para_salvar = df_final[["nome", "turma", "numero_matricula", "data_nascimento", "sexo"]].to_dict("records")
+                    registros_para_salvar = df_final[["nome", "turma", "matricula", "data_nascimento", "sexo"]].to_dict("records")
                     
                     # Limpeza final de vazios para o Supabase aceitar
                     for r in registros_para_salvar:

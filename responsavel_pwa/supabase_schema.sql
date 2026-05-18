@@ -3,6 +3,8 @@ create table if not exists public.alunos (
   nome text not null,
   turma text not null,
   matricula text not null unique,
+  data_nascimento date,
+  sexo text,
   criado_em timestamptz not null default now()
 );
 

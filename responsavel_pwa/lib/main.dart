@@ -167,7 +167,7 @@ class _ResponsavelCadastroPageState extends State<ResponsavelCadastroPage> {
       final supabase = Supabase.instance.client;
       final res = await supabase
           .from('alunos')
-          .select('id, nome, turma, matricula')
+          .select('id, nome, turma, matricula') // Verifique se no banco é 'matricula' ou 'numero_matricula'
           .ilike('nome', '%$termo%')
           .order('nome')
           .limit(15);
@@ -202,8 +202,8 @@ class _ResponsavelCadastroPageState extends State<ResponsavelCadastroPage> {
       final supabase = Supabase.instance.client;
       final res = await supabase
           .from('alunos')
-          .select('id, nome, turma, matricula')
-          .eq('matricula', matricula.trim())
+          .select('id, nome, turma, matricula') // Se o erro persistir, tente mudar para 'numero_matricula'
+          .eq('matricula', matricula.trim())    // de acordo com o padrão do seu schema SQL
           .maybeSingle();
 
       debugPrint('Resultado da busca por matrícula: $res');
@@ -861,10 +861,9 @@ String _mensagemErroSupabase(Object error) {
   final texto = error.toString();
   debugPrint('Tratando erro Supabase: $texto');
 
-  if (texto.contains('ClientException: Failed to fetch') ||
-      texto.contains('TypeError: Failed to fetch') ||
+  if (texto.toLowerCase().contains('failed to fetch') ||
       texto.contains('XMLHttpRequest error')) {
-    return 'Erro de conexão (CORS ou Rede): Não foi possível contatar o Supabase. Verifique se a URL está correta e se o domínio do app está permitido nas configurações de CORS do Supabase.';
+    return 'Erro de conexão: Verifique se a URL do Supabase está correta e se o CORS está configurado para este domínio no painel do Supabase.';
   }
 
   if (texto.contains('relation "public.alunos" does not exist') ||
