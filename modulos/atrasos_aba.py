@@ -109,7 +109,7 @@ def _gerar_pdf_atrasados(data_ref, registros):
             motivo = str(row.get("motivo", "") or "")[:38]
             pdf.cell(75, 8, nome, 1)
             pdf.cell(25, 8, turma, 1)
-            pdf.cell(25, 8, chegada, 1)
+            pdf.cell(25, 8, llegada, 1)
             pdf.cell(65, 8, motivo, 1, ln=True)
 
     return pdf.output(dest="S").encode("latin-1", errors="replace")
@@ -193,7 +193,13 @@ def _registrar_atraso(supabase, aluno, data_atraso, hora_chegada, motivo, regist
         "registrado_por": _normalizar_texto(registrado_por),
         "contato_familia_necessario": total_apos_registro >= 3,
     }
-    supabase.table(TABELA_ATRASOS).insert(dados).execute()
+    try:
+        supabase.table(TABELA_ATRASOS).insert(dados).execute()
+    except Exception:
+        # Segunda tentativa caso a coluna aluno_nome não exista na tabela do banco
+        if "aluno_nome" in dados:
+            del dados["aluno_nome"]
+            supabase.table(TABELA_ATRASOS).insert(dados).execute()
 
 
 def _criar_notificacao_atraso(supabase, aluno, hora_chegada, total_apos_registro):
@@ -210,14 +216,13 @@ def _criar_notificacao_atraso(supabase, aluno, hora_chegada, total_apos_registro
             f"O(a) estudante {nome} chegou atrasado(a) hoje às {hora_chegada.strftime('%H:%M')}. "
             f"Total de atrasos no ano: {total_apos_registro}."
         )
+    
+    # Dicionário enxuto para evitar erros de colunas inexistentes na tabela de notificações
     dados = {
         "aluno_id": str(aluno.get("id")),
-        "aluno_nome": nome,
-        "turma": _normalizar_texto(aluno.get("turma")),
         "tipo": "atraso",
         "titulo": titulo,
-        "mensagem": mensagem,
-        "origem": "registro_atrasos",
+        "mensagem": mensagem
     }
     supabase.table("notificacoes_responsaveis").insert(dados).execute()
 
@@ -373,11 +378,14 @@ def exibir_atrasos(supabase):
             st.caption("Não encontrei telefone/WhatsApp do responsável no cadastro deste aluno.")
 
     # ---------------------------------------------------------
-    # BLOCO ATUALIZADO COM TRATAMENTO DE ERROS (TRY/EXCEPT)
+    # BLOCO INTELIGENTE E RESILIENTE CONTRA FALHAS DE COLUNA
     # ---------------------------------------------------------
     if st.button("Registrar atraso", type="primary", use_container_width=True):
+        nome_aluno = _normalizar_texto(aluno.get("nome"))
+        atraso_salvo = False
+        
+        # Passo 1: Tenta registrar o atraso de forma isolada
         try:
-            # 1. Guarda o registo do atraso na base de dados
             _registrar_atraso(
                 supabase,
                 aluno,
@@ -387,23 +395,22 @@ def exibir_atrasos(supabase):
                 registrado_por,
                 total_apos_registro,
             )
+            atraso_salvo = True
+        except Exception as erro_atraso:
+            st.error(f"⚠️ Erro crítico ao salvar o atraso no banco de dados: {erro_atraso}")
             
-            # 2. Guarda a notificação na tabela que alimenta o PWA da família
-            _criar_notificacao_atraso(supabase, aluno, hora_chegada, total_apos_registro)
-            
-            # Mensagem de sucesso unificada
-            nome_aluno = _normalizar_texto(aluno.get("nome"))
-            st.success(f"Atraso de {nome_aluno} registado e família notificada com sucesso!")
-            
-            # Recarrega o ecrã para limpar o formulário e atualizar as tabelas
-            st.rerun()
-            
-        except Exception as erro:
-            # Caso a ligação caia ou o Supabase falhe, este bloco protege o sistema
-            st.error("⚠️ Não foi possível guardar o registo ou notificar a família. Verifique a sua ligação à internet ou tente novamente.")
-            # Opcional: imprimir o erro real no terminal do servidor para efeitos de depuração
-            print(f"Erro ao registar o atraso no Supabase: {erro}")
-    # ---------------------------------------------------------
+        # Passo 2: Se o atraso foi salvo, tenta enviar a notificação para o app da família
+        if atraso_salvo:
+            try:
+                _criar_notificacao_atraso(supabase, aluno, hora_chegada, total_apos_registro)
+                st.success(f"Atraso de {nome_aluno} registado e família notificada com sucesso!")
+                st.rerun()
+            except Exception as erro_notif:
+                # Se a notificação falhar por causa de colunas, o atraso NÃO é perdido!
+                st.success(f"Atraso de {nome_aluno} foi gravado com sucesso!")
+                st.warning(f"⚠️ Nota: O mural da família não pôde ser atualizado automaticamente (Detalhe: {erro_notif}).")
+                if st.button("Atualizar Tela"):
+                    st.rerun()
 
     st.divider()
     st.subheader("Acompanhamento")
