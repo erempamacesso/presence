@@ -10,12 +10,17 @@ Execute o arquivo:
 responsavel_pwa/supabase_schema.sql
 ```
 
-Ele cria:
+**IMPORTANTE:** Certifique-se de que a tabela `alunos` foi criada. Ela é essencial para a busca de estudantes. O arquivo SQL atualizado já inclui esta tabela e as políticas de segurança (RLS).
 
-- `notificacoes_responsaveis`
-- `responsaveis_dispositivos`
+## 2. Configuração de CORS no Supabase
 
-## 2. Rodar localmente
+Se você receber o erro `ClientException: Failed to fetch` na Web:
+1. Vá ao painel do Supabase.
+2. Settings -> API.
+3. Em "CORS Allowed Origins", adicione a URL do seu app (ex: `https://seu-app.vercel.app`).
+4. Se estiver testando localmente, adicione `*` temporariamente ou o endereço do localhost.
+
+## 3. Rodar localmente
 
 Use a URL do projeto Supabase e a chave pública `anon`.
 
@@ -39,7 +44,18 @@ A saída fica em:
 responsavel_pwa/build/web
 ```
 
-## 4. Publicar na Vercel
+## 5. Atualizar Ícones
+
+Se precisar alterar o ícone da escola, substitua o arquivo `logo_erempam.png` e rode:
+
+```powershell
+flutter pub get
+flutter pub run flutter_launcher_icons
+```
+
+Isso atualizará os ícones do PWA e de outras plataformas.
+
+## 6. Publicar na Vercel
 
 Instale a CLI da Vercel se ainda não tiver:
 

@@ -25,15 +25,44 @@ class ConfigErrorApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
+    return MaterialApp(
       debugShowCheckedModeBanner: false,
+      theme: ThemeData(useMaterial3: true),
       home: Scaffold(
+        backgroundColor: const Color(0xFFF8FAFC),
         body: Center(
           child: Padding(
-            padding: EdgeInsets.all(24),
-            child: Text(
-              'Configure SUPABASE_URL e SUPABASE_ANON_KEY usando --dart-define.',
-              textAlign: TextAlign.center,
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.warning_amber_rounded,
+                    size: 80, color: Colors.orange),
+                const SizedBox(height: 24),
+                const Text(
+                  'Configuração Incompleta',
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'As variáveis SUPABASE_URL e SUPABASE_ANON_KEY não foram definidas.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16, color: Colors.black54),
+                ),
+                const SizedBox(height: 24),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: const Text(
+                    'Dica: Use --dart-define ao rodar ou construir o app, ou configure as variáveis de ambiente na Vercel.',
+                    style: TextStyle(fontFamily: 'monospace', fontSize: 13),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -126,6 +155,7 @@ class _ResponsavelCadastroPageState extends State<ResponsavelCadastroPage> {
 
   Future<void> _pesquisarAlunos(String termo) async {
     if (termo.trim().isEmpty) return;
+    debugPrint('Pesquisando alunos por nome: $termo');
     setState(() {
       _buscandoAlunos = true;
       _erroMensagem = null;
@@ -142,6 +172,8 @@ class _ResponsavelCadastroPageState extends State<ResponsavelCadastroPage> {
           .order('nome')
           .limit(15);
 
+      debugPrint('Resultado da busca por nome: $res');
+
       setState(() {
         _alunosEncontrados = List<Map<String, dynamic>>.from(res);
         if (_alunosEncontrados.isEmpty) {
@@ -149,6 +181,7 @@ class _ResponsavelCadastroPageState extends State<ResponsavelCadastroPage> {
         }
       });
     } catch (e) {
+      debugPrint('Erro ao pesquisar alunos: $e');
       setState(() => _erroMensagem = _mensagemErroSupabase(e));
     } finally {
       setState(() => _buscandoAlunos = false);
@@ -157,6 +190,7 @@ class _ResponsavelCadastroPageState extends State<ResponsavelCadastroPage> {
 
   Future<void> _buscarPorMatricula(String matricula) async {
     if (matricula.trim().isEmpty) return;
+    debugPrint('Buscando aluno por matrícula: $matricula');
     setState(() {
       _buscandoAlunos = true;
       _erroMensagem = null;
@@ -172,6 +206,8 @@ class _ResponsavelCadastroPageState extends State<ResponsavelCadastroPage> {
           .eq('matricula', matricula.trim())
           .maybeSingle();
 
+      debugPrint('Resultado da busca por matrícula: $res');
+
       setState(() {
         if (res != null) {
           _alunoSelecionado = Map<String, dynamic>.from(res);
@@ -180,6 +216,7 @@ class _ResponsavelCadastroPageState extends State<ResponsavelCadastroPage> {
         }
       });
     } catch (e) {
+      debugPrint('Erro ao buscar por matrícula: $e');
       setState(() => _erroMensagem = _mensagemErroSupabase(e));
     } finally {
       setState(() => _buscandoAlunos = false);
@@ -243,7 +280,15 @@ class _ResponsavelCadastroPageState extends State<ResponsavelCadastroPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Icon(Icons.school, size: 64, color: Color(0xFF0F766E)),
+                  Center(
+                    child: Image.asset(
+                      'logo_erempam.png',
+                      height: 120,
+                      errorBuilder: (context, error, stackTrace) =>
+                          const Icon(Icons.school,
+                              size: 64, color: Color(0xFF0F766E)),
+                    ),
+                  ),
                   const SizedBox(height: 16),
                   const Text(
                     'EREM PAM Família',
@@ -814,17 +859,32 @@ Color _corTipo(String tipo) {
 
 String _mensagemErroSupabase(Object error) {
   final texto = error.toString();
+  debugPrint('Tratando erro Supabase: $texto');
+
+  if (texto.contains('ClientException: Failed to fetch') ||
+      texto.contains('TypeError: Failed to fetch') ||
+      texto.contains('XMLHttpRequest error')) {
+    return 'Erro de conexão (CORS ou Rede): Não foi possível contatar o Supabase. Verifique se a URL está correta e se o domínio do app está permitido nas configurações de CORS do Supabase.';
+  }
+
+  if (texto.contains('relation "public.alunos" does not exist') ||
+      texto.contains('relation "alunos" does not exist')) {
+    return 'Erro técnico: A tabela "alunos" não foi encontrada no banco de dados. Verifique o schema no Supabase.';
+  }
+
   if (texto.contains('NOT_FOUND') ||
       texto.contains('page could not be found')) {
     return 'Não consegui conectar ao Supabase. Confira se o app foi publicado com SUPABASE_URL igual à URL do projeto Supabase.';
   }
+
   if (texto.contains('JWT') || texto.contains('Invalid API key')) {
     return 'Erro de autenticação: SUPABASE_ANON_KEY inválida.';
   }
+
   if (texto.contains('SocketException') ||
-      texto.contains('Failed host lookup') ||
-      texto.contains('TypeError: Failed to fetch')) {
+      texto.contains('Failed host lookup')) {
     return 'Sem conexão com a internet. Verifique sua rede e tente novamente.';
   }
+
   return 'Erro na comunicação com a escola: $error';
 }
