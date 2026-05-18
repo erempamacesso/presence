@@ -30,6 +30,48 @@ def _obter_telefone(aluno):
     return ""
 
 
+def _obter_foto(aluno):
+    candidatos = ["foto", "foto_url", "url_foto", "imagem", "imagem_url", "avatar", "avatar_url"]
+    for campo in candidatos:
+        foto = _normalizar_texto(aluno.get(campo))
+        if foto:
+            return foto
+    return ""
+
+
+def _formatar_data_br(valor):
+    if not valor:
+        return ""
+    try:
+        return pd.to_datetime(valor).strftime("%d/%m/%Y")
+    except Exception:
+        return str(valor)
+
+
+def _formatar_hora_br(valor):
+    if not valor:
+        return ""
+    try:
+        return pd.to_datetime(str(valor)).strftime("%H:%M")
+    except Exception:
+        partes = str(valor).split(":")
+        return ":".join(partes[:2]) if len(partes) >= 2 else str(valor)
+
+
+def _periodo_semana(data_ref):
+    inicio = data_ref - datetime.timedelta(days=data_ref.weekday())
+    fim = inicio + datetime.timedelta(days=6)
+    return inicio, fim
+
+
+def _preparar_datas_df(df):
+    if df.empty or "data_atraso" not in df.columns:
+        return df
+    df = df.copy()
+    df["data_atraso_dt"] = pd.to_datetime(df["data_atraso"], errors="coerce")
+    return df
+
+
 def _montar_sql_criacao():
     return """
 create table if not exists public.atrasos_alunos (
@@ -77,6 +119,18 @@ def _contar_atrasos_aluno(supabase, aluno_id, data_inicio=None, data_fim=None):
     return len(res.data or [])
 
 
+def _contar_no_df(df_atrasos, aluno_id, data_inicio, data_fim):
+    if df_atrasos.empty or "data_atraso_dt" not in df_atrasos.columns:
+        return 0
+    aluno_id = str(aluno_id)
+    filtrado = df_atrasos[
+        (df_atrasos["aluno_id"].astype(str) == aluno_id)
+        & (df_atrasos["data_atraso_dt"] >= pd.Timestamp(data_inicio))
+        & (df_atrasos["data_atraso_dt"] <= pd.Timestamp(data_fim))
+    ]
+    return len(filtrado)
+
+
 def _registrar_atraso(supabase, aluno, data_atraso, hora_chegada, motivo, registrado_por, total_apos_registro):
     dados = {
         "aluno_id": str(aluno.get("id")),
@@ -102,12 +156,10 @@ def _mensagem_familia(aluno, total_atrasos):
 
 
 def _exibir_alertas_contato(df_atrasos):
-    if df_atrasos.empty:
-        return
-
-    if "contato_familia_necessario" not in df_atrasos.columns:
+    if df_atrasos.empty or "contato_familia_necessario" not in df_atrasos.columns:
         return
     if "contato_familia_realizado" not in df_atrasos.columns:
+        df_atrasos = df_atrasos.copy()
         df_atrasos["contato_familia_realizado"] = False
 
     pendentes = df_atrasos[
@@ -117,16 +169,13 @@ def _exibir_alertas_contato(df_atrasos):
     if pendentes.empty:
         return
 
+    tabela = pendentes.copy()
+    tabela["Data"] = tabela["data_atraso"].apply(_formatar_data_br)
+    tabela["Chegada"] = tabela["hora_chegada"].apply(_formatar_hora_br)
+
     st.warning(f"{len(pendentes)} registro(s) pedem contato com a família.")
     st.dataframe(
-        pendentes[["aluno_nome", "turma", "data_atraso", "hora_chegada"]].rename(
-            columns={
-                "aluno_nome": "Estudante",
-                "turma": "Turma",
-                "data_atraso": "Data",
-                "hora_chegada": "Chegada",
-            }
-        ),
+        tabela.rename(columns={"aluno_nome": "Estudante", "turma": "Turma"})[["Estudante", "Turma", "Data", "Chegada"]],
         use_container_width=True,
         hide_index=True,
     )
@@ -134,10 +183,14 @@ def _exibir_alertas_contato(df_atrasos):
 
 def exibir_atrasos(supabase):
     st.title("Registro de Atrasos")
-    st.caption("Use esta tela para registrar estudantes que chegaram após 07h45 e acompanhar quando a família precisa ser acionada.")
+    st.caption("Registro rápido para estudantes que chegaram após 07h45.")
 
-    hoje = datetime.date.today()
+    agora = datetime.datetime.now()
+    hoje = agora.date()
+    hora_chegada = agora.time().replace(second=0, microsecond=0)
     inicio_ano = datetime.date(hoje.year, 1, 1)
+    inicio_mes = datetime.date(hoje.year, hoje.month, 1)
+    inicio_semana, fim_semana = _periodo_semana(hoje)
 
     try:
         alunos = _buscar_alunos(supabase)
@@ -160,44 +213,64 @@ def exibir_atrasos(supabase):
     df_atrasos = pd.DataFrame(atrasos_ano)
     if df_atrasos.empty:
         df_atrasos = pd.DataFrame(columns=["aluno_id", "aluno_nome", "turma", "data_atraso", "hora_chegada"])
+    df_atrasos = _preparar_datas_df(df_atrasos)
 
     _exibir_alertas_contato(df_atrasos)
 
     st.divider()
     st.subheader("Novo atraso")
 
-    alunos_ordenados = sorted(alunos, key=lambda item: (_normalizar_texto(item.get("turma")), _normalizar_texto(item.get("nome"))))
-    opcoes = {
-        f"{_normalizar_texto(a.get('nome'))} - {_normalizar_texto(a.get('turma'))}": a
-        for a in alunos_ordenados
-        if a.get("id") and a.get("nome")
-    }
+    turmas = sorted({_normalizar_texto(a.get("turma")) for a in alunos if _normalizar_texto(a.get("turma"))})
+    if not turmas:
+        st.info("Nenhuma turma encontrada no cadastro de alunos.")
+        return
 
-    c1, c2 = st.columns([2, 1])
-    with c1:
+    c_turma, c_data, c_hora = st.columns([2, 1, 1])
+    with c_turma:
+        turma_sel = st.selectbox("Turma", turmas)
+    with c_data:
+        st.text_input("Data", value=hoje.strftime("%d/%m/%Y"), disabled=True)
+    with c_hora:
+        st.text_input("Hora de chegada", value=hora_chegada.strftime("%H:%M"), disabled=True)
+
+    alunos_filtrados = [
+        a for a in alunos
+        if _normalizar_texto(a.get("turma")) == turma_sel and a.get("id") and a.get("nome")
+    ]
+    alunos_ordenados = sorted(alunos_filtrados, key=lambda item: _normalizar_texto(item.get("nome")))
+    opcoes = {_normalizar_texto(a.get("nome")): a for a in alunos_ordenados}
+
+    if not opcoes:
+        st.info("Nenhum aluno encontrado para esta turma.")
+        return
+
+    c_aluno, c_foto = st.columns([2.3, 1])
+    with c_aluno:
         aluno_label = st.selectbox("Estudante", list(opcoes.keys()))
         aluno = opcoes[aluno_label]
-    with c2:
-        data_atraso = st.date_input("Data", value=hoje)
-
-    c3, c4, c5 = st.columns([1, 1, 2])
-    with c3:
-        hora_chegada = st.time_input("Hora de chegada", value=datetime.datetime.now().time().replace(second=0, microsecond=0))
-    with c4:
         registrado_por = st.text_input("Registrado por", placeholder="Coordenação")
-    with c5:
         motivo = st.text_input("Motivo/observação", placeholder="Opcional")
+    with c_foto:
+        foto = _obter_foto(aluno)
+        if foto:
+            st.image(foto, caption=_normalizar_texto(aluno.get("nome")), use_container_width=True)
+        else:
+            st.info("Sem foto cadastrada.")
 
-    total_atual = _contar_atrasos_aluno(supabase, aluno.get("id"), inicio_ano, hoje)
-    total_apos_registro = total_atual + 1
+    total_semana = _contar_no_df(df_atrasos, aluno.get("id"), inicio_semana, fim_semana)
+    total_mes = _contar_no_df(df_atrasos, aluno.get("id"), inicio_mes, hoje)
+    total_ano = _contar_atrasos_aluno(supabase, aluno.get("id"), inicio_ano, hoje)
+    total_apos_registro = total_ano + 1
 
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Atrasos no ano", total_atual)
-    m2.metric("Após este registro", total_apos_registro)
-    m3.metric("Limite para contato", "3")
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("Atrasos na semana", total_semana)
+    m2.metric("Atrasos no mês", total_mes)
+    m3.metric("Atrasos no ano", total_ano)
+    m4.metric("Após este registro", total_apos_registro)
+    m5.metric("Limite para contato", "3")
 
     if hora_chegada <= HORA_LIMITE:
-        st.info("A hora informada está antes ou exatamente em 07h45. Confirme se este registro deve mesmo ser tratado como atraso.")
+        st.info("O horário atual está antes ou exatamente em 07h45. Confirme se este registro deve mesmo ser tratado como atraso.")
 
     if total_apos_registro >= 3:
         st.warning("Este estudante atingirá 3 ou mais atrasos. A família deve ser acionada.")
@@ -215,7 +288,7 @@ def exibir_atrasos(supabase):
             _registrar_atraso(
                 supabase,
                 aluno,
-                data_atraso,
+                hoje,
                 hora_chegada,
                 motivo,
                 registrado_por,
@@ -244,27 +317,23 @@ def exibir_atrasos(supabase):
     with c_resumo:
         st.write("**Ranking de atrasos no ano**")
         st.dataframe(
-            resumo.rename(
-                columns={
-                    "aluno_nome": "Estudante",
-                    "turma": "Turma",
-                    "total_atrasos": "Atrasos",
-                }
-            )[["Estudante", "Turma", "Atrasos"]],
+            resumo.rename(columns={"aluno_nome": "Estudante", "turma": "Turma", "total_atrasos": "Atrasos"})[
+                ["Estudante", "Turma", "Atrasos"]
+            ],
             use_container_width=True,
             hide_index=True,
         )
 
     with c_historico:
         st.write("**Últimos registros**")
-        historico = df_atrasos.sort_values(["data_atraso", "hora_chegada"], ascending=[False, False]).head(50)
+        historico = df_atrasos.sort_values(["data_atraso", "hora_chegada"], ascending=[False, False]).head(50).copy()
+        historico["Data"] = historico["data_atraso"].apply(_formatar_data_br)
+        historico["Chegada"] = historico["hora_chegada"].apply(_formatar_hora_br)
         st.dataframe(
             historico.rename(
                 columns={
                     "aluno_nome": "Estudante",
                     "turma": "Turma",
-                    "data_atraso": "Data",
-                    "hora_chegada": "Chegada",
                     "motivo": "Observação",
                     "registrado_por": "Registrado por",
                 }
