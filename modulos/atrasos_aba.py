@@ -324,6 +324,7 @@ def exibir_atrasos(supabase):
         return
 
     c_aluno, c_foto = st.columns([2.3, 1])
+  
     with c_aluno:
         aluno_label = st.selectbox("Estudante", list(opcoes.keys()))
         aluno = opcoes[aluno_label]
@@ -371,8 +372,12 @@ def exibir_atrasos(supabase):
         else:
             st.caption("Não encontrei telefone/WhatsApp do responsável no cadastro deste aluno.")
 
+    # ---------------------------------------------------------
+    # BLOCO ATUALIZADO COM TRATAMENTO DE ERROS (TRY/EXCEPT)
+    # ---------------------------------------------------------
     if st.button("Registrar atraso", type="primary", use_container_width=True):
         try:
+            # 1. Guarda o registo do atraso na base de dados
             _registrar_atraso(
                 supabase,
                 aluno,
@@ -382,14 +387,23 @@ def exibir_atrasos(supabase):
                 registrado_por,
                 total_apos_registro,
             )
-            try:
-                _criar_notificacao_atraso(supabase, aluno, hora_chegada, total_apos_registro)
-            except Exception as erro_notif:
-                st.warning(f"Atraso registrado, mas a notificação do responsável não foi criada: {erro_notif}")
-            st.success("Atraso registrado com sucesso.")
+            
+            # 2. Guarda a notificação na tabela que alimenta o PWA da família
+            _criar_notificacao_atraso(supabase, aluno, hora_chegada, total_apos_registro)
+            
+            # Mensagem de sucesso unificada
+            nome_aluno = _normalizar_texto(aluno.get("nome"))
+            st.success(f"Atraso de {nome_aluno} registado e família notificada com sucesso!")
+            
+            # Recarrega o ecrã para limpar o formulário e atualizar as tabelas
             st.rerun()
+            
         except Exception as erro:
-            st.error(f"Erro ao registrar atraso: {erro}")
+            # Caso a ligação caia ou o Supabase falhe, este bloco protege o sistema
+            st.error("⚠️ Não foi possível guardar o registo ou notificar a família. Verifique a sua ligação à internet ou tente novamente.")
+            # Opcional: imprimir o erro real no terminal do servidor para efeitos de depuração
+            print(f"Erro ao registar o atraso no Supabase: {erro}")
+    # ---------------------------------------------------------
 
     st.divider()
     st.subheader("Acompanhamento")
