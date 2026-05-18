@@ -1,36 +1,57 @@
 name: responsavel_pwa
-description: "A new Flutter project."
+
+description: Aplicativo escolar para responsáveis acompanharem notificações dos estudantes.
+
 publish_to: 'none'
 
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.11.5
+  sdk: ">=3.3.0 <4.0.0"
 
 dependencies:
   flutter:
     sdk: flutter
+
   cupertino_icons: ^1.0.8
+
+  # Supabase
   supabase_flutter: ^2.12.4
+
+  # Persistência local
   shared_preferences: ^2.5.5
+
+  # Datas
   intl: ^0.20.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+
   flutter_lints: ^6.0.0
+
+  # Ícones do app
   flutter_launcher_icons: ^0.13.1
 
+flutter:
+
+  uses-material-design: true
+
+  assets:
+    - assets/logo_erempam.png
+
 flutter_launcher_icons:
-  android: false
-  ios: false
+
+  android: true
+  ios: true
+
   web:
     generate: true
-    image_path: "logo_erempam.png"
-    background_color: "#F3F4F6"
-    theme_color: "#0F766E"
 
-flutter:
-  uses-material-design: true
-  assets:
-    - logo_erempam.png
+  image_path: "assets/logo_erempam.png"
+
+  adaptive_icon_background: "#F3F4F6"
+
+  background_color: "#F3F4F6"
+
+  theme_color: "#0F766E"

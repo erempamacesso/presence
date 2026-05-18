@@ -5,65 +5,117 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
-const supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
+const supabaseUrl =
+    String.fromEnvironment('SUPABASE_URL', defaultValue: '');
+
+const supabaseAnonKey =
+    String.fromEnvironment('SUPABASE_ANON_KEY', defaultValue: '');
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  if (supabaseUrl.isEmpty || supabaseAnonKey.isEmpty) {
-    runApp(const ConfigErrorApp());
-    return;
-  }
-
-  await Supabase.initialize(url: supabaseUrl, anonKey: supabaseAnonKey);
-  runApp(const ResponsavelApp());
+  runApp(const BootstrapApp());
 }
 
-class ConfigErrorApp extends StatelessWidget {
-  const ConfigErrorApp({super.key});
+class BootstrapApp extends StatefulWidget {
+  const BootstrapApp({super.key});
+
+  @override
+  State<BootstrapApp> createState() => _BootstrapAppState();
+}
+
+class _BootstrapAppState extends State<BootstrapApp> {
+  bool _loading = true;
+  String? _erro;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    try {
+      debugPrint('Inicializando aplicação...');
+      debugPrint('SUPABASE_URL => $supabaseUrl');
+
+      if (supabaseUrl.isEmpty || supabaseAnonKey.isEmpty) {
+        throw Exception(
+          'SUPABASE_URL ou SUPABASE_ANON_KEY não configuradas.',
+        );
+      }
+
+      await Supabase.initialize(
+        url: supabaseUrl,
+        anonKey: supabaseAnonKey,
+      ).timeout(const Duration(seconds: 15));
+
+      debugPrint('Supabase conectado.');
+
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => const ResponsavelApp(),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('ERRO INIT => $e');
+
+      setState(() {
+        _erro = e.toString();
+      });
+    } finally {
+      setState(() {
+        _loading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(useMaterial3: true),
       home: Scaffold(
         backgroundColor: const Color(0xFFF8FAFC),
         body: Center(
           child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.warning_amber_rounded,
-                    size: 80, color: Colors.orange),
-                const SizedBox(height: 24),
-                const Text(
-                  'Configuração Incompleta',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'As variáveis SUPABASE_URL e SUPABASE_ANON_KEY não foram definidas.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 16, color: Colors.black54),
-                ),
-                const SizedBox(height: 24),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.shade300),
+            padding: const EdgeInsets.all(24),
+            child: _loading
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 20),
+                      Text(
+                        'Conectando ao sistema escolar...',
+                        style: TextStyle(fontSize: 16),
+                      ),
+                    ],
+                  )
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.error_outline,
+                        color: Colors.red,
+                        size: 70,
+                      ),
+                      const SizedBox(height: 20),
+                      const Text(
+                        'Erro ao iniciar o aplicativo',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        _erro ?? 'Erro desconhecido.',
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
                   ),
-                  child: const Text(
-                    'Dica: Use --dart-define ao rodar ou construir o app, ou configure as variáveis de ambiente na Vercel.',
-                    style: TextStyle(fontFamily: 'monospace', fontSize: 13),
-                  ),
-                ),
-              ],
-            ),
           ),
         ),
       ),
@@ -76,19 +128,12 @@ class ResponsavelApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const seed = Color(0xFF0F766E);
     return MaterialApp(
       title: 'EREM PAM Família',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: seed,
-          primary: seed,
-          secondary: const Color(0xFF14B8A6),
-          surface: const Color(0xFFF8FAFC),
-        ),
         useMaterial3: true,
-        cardTheme: const CardThemeData(elevation: 0, color: Colors.white),
+        colorSchemeSeed: const Color(0xFF0F766E),
       ),
       home: const ResponsavelCadastroPage(),
     );
@@ -103,418 +148,275 @@ class ResponsavelCadastroPage extends StatefulWidget {
       _ResponsavelCadastroPageState();
 }
 
-class _ResponsavelCadastroPageState extends State<ResponsavelCadastroPage> {
-  final _formKey = GlobalKey<FormState>();
+class _ResponsavelCadastroPageState
+    extends State<ResponsavelCadastroPage> {
   final _inputController = TextEditingController();
-  final _nomeResponsavelController = TextEditingController();
+  final _nomeController = TextEditingController();
 
-  bool _carregando = false;
-  bool _buscandoAlunos = false;
-  String? _erroMensagem;
+  bool _buscando = false;
+  bool _salvando = false;
 
-  List<Map<String, dynamic>> _alunosEncontrados = [];
-  Map<String, dynamic>? _alunoSelecionado;
+  String? _erro;
+
+  List<Map<String, dynamic>> _alunos = [];
+
+  Map<String, dynamic>? _selecionado;
 
   @override
   void dispose() {
     _inputController.dispose();
-    _nomeResponsavelController.dispose();
+    _nomeController.dispose();
     super.dispose();
   }
 
-  Future<Map<String, dynamic>?> _buscarResponsavelAtivo(String alunoId) async {
-    try {
-      final res = await Supabase.instance.client
-          .from('responsaveis_dispositivos')
-          .select()
-          .eq('aluno_id', alunoId)
-          .eq('ativo', true)
-          .maybeSingle();
-      return res;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Future<void> _salvarResponsavelDispositivo({
-    required String alunoId,
-    required String numeroMatricula,
-    required String nomeResponsavel,
-    required String plataforma,
-    String? pushToken,
-  }) async {
-    await Supabase.instance.client.from('responsaveis_dispositivos').insert({
-      'aluno_id': alunoId,
-      'numero_matricula': numeroMatricula,
-      'nome_responsavel': nomeResponsavel,
-      'plataforma': plataforma,
-      'push_token': pushToken ?? '',
-      'ativo': true,
-    });
-  }
-
-  Future<void> _pesquisarAlunos(String termo) async {
+  Future<void> _buscarAluno(String termo) async {
     if (termo.trim().isEmpty) return;
-    debugPrint('Pesquisando alunos por nome: $termo');
+
     setState(() {
-      _buscandoAlunos = true;
-      _erroMensagem = null;
-      _alunosEncontrados = [];
-      _alunoSelecionado = null;
+      _erro = null;
+      _buscando = true;
+      _alunos = [];
+      _selecionado = null;
     });
 
     try {
       final supabase = Supabase.instance.client;
-      final res = await supabase
+
+      final resultado = await supabase
           .from('alunos')
           .select('id, nome, turma, matricula')
-          .ilike('nome', '%$termo%')
+          .filter('nome', 'ilike', '%${termo.trim()}%')
           .order('nome')
-          .limit(15);
+          .limit(20)
+          .timeout(const Duration(seconds: 10));
 
-      debugPrint('Resultado da busca por nome: $res');
+      debugPrint('ALUNOS => $resultado');
 
       setState(() {
-        _alunosEncontrados = List<Map<String, dynamic>>.from(res);
-        if (_alunosEncontrados.isEmpty) {
-          _erroMensagem = 'Nenhum estudante encontrado com esse nome.';
+        _alunos = List<Map<String, dynamic>>.from(resultado);
+
+        if (_alunos.isEmpty) {
+          _erro = 'Nenhum estudante encontrado.';
         }
       });
     } catch (e) {
-      debugPrint('Erro ao pesquisar alunos: $e');
-      setState(() => _erroMensagem = _mensagemErroSupabase(e));
-    } finally {
-      setState(() => _buscandoAlunos = false);
-    }
-  }
-
-  Future<void> _buscarPorMatricula(String matricula) async {
-    if (matricula.trim().isEmpty) return;
-    debugPrint('Buscando aluno por matrícula: $matricula');
-    setState(() {
-      _buscandoAlunos = true;
-      _erroMensagem = null;
-      _alunosEncontrados = [];
-      _alunoSelecionado = null;
-    });
-
-    try {
-      final supabase = Supabase.instance.client;
-      final res = await supabase
-          .from('alunos')
-          .select('id, nome, turma, matricula')
-          .eq('matricula', matricula.trim())
-          .maybeSingle();
-
-      debugPrint('Resultado da busca por matrícula: $res');
+      debugPrint('ERRO BUSCA => $e');
 
       setState(() {
-        if (res != null) {
-          _alunoSelecionado = Map<String, dynamic>.from(res);
-        } else {
-          _erroMensagem = 'Matrícula não encontrada no cadastro da escola.';
-        }
+        _erro = traduzirErro(e);
       });
-    } catch (e) {
-      debugPrint('Erro ao buscar por matrícula: $e');
-      setState(() => _erroMensagem = _mensagemErroSupabase(e));
     } finally {
-      setState(() => _buscandoAlunos = false);
+      setState(() {
+        _buscando = false;
+      });
     }
   }
 
-  Future<void> _concluirVinculo() async {
-    if (_alunoSelecionado == null) return;
-    if (!_formKey.currentState!.validate()) return;
+  Future<void> _confirmar() async {
+    if (_selecionado == null) return;
+
+    if (_nomeController.text.trim().length < 5) {
+      setState(() {
+        _erro = 'Informe o nome completo do responsável.';
+      });
+      return;
+    }
 
     setState(() {
-      _carregando = true;
-      _erroMensagem = null;
+      _salvando = true;
+      _erro = null;
     });
 
     try {
-      final alunoId = _alunoSelecionado!['id'].toString();
-      final matricula = _alunoSelecionado!['matricula']?.toString() ?? '';
-      final nomeResponsavel = _nomeResponsavelController.text.trim();
-
-      final jaVinculado = await _buscarResponsavelAtivo(alunoId);
-
-      if (jaVinculado == null) {
-        await _salvarResponsavelDispositivo(
-          alunoId: alunoId,
-          numeroMatricula: matricula,
-          nomeResponsavel: nomeResponsavel,
-          plataforma: 'web_pwa',
-        );
-      }
-
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('aluno_id', alunoId);
-      await prefs.setString('aluno_nome', _alunoSelecionado!['nome'] ?? '');
-      await prefs.setString('aluno_turma', _alunoSelecionado!['turma'] ?? '');
-      await prefs.setString('responsavel_nome', nomeResponsavel);
+
+      await prefs.setString(
+        'aluno_id',
+        _selecionado!['id'].toString(),
+      );
+
+      await prefs.setString(
+        'aluno_nome',
+        _selecionado!['nome'] ?? '',
+      );
+
+      await prefs.setString(
+        'aluno_turma',
+        _selecionado!['turma'] ?? '',
+      );
+
+      await prefs.setString(
+        'responsavel_nome',
+        _nomeController.text.trim(),
+      );
 
       if (mounted) {
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const NoticiasLinhaTempoPage()),
+          MaterialPageRoute(
+            builder: (_) => const MuralPage(),
+          ),
         );
       }
     } catch (e) {
-      setState(() => _erroMensagem = 'Falha ao registrar vínculo: $e');
+      setState(() {
+        _erro = 'Erro ao salvar vínculo.';
+      });
     } finally {
-      setState(() => _carregando = false);
+      setState(() {
+        _salvando = false;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 440),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Center(
-                    child: Image.asset(
-                      'logo_erempam.png',
-                      height: 120,
-                      errorBuilder: (context, error, stackTrace) =>
-                          const Icon(Icons.school,
-                              size: 64, color: Color(0xFF0F766E)),
-                    ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: Column(
+              children: [
+                Image.asset(
+                  'assets/logo_erempam.png',
+                  height: 120,
+                  errorBuilder: (_, __, ___) => const Icon(
+                    Icons.school,
+                    size: 80,
+                    color: Color(0xFF0F766E),
                   ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'EREM PAM Família',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1E293B),
-                    ),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'EREM PAM Família',
+                  style: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
                   ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    'Acompanhe comunicados e registros do seu estudante.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 14, color: Colors.black54),
-                  ),
-                  const SizedBox(height: 32),
-                  Card(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      side: BorderSide(color: Colors.grey.shade200),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          const Text(
-                            'Identifique o Estudante',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          TextFormField(
-                            controller: _inputController,
-                            decoration: InputDecoration(
-                              labelText: 'Nome ou Número de Matrícula',
-                              prefixIcon: const Icon(Icons.search, size: 20),
-                              suffixIcon: _buscandoAlunos
-                                  ? const Padding(
-                                      padding: EdgeInsets.all(12),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Acompanhe comunicados escolares.',
+                ),
+                const SizedBox(height: 32),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      children: [
+                        TextField(
+                          controller: _inputController,
+                          decoration: InputDecoration(
+                            labelText: 'Nome do estudante',
+                            prefixIcon: const Icon(Icons.search),
+                            suffixIcon: _buscando
+                                ? const Padding(
+                                    padding: EdgeInsets.all(12),
+                                    child: SizedBox(
+                                      width: 20,
+                                      height: 20,
                                       child: CircularProgressIndicator(
                                         strokeWidth: 2,
                                       ),
-                                    )
-                                  : null,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                            onFieldSubmitted: (val) {
-                              final puro = val.trim();
-                              if (puro.isEmpty) return;
-                              final eNumero = RegExp(r'^\d+$').hasMatch(puro);
-                              if (eNumero) {
-                                _buscarPorMatricula(puro);
-                              } else {
-                                _pesquisarAlunos(puro);
-                              }
-                            },
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'Digite o nome do aluno ou a matrícula e aperte Enter/Buscar para pesquisar.',
-                            style: TextStyle(fontSize: 11, color: Colors.grey),
-                          ),
-                          if (_alunosEncontrados.isNotEmpty &&
-                              _alunoSelecionado == null) ...[
-                            const SizedBox(height: 16),
-                            const Text(
-                              'Selecione o estudante na lista:',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Container(
-                              constraints: const BoxConstraints(maxHeight: 180),
-                              decoration: BoxDecoration(
-                                border: Border.all(color: Colors.grey.shade300),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: ListView.separated(
-                                shrinkWrap: true,
-                                itemCount: _alunosEncontrados.length,
-                                separatorBuilder: (_, _1) =>
-                                    const Divider(height: 1),
-                                itemBuilder: (context, index) {
-                                  final al = _alunosEncontrados[index];
-                                  return ListTile(
-                                    title: Text(
-                                      al['nome'] ?? '',
-                                      style: const TextStyle(fontSize: 14),
                                     ),
-                                    subtitle: Text(
-                                      'Turma: ${al['turma'] ?? ''} | Matrícula: ${al['matricula'] ?? ''}',
-                                      style: const TextStyle(fontSize: 12),
-                                    ),
-                                    dense: true,
-                                    onTap: () {
-                                      setState(() {
-                                        _alunoSelecionado = al;
-                                        _alunosEncontrados = [];
-                                      });
+                                  )
+                                : IconButton(
+                                    icon: const Icon(Icons.send),
+                                    onPressed: () {
+                                      _buscarAluno(
+                                        _inputController.text,
+                                      );
                                     },
-                                  );
-                                },
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                  if (_alunoSelecionado != null) ...[
-                    const SizedBox(height: 16),
-                    Card(
-                      color: const Color(0xFFF0FDF4),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: const BorderSide(color: Color(0xFFDCFCE7)),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Row(
-                              children: [
-                                const Icon(Icons.check_circle,
-                                    color: Colors.green),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    _alunoSelecionado!['nome'] ?? '',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 15,
-                                      color: Color(0xFF166534),
-                                    ),
                                   ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Turma: ${_alunoSelecionado!['turma'] ?? ''}  |  Matrícula: ${_alunoSelecionado!['matricula'] ?? ''}',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: Color(0xFF166534),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            const Divider(color: Color(0xFFDCFCE7)),
-                            const SizedBox(height: 8),
-                            TextFormField(
-                              controller: _nomeResponsavelController,
-                              decoration: InputDecoration(
-                                labelText: 'Seu Nome (Mãe, Pai, Responsável)',
-                                filled: true,
-                                fillColor: Colors.white,
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                              validator: (val) {
-                                if (val == null || val.trim().isEmpty) {
-                                  return 'Por favor, informe seu nome.';
-                                }
-                                if (val.trim().split(' ').length < 2) {
-                                  return 'Informe seu nome completo.';
-                                }
-                                return null;
+                          ),
+                          onSubmitted: _buscarAluno,
+                        ),
+                        const SizedBox(height: 20),
+                        if (_alunos.isNotEmpty)
+                          SizedBox(
+                            height: 250,
+                            child: ListView.builder(
+                              itemCount: _alunos.length,
+                              itemBuilder: (_, index) {
+                                final aluno = _alunos[index];
+
+                                return ListTile(
+                                  title: Text(aluno['nome'] ?? ''),
+                                  subtitle: Text(
+                                    '${aluno['turma'] ?? ''} • ${aluno['matricula'] ?? ''}',
+                                  ),
+                                  onTap: () {
+                                    setState(() {
+                                      _selecionado = aluno;
+                                      _alunos = [];
+                                    });
+                                  },
+                                );
                               },
                             ),
-                            const SizedBox(height: 16),
-                            ElevatedButton(
-                              onPressed: _carregando ? null : _concluirVinculo,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF0F766E),
-                                foregroundColor: Colors.white,
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 14),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                              child: _carregando
-                                  ? const SizedBox(
-                                      height: 20,
-                                      width: 20,
-                                      child: CircularProgressIndicator(
-                                        color: Colors.white,
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Text(
-                                      'Confirmar e Entrar',
-                                      style: TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.bold,
-                                      ),
+                          ),
+                        if (_selecionado != null) ...[
+                          const SizedBox(height: 20),
+                          Card(
+                            color: Colors.green.shade50,
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                children: [
+                                  Text(
+                                    _selecionado!['nome'] ?? '',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 18,
                                     ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    '${_selecionado!['turma']} • ${_selecionado!['matricula']}',
+                                  ),
+                                  const SizedBox(height: 16),
+                                  TextField(
+                                    controller: _nomeController,
+                                    decoration: const InputDecoration(
+                                      labelText:
+                                          'Nome do responsável',
+                                    ),
+                                  ),
+                                  const SizedBox(height: 20),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: ElevatedButton(
+                                      onPressed:
+                                          _salvando ? null : _confirmar,
+                                      child: _salvando
+                                          ? const CircularProgressIndicator()
+                                          : const Text(
+                                              'Entrar',
+                                            ),
+                                    ),
+                                  )
+                                ],
+                              ),
                             ),
-                          ],
-                        ),
-                      ),
+                          ),
+                        ],
+                        if (_erro != null) ...[
+                          const SizedBox(height: 20),
+                          Text(
+                            _erro!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.red,
+                            ),
+                          ),
+                        ]
+                      ],
                     ),
-                  ],
-                  if (_erroMensagem != null) ...[
-                    const SizedBox(height: 16),
-                    Text(
-                      _erroMensagem!,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Colors.red,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -523,103 +425,76 @@ class _ResponsavelCadastroPageState extends State<ResponsavelCadastroPage> {
   }
 }
 
-class NoticiasLinhaTempoPage extends StatefulWidget {
-  const NoticiasLinhaTempoPage({super.key});
+class MuralPage extends StatefulWidget {
+  const MuralPage({super.key});
 
   @override
-  State<NoticiasLinhaTempoPage> createState() => _NoticiasLinhaTempoPageState();
+  State<MuralPage> createState() => _MuralPageState();
 }
 
-class _NoticiasLinhaTempoPageState extends State<NoticiasLinhaTempoPage> {
-  String _alunoId = '';
-  String _alunoNome = '';
-  String _alunoTurma = '';
-  String _responsavelNome = '';
+class _MuralPageState extends State<MuralPage> {
+  bool _loading = true;
 
-  bool _carregando = true;
   String? _erro;
-  List<Map<String, dynamic>> _notificacoes = [];
+
+  String aluno = '';
+  String turma = '';
+  String responsavel = '';
+  String alunoId = '';
+
+  List<Map<String, dynamic>> notificacoes = [];
 
   @override
   void initState() {
     super.initState();
-    _carregarDadosLocais();
+
+    _carregar();
   }
 
-  Future<void> _carregarDadosLocais() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _alunoId = prefs.getString('aluno_id') ?? '';
-      _alunoNome = prefs.getString('aluno_nome') ?? '';
-      _alunoTurma = prefs.getString('aluno_turma') ?? '';
-      _responsavelNome = prefs.getString('responsavel_nome') ?? '';
-    });
-
-    if (_alunoId.isEmpty) {
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const ResponsavelCadastroPage()),
-        );
-      }
-      return;
-    }
-
-    _buscarNotificacoes();
-  }
-
-  Future<void> _buscarNotificacoes() async {
-    setState(() {
-      _carregando = true;
-      _erro = null;
-    });
-
+  Future<void> _carregar() async {
     try {
+      final prefs = await SharedPreferences.getInstance();
+
+      alunoId = prefs.getString('aluno_id') ?? '';
+
+      aluno = prefs.getString('aluno_nome') ?? '';
+
+      turma = prefs.getString('aluno_turma') ?? '';
+
+      responsavel =
+          prefs.getString('responsavel_nome') ?? '';
+
       final supabase = Supabase.instance.client;
-      final res = await supabase
+
+      final resultado = await supabase
           .from('notificacoes_responsaveis')
           .select()
-          .eq('aluno_id', _alunoId)
-          .order('criado_em', ascending: false);
+          .eq('aluno_id', alunoId)
+          .order('criado_em', ascending: false)
+          .timeout(const Duration(seconds: 10));
 
-      setState(() {
-        _notificacoes = List<Map<String, dynamic>>.from(res);
-      });
+      notificacoes =
+          List<Map<String, dynamic>>.from(resultado);
     } catch (e) {
-      setState(() => _erro = _mensagemErroSupabase(e));
+      _erro = traduzirErro(e);
     } finally {
-      setState(() => _carregando = false);
+      setState(() {
+        _loading = false;
+      });
     }
   }
 
   Future<void> _sair() async {
-    final confirma = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Sair do Aplicativo?'),
-        content: const Text(
-          'Isso removerá o vínculo com o estudante neste dispositivo. Será necessário identificar a matrícula novamente.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Sair', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
+    final prefs = await SharedPreferences.getInstance();
 
-    if (confirma == true) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.clear();
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const ResponsavelCadastroPage()),
-        );
-      }
+    await prefs.clear();
+
+    if (mounted) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => const ResponsavelCadastroPage(),
+        ),
+      );
     }
   }
 
@@ -627,263 +502,147 @@ class _NoticiasLinhaTempoPageState extends State<NoticiasLinhaTempoPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Mural do Estudante',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-        ),
-        elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF1E293B),
+        title: const Text('Mural do Estudante'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Atualizar',
-            onPressed: _buscarNotificacoes,
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout, color: Colors.grey),
-            tooltip: 'Desconectar',
+            icon: const Icon(Icons.logout),
             onPressed: _sair,
-          ),
+          )
         ],
       ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            color: Colors.white,
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF1F5F9),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(
-                children: [
-                  const CircleAvatar(
-                    backgroundColor: Color(0xFF0F766E),
-                    foregroundColor: Colors.white,
-                    child: Icon(Icons.person, size: 20),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _alunoNome,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                            color: Color(0xFF1E293B),
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Turma: $_alunoTurma  |  Resp: $_responsavelNome',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.black54,
-                          ),
-                        ),
-                      ],
+      body: _loading
+          ? const Center(
+              child: CircularProgressIndicator(),
+            )
+          : _erro != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      _erro!,
+                      textAlign: TextAlign.center,
                     ),
                   ),
-                ],
-              ),
-            ),
-          ),
-          Expanded(
-            child: _carregando
-                ? const Center(child: CircularProgressIndicator())
-                : _erro != null
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                _erro!,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(color: Colors.red),
-                              ),
-                              const SizedBox(height: 12),
-                              ElevatedButton(
-                                onPressed: _buscarNotificacoes,
-                                child: const Text('Tentar Novamente'),
-                              ),
-                            ],
-                          ),
-                        ),
-                      )
-                    : _notificacoes.isEmpty
-                        ? const Center(
-                            child: Padding(
-                              padding: EdgeInsets.all(32),
-                              child: Text(
-                                'Nenhum comunicado registrado para este estudante até o momento.',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: Colors.grey,
-                                  fontSize: 14,
-                                ),
-                              ),
+                )
+              : Column(
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      color: Colors.white,
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment:
+                            CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            aluno,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
                             ),
-                          )
-                        : ListView.builder(
-                            padding: const EdgeInsets.all(16),
-                            itemCount: _notificacoes.length,
-                            itemBuilder: (context, index) {
-                              final nota = _notificacoes[index];
-                              final tipo =
-                                  nota['tipo']?.toString() ?? 'comunicado';
-                              final titulo =
-                                  nota['titulo']?.toString() ?? 'Comunicado';
-                              final mensagem =
-                                  nota['mensagem']?.toString() ?? '';
-                              final dataTexto =
-                                  _formatarData(nota['criado_em']);
+                          ),
+                          Text(
+                            'Turma: $turma',
+                          ),
+                          Text(
+                            'Responsável: $responsavel',
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: notificacoes.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'Nenhum comunicado disponível.',
+                              ),
+                            )
+                          : ListView.builder(
+                              padding: const EdgeInsets.all(16),
+                              itemCount: notificacoes.length,
+                              itemBuilder: (_, index) {
+                                final item =
+                                    notificacoes[index];
 
-                              return Card(
-                                margin: const EdgeInsets.only(bottom: 12),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  side:
-                                      BorderSide(color: Colors.grey.shade200),
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(16),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Container(
-                                            padding: const EdgeInsets.all(6),
-                                            decoration: BoxDecoration(
-                                              color: _corTipo(tipo)
-                                                  .withValues(alpha: 0.1),
-                                              shape: BoxShape.circle,
-                                            ),
-                                            child: Icon(
-                                              _iconeTipo(tipo),
-                                              color: _corTipo(tipo),
-                                              size: 18,
-                                            ),
+                                return Card(
+                                  child: Padding(
+                                    padding:
+                                        const EdgeInsets.all(16),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          item['titulo'] ??
+                                              'Comunicado',
+                                          style:
+                                              const TextStyle(
+                                            fontWeight:
+                                                FontWeight.bold,
+                                            fontSize: 16,
                                           ),
-                                          const SizedBox(width: 8),
-                                          Expanded(
-                                            child: Text(
-                                              titulo,
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 15,
-                                                color: Color(0xFF1E293B),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 10),
-                                      Text(
-                                        mensagem,
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          color: Color(0xFF334155),
-                                          height: 1.4,
                                         ),
-                                      ),
-                                      const SizedBox(height: 12),
-                                      Align(
-                                        alignment: Alignment.bottomRight,
-                                        child: Text(
-                                          dataTexto,
-                                          style: const TextStyle(
-                                            fontSize: 11,
+                                        const SizedBox(height: 10),
+                                        Text(
+                                          item['mensagem'] ??
+                                              '',
+                                        ),
+                                        const SizedBox(height: 12),
+                                        Text(
+                                          formatarData(
+                                            item['criado_em'],
+                                          ),
+                                          style:
+                                              const TextStyle(
+                                            fontSize: 12,
                                             color: Colors.grey,
                                           ),
                                         ),
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
-                                ),
-                              );
-                            },
-                          ),
-          ),
-        ],
-      ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
     );
   }
 }
 
-String _formatarData(dynamic value) {
+String formatarData(dynamic value) {
   if (value == null) return '';
-  final parsed = DateTime.tryParse(value.toString());
-  if (parsed == null) return value.toString();
-  return DateFormat("dd/MM/yyyy 'às' HH:mm").format(parsed.toLocal());
+
+  final data =
+      DateTime.tryParse(value.toString());
+
+  if (data == null) return '';
+
+  return DateFormat(
+    "dd/MM/yyyy 'às' HH:mm",
+  ).format(data.toLocal());
 }
 
-IconData _iconeTipo(String tipo) {
-  switch (tipo) {
-    case 'atraso':
-      return Icons.schedule;
-    case 'falta':
-      return Icons.event_busy;
-    case 'ocorrencia':
-      return Icons.report_problem_outlined;
-    case 'nota':
-      return Icons.assignment_outlined;
-    default:
-      return Icons.campaign_outlined;
-  }
-}
+String traduzirErro(Object erro) {
+  final texto = erro.toString().toLowerCase();
 
-Color _corTipo(String tipo) {
-  switch (tipo) {
-    case 'atraso':
-      return Colors.orange.shade700;
-    case 'falta':
-      return Colors.red.shade700;
-    case 'ocorrencia':
-      return Colors.deepOrange.shade700;
-    case 'nota':
-      return Colors.blue.shade700;
-    default:
-      return const Color(0xFF0F766E);
-  }
-}
-
-String _mensagemErroSupabase(Object error) {
-  final texto = error.toString();
-  debugPrint('Tratando erro Supabase: $texto');
-
-  if (texto.toLowerCase().contains('failed to fetch') ||
-      texto.contains('XMLHttpRequest error')) {
-    return 'Erro de conexão: Verifique se a URL do Supabase está correta e se o CORS está configurado para este domínio no painel do Supabase.';
+  if (texto.contains('failed to fetch') ||
+      texto.contains('xmlhttprequest')) {
+    return 'Erro de conexão com o servidor escolar.';
   }
 
-  if (texto.contains('relation "public.alunos" does not exist') ||
-      texto.contains('relation "alunos" does not exist')) {
-    return 'Erro técnico: A tabela "alunos" não foi encontrada no banco de dados. Verifique o schema no Supabase.';
+  if (texto.contains('jwt')) {
+    return 'Erro de autenticação do Supabase.';
   }
 
-  if (texto.contains('NOT_FOUND') ||
-      texto.contains('page could not be found')) {
-    return 'Não consegui conectar ao Supabase. Confira se o app foi publicado com SUPABASE_URL igual à URL do projeto Supabase.';
+  if (texto.contains('timeout')) {
+    return 'O servidor demorou para responder.';
   }
 
-  if (texto.contains('JWT') || texto.contains('Invalid API key')) {
-    return 'Erro de autenticação: SUPABASE_ANON_KEY inválida.';
+  if (texto.contains('relation')) {
+    return 'Tabela do banco não encontrada.';
   }
 
-  if (texto.contains('SocketException') ||
-      texto.contains('Failed host lookup')) {
-    return 'Sem conexão com a internet. Verifique sua rede e tente novamente.';
-  }
-
-  return 'Erro na comunicação com a escola: $error';
+  return 'Erro inesperado: $erro';
 }
