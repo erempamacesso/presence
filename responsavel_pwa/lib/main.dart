@@ -166,7 +166,7 @@ class _LoginPageState extends State<LoginPage> {
       final alunos = await _buscarAlunosPorInicioDoNome(termo);
       if (mounted) setState(() => _resultados = alunos);
     } catch (error) {
-      if (mounted) setState(() => _erro = 'Erro ao buscar estudante: $error');
+      if (mounted) setState(() => _erro = _mensagemErroSupabase(error));
     } finally {
       if (mounted) setState(() => _buscando = false);
     }
@@ -195,7 +195,7 @@ class _LoginPageState extends State<LoginPage> {
       }
       await widget.onLogin(matricula);
     } catch (error) {
-      setState(() => _erro = 'Erro ao consultar matrícula: $error');
+      setState(() => _erro = _mensagemErroSupabase(error));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -345,7 +345,7 @@ class _HomePageState extends State<HomePage> {
         _notificacoes = List<Map<String, dynamic>>.from(notificacoes);
       });
     } catch (error) {
-      setState(() => _erro = 'Erro ao carregar dados: $error');
+      setState(() => _erro = _mensagemErroSupabase(error));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -595,4 +595,16 @@ Color _corTipo(String tipo) {
     default:
       return const Color(0xFF0F766E);
   }
+}
+
+String _mensagemErroSupabase(Object error) {
+  final texto = error.toString();
+  if (texto.contains('NOT_FOUND') ||
+      texto.contains('page could not be found')) {
+    return 'Não consegui conectar ao Supabase. Confira se o app foi publicado com SUPABASE_URL igual à URL do projeto Supabase, terminando em .supabase.co.';
+  }
+  if (texto.contains('permission denied') || texto.contains('RLS')) {
+    return 'O Supabase bloqueou a leitura. Confira as políticas RLS das tabelas alunos e notificacoes_responsaveis.';
+  }
+  return 'Erro ao consultar dados: $error';
 }
