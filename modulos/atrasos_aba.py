@@ -4,6 +4,12 @@ from urllib.parse import quote
 import pandas as pd
 import streamlit as st
 
+try:
+    from modulos.fotograma_aba import limpar_texto, listar_fotos_github
+except Exception:
+    limpar_texto = None
+    listar_fotos_github = None
+
 
 HORA_LIMITE = datetime.time(7, 45)
 TABELA_ATRASOS = "atrasos_alunos"
@@ -31,6 +37,16 @@ def _obter_telefone(aluno):
 
 
 def _obter_foto(aluno):
+    if listar_fotos_github and limpar_texto:
+        try:
+            mapa_fotos = listar_fotos_github()
+            chave = limpar_texto(aluno.get("nome"))
+            foto_github = mapa_fotos.get(chave)
+            if isinstance(foto_github, str) and foto_github.startswith("http"):
+                return foto_github
+        except Exception:
+            pass
+
     candidatos = ["foto", "foto_url", "url_foto", "imagem", "imagem_url", "avatar", "avatar_url"]
     for campo in candidatos:
         foto = _normalizar_texto(aluno.get(campo))
