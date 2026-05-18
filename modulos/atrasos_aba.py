@@ -1,5 +1,6 @@
 import datetime
 from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import streamlit as st
@@ -14,6 +15,7 @@ except Exception:
 
 HORA_LIMITE = datetime.time(7, 45)
 TABELA_ATRASOS = "atrasos_alunos"
+FUSO_ESCOLA = ZoneInfo("America/Fortaleza")
 
 
 def _normalizar_texto(valor):
@@ -234,7 +236,7 @@ def exibir_atrasos(supabase):
     st.title("Registro de Atrasos")
     st.caption("Registro rápido para estudantes que chegaram após 07h45.")
 
-    agora = datetime.datetime.now()
+    agora = datetime.datetime.now(FUSO_ESCOLA)
     hoje = agora.date()
     hora_chegada = agora.time().replace(second=0, microsecond=0)
     inicio_ano = datetime.date(hoje.year, 1, 1)
