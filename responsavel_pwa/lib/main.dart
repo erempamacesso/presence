@@ -77,6 +77,7 @@ class AppGate extends StatefulWidget {
 
 class _AppGateState extends State<AppGate> {
   String? _matricula;
+  bool _responsavelCadastrado = false;
   bool _loading = true;
 
   @override
@@ -89,6 +90,8 @@ class _AppGateState extends State<AppGate> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _matricula = prefs.getString('matricula_aluno');
+      _responsavelCadastrado =
+          prefs.getBool('responsavel_cadastrado') ?? false;
       _loading = false;
     });
   }
@@ -96,13 +99,26 @@ class _AppGateState extends State<AppGate> {
   Future<void> _saveMatricula(String value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('matricula_aluno', value);
-    setState(() => _matricula = value);
+    setState(() {
+      _matricula = value;
+      _responsavelCadastrado = false;
+    });
+  }
+
+  Future<void> _onResponsavelCadastrado() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('responsavel_cadastrado', true);
+    setState(() => _responsavelCadastrado = true);
   }
 
   Future<void> _logout() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('matricula_aluno');
-    setState(() => _matricula = null);
+    await prefs.remove('responsavel_cadastrado');
+    setState(() {
+      _matricula = null;
+      _responsavelCadastrado = false;
+    });
   }
 
   @override
@@ -113,7 +129,185 @@ class _AppGateState extends State<AppGate> {
     if (_matricula == null || _matricula!.isEmpty) {
       return LoginPage(onLogin: _saveMatricula);
     }
+    if (!_responsavelCadastrado) {
+      return ResponsavelCadastroPage(
+        matricula: _matricula!,
+        onSaved: _onResponsavelCadastrado,
+        onLogout: _logout,
+      );
+    }
     return HomePage(matricula: _matricula!, onLogout: _logout);
+  }
+}
+
+class ResponsavelCadastroPage extends StatefulWidget {
+  const ResponsavelCadastroPage({
+    super.key,
+    required this.matricula,
+    required this.onSaved,
+    required this.onLogout,
+  });
+
+  final String matricula;
+  final Future<void> Function() onSaved;
+  final Future<void> Function() onLogout;
+
+  @override
+  State<ResponsavelCadastroPage> createState() =>
+      _ResponsavelCadastroPageState();
+}
+
+class _ResponsavelCadastroPageState extends State<ResponsavelCadastroPage> {
+  final _nomeController = TextEditingController();
+  final _telefoneController = TextEditingController();
+  Map<String, dynamic>? _aluno;
+  bool _loading = true;
+  bool _saving = false;
+  String? _erro;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _nomeController.dispose();
+    _telefoneController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final aluno = await _buscarAlunoPorMatricula(widget.matricula);
+      if (aluno == null) {
+        setState(() => _erro = 'Matrícula não encontrada.');
+        return;
+      }
+
+      final existente = await _buscarResponsavelAtivo(aluno['id'].toString());
+      if (existente != null) {
+        _nomeController.text = existente['nome_responsavel']?.toString() ?? '';
+        _telefoneController.text = existente['telefone_responsavel']?.toString() ?? '';
+      }
+
+      setState(() => _aluno = aluno);
+    } catch (error) {
+      setState(() => _erro = _mensagemErroSupabase(error));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _salvar() async {
+    final nome = _nomeController.text.trim();
+    final telefone = _telefoneController.text.replaceAll(RegExp(r'\D'), '');
+
+    if (nome.length < 3) {
+      setState(() => _erro = 'Informe o nome do responsável.');
+      return;
+    }
+    if (telefone.length < 10) {
+      setState(() => _erro = 'Informe um telefone válido com DDD.');
+      return;
+    }
+    if (_aluno == null) return;
+
+    setState(() {
+      _saving = true;
+      _erro = null;
+    });
+
+    try {
+      await _salvarResponsavelDispositivo(
+        aluno: _aluno!,
+        nomeResponsavel: nome,
+        telefoneResponsavel: telefone,
+      );
+      await widget.onSaved();
+    } catch (error) {
+      setState(() => _erro = _mensagemErroSupabase(error));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Cadastro do responsável'),
+        actions: [
+          IconButton(onPressed: widget.onLogout, icon: const Icon(Icons.logout)),
+        ],
+      ),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 460),
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (_aluno != null) _AlunoHeader(aluno: _aluno!),
+                        const SizedBox(height: 16),
+                        const _InfoCard(
+                          icon: Icons.phone_android,
+                          text:
+                              'No primeiro acesso, informe um contato do responsável. Esse cadastro será usado pela escola para conferência e futuras notificações.',
+                        ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: _nomeController,
+                          textCapitalization: TextCapitalization.words,
+                          decoration: const InputDecoration(
+                            labelText: 'Nome do responsável',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.person_outline),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _telefoneController,
+                          keyboardType: TextInputType.phone,
+                          decoration: const InputDecoration(
+                            labelText: 'Telefone com DDD',
+                            hintText: 'Ex: 81999999999',
+                            border: OutlineInputBorder(),
+                            prefixIcon: Icon(Icons.phone_outlined),
+                          ),
+                        ),
+                        if (_erro != null) ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            _erro!,
+                            style: const TextStyle(color: Colors.red),
+                          ),
+                        ],
+                        const SizedBox(height: 16),
+                        FilledButton(
+                          onPressed: _saving ? null : _salvar,
+                          child: _saving
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Text('Salvar e continuar'),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
