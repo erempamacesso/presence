@@ -25,19 +25,19 @@ class BootstrapApp extends StatefulWidget {
 }
 
 class _BootstrapAppState extends State<BootstrapApp> {
-  bool _loading = true;
-  String? _erro;
+  bool loading = true;
+
+  String? erro;
 
   @override
   void initState() {
     super.initState();
-    _init();
+    iniciar();
   }
 
-  Future<void> _init() async {
+  Future<void> iniciar() async {
     try {
-      debugPrint('Inicializando aplicação...');
-      debugPrint('SUPABASE_URL => $supabaseUrl');
+      debugPrint('Inicializando aplicativo...');
 
       if (supabaseUrl.isEmpty || supabaseAnonKey.isEmpty) {
         throw Exception(
@@ -63,11 +63,11 @@ class _BootstrapAppState extends State<BootstrapApp> {
       debugPrint('ERRO INIT => $e');
 
       setState(() {
-        _erro = e.toString();
+        erro = e.toString();
       });
     } finally {
       setState(() {
-        _loading = false;
+        loading = false;
       });
     }
   }
@@ -81,7 +81,7 @@ class _BootstrapAppState extends State<BootstrapApp> {
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
-            child: _loading
+            child: loading
                 ? Column(
                     mainAxisSize: MainAxisSize.min,
                     children: const [
@@ -98,20 +98,20 @@ class _BootstrapAppState extends State<BootstrapApp> {
                     children: [
                       const Icon(
                         Icons.error_outline,
-                        color: Colors.red,
                         size: 70,
+                        color: Colors.red,
                       ),
                       const SizedBox(height: 20),
                       const Text(
                         'Erro ao iniciar o aplicativo',
                         style: TextStyle(
-                          fontSize: 20,
                           fontWeight: FontWeight.bold,
+                          fontSize: 20,
                         ),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 10),
                       Text(
-                        _erro ?? 'Erro desconhecido.',
+                        erro ?? 'Erro desconhecido.',
                         textAlign: TextAlign.center,
                       ),
                     ],
@@ -150,33 +150,35 @@ class ResponsavelCadastroPage extends StatefulWidget {
 
 class _ResponsavelCadastroPageState
     extends State<ResponsavelCadastroPage> {
-  final _inputController = TextEditingController();
-  final _nomeController = TextEditingController();
+  final inputController = TextEditingController();
 
-  bool _buscando = false;
-  bool _salvando = false;
+  final nomeController = TextEditingController();
 
-  String? _erro;
+  bool buscando = false;
 
-  List<Map<String, dynamic>> _alunos = [];
+  bool salvando = false;
 
-  Map<String, dynamic>? _selecionado;
+  String? erro;
+
+  List<Map<String, dynamic>> alunos = [];
+
+  Map<String, dynamic>? alunoSelecionado;
 
   @override
   void dispose() {
-    _inputController.dispose();
-    _nomeController.dispose();
+    inputController.dispose();
+    nomeController.dispose();
     super.dispose();
   }
 
-  Future<void> _buscarAluno(String termo) async {
+  Future<void> buscarAluno(String termo) async {
     if (termo.trim().isEmpty) return;
 
     setState(() {
-      _erro = null;
-      _buscando = true;
-      _alunos = [];
-      _selecionado = null;
+      buscando = true;
+      erro = null;
+      alunos = [];
+      alunoSelecionado = null;
     });
 
     try {
@@ -190,41 +192,41 @@ class _ResponsavelCadastroPageState
           .limit(20)
           .timeout(const Duration(seconds: 10));
 
-      debugPrint('ALUNOS => $resultado');
+      debugPrint('RESULTADO => $resultado');
 
       setState(() {
-        _alunos = List<Map<String, dynamic>>.from(resultado);
+        alunos = List<Map<String, dynamic>>.from(resultado);
 
-        if (_alunos.isEmpty) {
-          _erro = 'Nenhum estudante encontrado.';
+        if (alunos.isEmpty) {
+          erro = 'Nenhum estudante encontrado.';
         }
       });
     } catch (e) {
       debugPrint('ERRO BUSCA => $e');
 
       setState(() {
-        _erro = traduzirErro(e);
+        erro = traduzirErro(e);
       });
     } finally {
       setState(() {
-        _buscando = false;
+        buscando = false;
       });
     }
   }
 
-  Future<void> _confirmar() async {
-    if (_selecionado == null) return;
+  Future<void> confirmar() async {
+    if (alunoSelecionado == null) return;
 
-    if (_nomeController.text.trim().length < 5) {
+    if (nomeController.text.trim().length < 5) {
       setState(() {
-        _erro = 'Informe o nome completo do responsável.';
+        erro = 'Informe o nome completo do responsável.';
       });
       return;
     }
 
     setState(() {
-      _salvando = true;
-      _erro = null;
+      salvando = true;
+      erro = null;
     });
 
     try {
@@ -232,22 +234,22 @@ class _ResponsavelCadastroPageState
 
       await prefs.setString(
         'aluno_id',
-        _selecionado!['id'].toString(),
+        alunoSelecionado!['id'].toString(),
       );
 
       await prefs.setString(
         'aluno_nome',
-        _selecionado!['nome'] ?? '',
+        alunoSelecionado!['nome'] ?? '',
       );
 
       await prefs.setString(
         'aluno_turma',
-        _selecionado!['turma'] ?? '',
+        alunoSelecionado!['turma'] ?? '',
       );
 
       await prefs.setString(
         'responsavel_nome',
-        _nomeController.text.trim(),
+        nomeController.text.trim(),
       );
 
       if (mounted) {
@@ -259,11 +261,11 @@ class _ResponsavelCadastroPageState
       }
     } catch (e) {
       setState(() {
-        _erro = 'Erro ao salvar vínculo.';
+        erro = 'Erro ao salvar vínculo.';
       });
     } finally {
       setState(() {
-        _salvando = false;
+        salvando = false;
       });
     }
   }
@@ -292,8 +294,8 @@ class _ResponsavelCadastroPageState
                 const Text(
                   'EREM PAM Família',
                   style: TextStyle(
-                    fontSize: 28,
                     fontWeight: FontWeight.bold,
+                    fontSize: 28,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -307,11 +309,11 @@ class _ResponsavelCadastroPageState
                     child: Column(
                       children: [
                         TextField(
-                          controller: _inputController,
+                          controller: inputController,
                           decoration: InputDecoration(
                             labelText: 'Nome do estudante',
                             prefixIcon: const Icon(Icons.search),
-                            suffixIcon: _buscando
+                            suffixIcon: buscando
                                 ? const Padding(
                                     padding: EdgeInsets.all(12),
                                     child: SizedBox(
@@ -325,39 +327,39 @@ class _ResponsavelCadastroPageState
                                 : IconButton(
                                     icon: const Icon(Icons.send),
                                     onPressed: () {
-                                      _buscarAluno(
-                                        _inputController.text,
+                                      buscarAluno(
+                                        inputController.text,
                                       );
                                     },
                                   ),
                           ),
-                          onSubmitted: _buscarAluno,
+                          onSubmitted: buscarAluno,
                         ),
                         const SizedBox(height: 20),
-                        if (_alunos.isNotEmpty)
+                        if (alunos.isNotEmpty)
                           SizedBox(
                             height: 250,
                             child: ListView.builder(
-                              itemCount: _alunos.length,
+                              itemCount: alunos.length,
                               itemBuilder: (_, index) {
-                                final aluno = _alunos[index];
+                                final aluno = alunos[index];
 
                                 return ListTile(
                                   title: Text(aluno['nome'] ?? ''),
                                   subtitle: Text(
-                                    '${aluno['turma'] ?? ''} • ${aluno['matricula'] ?? ''}',
+                                    '${aluno['turma']} • ${aluno['matricula']}',
                                   ),
                                   onTap: () {
                                     setState(() {
-                                      _selecionado = aluno;
-                                      _alunos = [];
+                                      alunoSelecionado = aluno;
+                                      alunos = [];
                                     });
                                   },
                                 );
                               },
                             ),
                           ),
-                        if (_selecionado != null) ...[
+                        if (alunoSelecionado != null) ...[
                           const SizedBox(height: 20),
                           Card(
                             color: Colors.green.shade50,
@@ -366,7 +368,7 @@ class _ResponsavelCadastroPageState
                               child: Column(
                                 children: [
                                   Text(
-                                    _selecionado!['nome'] ?? '',
+                                    alunoSelecionado!['nome'],
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 18,
@@ -374,11 +376,11 @@ class _ResponsavelCadastroPageState
                                   ),
                                   const SizedBox(height: 6),
                                   Text(
-                                    '${_selecionado!['turma']} • ${_selecionado!['matricula']}',
+                                    '${alunoSelecionado!['turma']} • ${alunoSelecionado!['matricula']}',
                                   ),
-                                  const SizedBox(height: 16),
+                                  const SizedBox(height: 20),
                                   TextField(
-                                    controller: _nomeController,
+                                    controller: nomeController,
                                     decoration: const InputDecoration(
                                       labelText:
                                           'Nome do responsável',
@@ -389,8 +391,8 @@ class _ResponsavelCadastroPageState
                                     width: double.infinity,
                                     child: ElevatedButton(
                                       onPressed:
-                                          _salvando ? null : _confirmar,
-                                      child: _salvando
+                                          salvando ? null : confirmar,
+                                      child: salvando
                                           ? const CircularProgressIndicator()
                                           : const Text(
                                               'Entrar',
@@ -402,10 +404,10 @@ class _ResponsavelCadastroPageState
                             ),
                           ),
                         ],
-                        if (_erro != null) ...[
+                        if (erro != null) ...[
                           const SizedBox(height: 20),
                           Text(
-                            _erro!,
+                            erro!,
                             textAlign: TextAlign.center,
                             style: const TextStyle(
                               color: Colors.red,
@@ -433,13 +435,16 @@ class MuralPage extends StatefulWidget {
 }
 
 class _MuralPageState extends State<MuralPage> {
-  bool _loading = true;
+  bool loading = true;
 
-  String? _erro;
+  String? erro;
 
   String aluno = '';
+
   String turma = '';
+
   String responsavel = '';
+
   String alunoId = '';
 
   List<Map<String, dynamic>> notificacoes = [];
@@ -448,10 +453,10 @@ class _MuralPageState extends State<MuralPage> {
   void initState() {
     super.initState();
 
-    _carregar();
+    carregar();
   }
 
-  Future<void> _carregar() async {
+  Future<void> carregar() async {
     try {
       final prefs = await SharedPreferences.getInstance();
 
@@ -476,15 +481,15 @@ class _MuralPageState extends State<MuralPage> {
       notificacoes =
           List<Map<String, dynamic>>.from(resultado);
     } catch (e) {
-      _erro = traduzirErro(e);
+      erro = traduzirErro(e);
     } finally {
       setState(() {
-        _loading = false;
+        loading = false;
       });
     }
   }
 
-  Future<void> _sair() async {
+  Future<void> sair() async {
     final prefs = await SharedPreferences.getInstance();
 
     await prefs.clear();
@@ -506,20 +511,20 @@ class _MuralPageState extends State<MuralPage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
-            onPressed: _sair,
+            onPressed: sair,
           )
         ],
       ),
-      body: _loading
+      body: loading
           ? const Center(
               child: CircularProgressIndicator(),
             )
-          : _erro != null
+          : erro != null
               ? Center(
                   child: Padding(
                     padding: const EdgeInsets.all(24),
                     child: Text(
-                      _erro!,
+                      erro!,
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -541,12 +546,8 @@ class _MuralPageState extends State<MuralPage> {
                               fontSize: 18,
                             ),
                           ),
-                          Text(
-                            'Turma: $turma',
-                          ),
-                          Text(
-                            'Responsável: $responsavel',
-                          ),
+                          Text('Turma: $turma'),
+                          Text('Responsável: $responsavel'),
                         ],
                       ),
                     ),
@@ -584,8 +585,7 @@ class _MuralPageState extends State<MuralPage> {
                                         ),
                                         const SizedBox(height: 10),
                                         Text(
-                                          item['mensagem'] ??
-                                              '',
+                                          item['mensagem'] ?? '',
                                         ),
                                         const SizedBox(height: 12),
                                         Text(
