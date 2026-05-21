@@ -18,10 +18,10 @@ def mostrar_tela_lista_matriculas(supabase_alunos):
             # --- MAPEAMENTO EXATO (Baseado no seu Supabase) ---
             col_t = 'turma' 
             col_n = 'nome' 
-            col_m = 'matricula' 
+            col_m = 'id' 
 
-            if col_t not in df_alunos.columns or col_n not in df_alunos.columns:
-                st.error("Erro técnico: Colunas 'nome' ou 'turma' não encontradas. Verifique o banco.")
+            if col_t not in df_alunos.columns or col_n not in df_alunos.columns or col_m not in df_alunos.columns:
+                st.error("Erro técnico: Colunas 'id', 'nome' ou 'turma' não encontradas. Verifique o banco.")
             else:
                 # Seletor de Turma
                 turmas_disponiveis = sorted(df_alunos[col_t].dropna().unique())
@@ -77,7 +77,7 @@ def mostrar_tela_lista_matriculas(supabase_alunos):
                 # Linhas do PDF
                 pdf.set_font('Arial', '', 10)
                 for row in df_turma.itertuples():
-                    pdf.cell(12, 8, str(getattr(row, 'Nº')), border=1, align='C')
+                    pdf.cell(12, 8, str(row.Index + 1), border=1, align='C')
                     
                     if col_m in df_alunos.columns:
                         # Pega o valor da matrícula diretamente
