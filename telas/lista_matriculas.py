@@ -18,10 +18,10 @@ def mostrar_tela_lista_matriculas(supabase_alunos):
             # --- MAPEAMENTO EXATO (Baseado no seu Supabase) ---
             col_t = 'turma' 
             col_n = 'nome' 
-            col_m = 'id' 
+            col_m = 'numero_matricula' 
 
             if col_t not in df_alunos.columns or col_n not in df_alunos.columns or col_m not in df_alunos.columns:
-                st.error("Erro técnico: Colunas 'id', 'nome' ou 'turma' não encontradas. Verifique o banco.")
+                st.error("Erro técnico: Colunas 'numero_matricula', 'nome' ou 'turma' não encontradas. Verifique o banco.")
             else:
                 # Seletor de Turma
                 turmas_disponiveis = sorted(df_alunos[col_t].dropna().unique())
