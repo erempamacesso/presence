@@ -22,7 +22,18 @@ def iniciar_bot_telegram():
     """Inicia o bot do Telegram em segundo plano ao abrir o sistema central"""
 
     def rodar():
-        subprocess.Popen(["python", "telegram_menu.py"])
+        # Prepara as variáveis de ambiente para o subprocesso (essencial no Streamlit Cloud)
+        env = os.environ.copy()
+        # Injeta as secrets do Streamlit no ambiente para o Bot ler sem depender de contexto Streamlit
+        env["TELEGRAM_BOT_TOKEN"] = st.secrets["TELEGRAM_BOT_TOKEN"]
+        env["SUPABASE_URL_ALUNOS"] = st.secrets["SUPABASE_URL_ALUNOS"]
+        env["SUPABASE_KEY_ALUNOS"] = st.secrets["SUPABASE_KEY_ALUNOS"]
+
+        # Localiza o caminho absoluto do script para evitar erros de diretório no servidor
+        caminho_script = os.path.join(os.path.dirname(__file__), "telegram_menu.py")
+
+        # Usa sys.executable para garantir que o Bot use o mesmo interpretador do Streamlit
+        subprocess.Popen([sys.executable, caminho_script], env=env)
 
     thread = threading.Thread(target=rodar, daemon=True)
     thread.start()

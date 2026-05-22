@@ -1,5 +1,4 @@
 import requests
-import streamlit as st
 import time
 from supabase import create_client
 import urllib3
@@ -14,16 +13,13 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # =========================================
 
 try:
-    # Prioridade para variáveis de ambiente (passadas pelo app.py no Streamlit Cloud)
+    # Prioridade para variáveis de ambiente (injetadas pelo app.py)
     TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
     SUPABASE_URL = os.getenv("SUPABASE_URL_ALUNOS")
     SUPABASE_KEY = os.getenv("SUPABASE_KEY_ALUNOS")
 
-    # Se não encontrar no ambiente, tenta carregar direto do Streamlit (Local)
-    if not TOKEN:
-        TOKEN = st.secrets["TELEGRAM_BOT_TOKEN"]
-        SUPABASE_URL = st.secrets["SUPABASE_URL_ALUNOS"]
-        SUPABASE_KEY = st.secrets["SUPABASE_KEY_ALUNOS"]
+    if not TOKEN or not SUPABASE_URL or not SUPABASE_KEY:
+        raise ValueError("Variáveis de ambiente incompletas")
 except:
     # Fallback para local
     secrets = toml.load(".streamlit/secrets.toml")
@@ -186,9 +182,7 @@ while True:
                     if checagem.data:
                         nome = checagem.data[0]["nome_responsavel"]
                         resumo = buscar_resumo_estudantes(chat_id)
-                        resposta = (
-                            f"Olá, {nome}! 👋\n{resumo}\n\nComo posso ajudar hoje?"
-                        )
+                        resposta = f"Olá, {nome}! 👋\n{resumo}\n\nO que deseja consultar agora?"
                         enviar_mensagem(chat_id, resposta, inline_keyboard)
                     else:
                         # Apenas para novos usuários
