@@ -3,6 +3,8 @@ import streamlit.components.v1 as components
 from supabase import create_client, Client
 import datetime
 import time
+import sys
+import os
 import threading
 import subprocess
 
