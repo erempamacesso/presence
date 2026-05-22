@@ -4,7 +4,7 @@ from streamlit_quill import st_quill
 import plotly.express as px
 import pandas as pd
 import json
-import pytz 
+import pytz
 from fpdf import FPDF
 import base64
 import re
@@ -12,6 +12,8 @@ from datetime import datetime
 import time
 import unicodedata
 import io
+import threading
+import subprocess
 from streamlit_option_menu import option_menu
 
 # Importando nossas telas modulares
@@ -24,15 +26,33 @@ from telas.provas_elaboradas import mostrar_tela_provas_elaboradas
 from telas.lista_matriculas import mostrar_tela_lista_matriculas
 from telas.diagnosticos_ia import mostrar_tela_diagnosticos
 
+
+# --- GATILHO PARA O BOT TELEGRAM (Execução em Background) ---
+@st.cache_resource
+def iniciar_bot_telegram():
+    """Inicia o script do Telegram em uma thread separada para não travar o Streamlit"""
+
+    def rodar():
+        # Executa o script como um processo separado
+        subprocess.Popen(["python", "telegram_menu.py"])
+
+    thread = threading.Thread(target=rodar, daemon=True)
+    thread.start()
+    return True
+
+
 # --- PROTEÇÃO PARA O WHATSAPP ---
 try:
     import pywhatkit as kit
+
     WHATSAPP_LOCAL = True
 except ImportError:
     WHATSAPP_LOCAL = False
-              
+
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Gestão EREMPAM - Provas", layout="wide")
+
+iniciar_bot_telegram()  # Ativa o bot automaticamente ao carregar o sistema
 
 # --- 2. CONEXÃO COM SUPABASE ---
 URL_P = st.secrets["SUPABASE_URL_PROVAS"]
@@ -43,6 +63,7 @@ URL_A = st.secrets["SUPABASE_URL_ALUNOS"]
 KEY_A = st.secrets["SUPABASE_KEY_ALUNOS"]
 supabase_alunos = create_client(URL_A, KEY_A)
 
+
 # --- FUNÇÃO DE SINCRONIZAÇÃO DE NOTAS ---
 def sincronizar_atividades_online(turma_sel, unidade_sel, atividade_id_origem):
     """
@@ -50,32 +71,46 @@ def sincronizar_atividades_online(turma_sel, unidade_sel, atividade_id_origem):
     """
     try:
         # 1. Busca os resultados da atividade online
-        res = supabase.table("resultados").select("aluno_id, nota").eq("atividade_id", atividade_id_origem).execute()
-        
+        res = (
+            supabase.table("resultados")
+            .select("aluno_id, nota")
+            .eq("atividade_id", atividade_id_origem)
+            .execute()
+        )
+
         if not res.data:
-            st.warning(f"Nenhum resultado encontrado para a atividade {atividade_id_origem}")
+            st.warning(
+                f"Nenhum resultado encontrado para a atividade {atividade_id_origem}"
+            )
             return
 
         # 2. Prepara os dados para o Upsert na nova tabela
         dados_upsert = []
         for r in res.data:
-            dados_upsert.append({
-                "aluno_id": r["aluno_id"],
-                "turma": turma_sel,
-                "unidade": unidade_sel,
-                "at1": float(r["nota"])
-            })
-        
+            dados_upsert.append(
+                {
+                    "aluno_id": r["aluno_id"],
+                    "turma": turma_sel,
+                    "unidade": unidade_sel,
+                    "at1": float(r["nota"]),
+                }
+            )
+
         # 3. Faz o Upsert (Se o aluno já tiver linha lá, ele só atualiza a AT1)
-        supabase.table("notas_atividades").upsert(dados_upsert, on_conflict="aluno_id, unidade").execute()
+        supabase.table("notas_atividades").upsert(
+            dados_upsert, on_conflict="aluno_id, unidade"
+        ).execute()
         st.success(f"✅ {len(dados_upsert)} notas sincronizadas com sucesso para AT1!")
-        
+
     except Exception as e:
         st.error(f"Erro na sincronização: {e}")
 
+
 # --- 3. SISTEMA DE LOGIN (ESTADO) ---
-if 'autenticado' not in st.session_state:
-    st.session_state.autenticado = True # Mudar para False se desejar tela de login real
+if "autenticado" not in st.session_state:
+    st.session_state.autenticado = (
+        True  # Mudar para False se desejar tela de login real
+    )
 
 if not st.session_state.autenticado:
     st.title("🔒 Acesso Restrito")
@@ -91,32 +126,39 @@ if not st.session_state.autenticado:
 # --- 4. MENU LATERAL ---
 with st.sidebar:
     st.title("🎮 Painel do Professor")
-    
+
     menu = option_menu(
-        menu_title="Navegação",  
+        menu_title="Navegação",
         options=[
-            "Análise de Dados", 
-            "Cadastrar Questões", 
-            "Biblioteca de Questões", 
+            "Análise de Dados",
+            "Cadastrar Questões",
+            "Biblioteca de Questões",
             "Gerar Modelo de Prova",
             "Provas Elaboradas",
             "Lista de Matrículas",
             "Central de Avisos",
             "Diagnósticos IA",
-            "Boletim Final SIEPE"
+            "Boletim Final SIEPE",
         ],
         icons=[
-            "bar-chart-fill", "pencil-square", "book", "file-earmark-text",
-            "folder-check", "people-fill", "bell-fill", "robot", "bank"
+            "bar-chart-fill",
+            "pencil-square",
+            "book",
+            "file-earmark-text",
+            "folder-check",
+            "people-fill",
+            "bell-fill",
+            "robot",
+            "bank",
         ],
         menu_icon="cast",
         default_index=0,
         styles={
             "container": {"padding": "0!important", "background-color": "transparent"},
-            "icon": {"color": "#ff9800", "font-size": "18px"}, 
-            "nav-link": {"font-size": "15px", "text-align": "left", "margin":"0px"},
-            "nav-link-selected": {"background-color": "#4CAF50"}, 
-        }
+            "icon": {"color": "#ff9800", "font-size": "18px"},
+            "nav-link": {"font-size": "15px", "text-align": "left", "margin": "0px"},
+            "nav-link-selected": {"background-color": "#4CAF50"},
+        },
     )
     st.sidebar.divider()
     if st.sidebar.button("🚪 Sair do Sistema", use_container_width=True):
@@ -134,7 +176,7 @@ elif menu == "Cadastrar Questões":
 
 elif menu == "Biblioteca de Questões":
     mostrar_tela_biblioteca(supabase)
-    
+
 elif menu == "Gerar Modelo de Prova":
     mostrar_tela_gerar_modelo(supabase)
 

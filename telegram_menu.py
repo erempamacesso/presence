@@ -1,8 +1,10 @@
 import requests
-import toml
+import streamlit as st
 import time
 from supabase import create_client
 import urllib3
+import os
+import toml
 
 # Desativa avisos de SSL inseguro caso a verificação seja desabilitada
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -11,13 +13,17 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # SECRETS
 # =========================================
 
-secrets = toml.load(".streamlit/secrets.toml")
-
-TOKEN = secrets["TELEGRAM_BOT_TOKEN"]
-
-SUPABASE_URL = secrets["SUPABASE_URL_ALUNOS"]
-
-SUPABASE_KEY = secrets["SUPABASE_KEY_ALUNOS"]
+try:
+    # Tenta carregar do Streamlit (Produção)
+    TOKEN = st.secrets["TELEGRAM_BOT_TOKEN"]
+    SUPABASE_URL = st.secrets["SUPABASE_URL_ALUNOS"]
+    SUPABASE_KEY = st.secrets["SUPABASE_KEY_ALUNOS"]
+except:
+    # Fallback para local
+    secrets = toml.load(".streamlit/secrets.toml")
+    TOKEN = secrets["TELEGRAM_BOT_TOKEN"]
+    SUPABASE_URL = secrets["SUPABASE_URL_ALUNOS"]
+    SUPABASE_KEY = secrets["SUPABASE_KEY_ALUNOS"]
 
 # =========================================
 # SUPABASE
@@ -31,6 +37,58 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 session = requests.Session()
 # Se o erro persistir, mude para False para ignorar a validação SSL da rede local
 session.verify = True
+
+# =========================================
+# FUNÇÕES AUXILIARES
+# =========================================
+
+
+def buscar_resumo_estudantes(chat_id):
+    """Busca nomes dos estudantes vinculados ao chat_id para exibir no menu"""
+    resultado = (
+        supabase.table("responsaveis_oficiais")
+        .select("cpf_responsavel")
+        .eq("telegram_chat_id", chat_id)
+        .limit(1)
+        .execute()
+    )
+    if not resultado.data:
+        return ""
+
+    cpf = resultado.data[0]["cpf_responsavel"]
+    vinculos = (
+        supabase.table("responsaveis_oficiais")
+        .select("numero_matricula")
+        .eq("cpf_responsavel", cpf)
+        .execute()
+    )
+
+    nomes = []
+    for v in vinculos.data:
+        aluno = (
+            supabase.table("alunos")
+            .select("nome")
+            .eq("numero_matricula", v["numero_matricula"])
+            .limit(1)
+            .execute()
+        )
+        if aluno.data:
+            nomes.append(f"• {aluno.data[0]['nome']}")
+
+    if nomes:
+        return "\nEstudante(s) vinculado(s):\n" + "\n".join(nomes)
+    return "\nNenhum estudante vinculado ainda."
+
+
+def enviar_mensagem(chat_id, texto, reply_markup=None):
+    try:
+        payload = {"chat_id": chat_id, "text": texto}
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
+        session.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", json=payload)
+    except Exception as e:
+        print(f"Erro ao enviar: {e}")
+
 
 # =========================================
 # MENU INLINE
@@ -79,12 +137,9 @@ while True:
                 print(
                     "🚨 ERRO DE CONFLITO: Outra instância deste Bot está rodando em algum lugar."
                 )
-                print(
-                    "Feche todos os outros terminais/janelas antes de tentar novamente."
-                )
-                time.sleep(10)  # Espera mais tempo em caso de conflito
-            else:
                 time.sleep(5)
+            else:
+                time.sleep(2)
             continue
 
         # =================================
