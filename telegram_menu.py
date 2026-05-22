@@ -179,8 +179,9 @@ while True:
 
                     if checagem.data:
                         nome = checagem.data[0]["nome_responsavel"]
-                        resposta = f"Olá, {nome}! Bom ver você novamente. Escolha uma opção no menu abaixo:"
-                        reply_markup = inline_keyboard
+                        resumo = buscar_resumo_estudantes(chat_id)
+                        resposta = f"Olá, {nome}! 👋\n{resumo}\n\nO que deseja consultar agora?"
+                        enviar_mensagem(chat_id, resposta, inline_keyboard)
                     else:
                         resposta = """
 Bem-vindo ao sistema EREMPAM!
@@ -188,16 +189,7 @@ Bem-vindo ao sistema EREMPAM!
 Ainda não identificamos sua conta.
 Por favor, digite apenas os **números do seu CPF** para vincular seu acesso.
 """
-                        reply_markup = None
-
-                    session.post(
-                        f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-                        json={
-                            "chat_id": chat_id,
-                            "text": resposta,
-                            "reply_markup": reply_markup,
-                        },
-                    )
+                        enviar_mensagem(chat_id, resposta)
 
                 # =========================
                 # CPF
@@ -286,43 +278,26 @@ Por favor, digite apenas os **números do seu CPF** para vincular seu acesso.
 
 Responsável:
 {nome}
-
-[Toque no(s) estudante(s) que deseja visualizar os atrasos]
 """
-                            reply_markup_to_send = student_selection_keyboard
+                            enviar_mensagem(chat_id, resposta, inline_keyboard)
                         else:
                             resposta = f"""
 ✅ Vinculação realizada com sucesso.
 
 Responsável:
 {nome}
-
-Nenhum estudante encontrado vinculado ao seu CPF.
 """
-                            reply_markup_to_send = inline_keyboard  # Volta para o menu principal se não houver estudantes
+                            enviar_mensagem(chat_id, resposta, inline_keyboard)
 
                     # =====================
                     # CPF NÃO ENCONTRADO
                     # =====================
 
                     else:
-
-                        resposta = """
-❌ CPF não encontrado.
-
-Verifique os números digitados.
-"""
-
-                    reply_markup_to_send = inline_keyboard  # Se o CPF não for encontrado, mostra o menu principal
-
-                    session.post(
-                        f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-                        json={
-                            "chat_id": chat_id,
-                            "text": resposta,
-                            "reply_markup": reply_markup_to_send,
-                        },
-                    )
+                        enviar_mensagem(
+                            chat_id,
+                            "❌ CPF não encontrado. Verifique os números digitados ou fale com a secretaria.",
+                        )
 
             # =============================
             # CALLBACK BUTTONS

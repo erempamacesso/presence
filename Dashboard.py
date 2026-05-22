@@ -12,8 +12,6 @@ from datetime import datetime
 import time
 import unicodedata
 import io
-import threading
-import subprocess
 from streamlit_option_menu import option_menu
 
 # Importando nossas telas modulares
@@ -26,21 +24,6 @@ from telas.provas_elaboradas import mostrar_tela_provas_elaboradas
 from telas.lista_matriculas import mostrar_tela_lista_matriculas
 from telas.diagnosticos_ia import mostrar_tela_diagnosticos
 
-
-# --- GATILHO PARA O BOT TELEGRAM (Execução em Background) ---
-@st.cache_resource
-def iniciar_bot_telegram():
-    """Inicia o script do Telegram em uma thread separada para não travar o Streamlit"""
-
-    def rodar():
-        # Executa o script como um processo separado
-        subprocess.Popen(["python", "telegram_menu.py"])
-
-    thread = threading.Thread(target=rodar, daemon=True)
-    thread.start()
-    return True
-
-
 # --- PROTEÇÃO PARA O WHATSAPP ---
 try:
     import pywhatkit as kit
@@ -51,8 +34,6 @@ except ImportError:
 
 # --- 1. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Gestão EREMPAM - Provas", layout="wide")
-
-iniciar_bot_telegram()  # Ativa o bot automaticamente ao carregar o sistema
 
 # --- 2. CONEXÃO COM SUPABASE ---
 URL_P = st.secrets["SUPABASE_URL_PROVAS"]
