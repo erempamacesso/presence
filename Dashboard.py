@@ -23,6 +23,7 @@ from telas.gerar_modelo_prova import mostrar_tela_gerar_modelo
 from telas.provas_elaboradas import mostrar_tela_provas_elaboradas
 from telas.lista_matriculas import mostrar_tela_lista_matriculas
 from telas.diagnosticos_ia import mostrar_tela_diagnosticos
+from modulos.gerar_lista_exercicios import exibir_gerador_listas
 
 # --- PROTEÇÃO PARA O WHATSAPP ---
 try:
@@ -115,6 +116,7 @@ with st.sidebar:
             "Cadastrar Questões",
             "Biblioteca de Questões",
             "Gerar Modelo de Prova",
+            "Criar Lista de Treino",
             "Provas Elaboradas",
             "Lista de Matrículas",
             "Central de Avisos",
@@ -126,6 +128,7 @@ with st.sidebar:
             "pencil-square",
             "book",
             "file-earmark-text",
+            "card-checklist",
             "folder-check",
             "people-fill",
             "bell-fill",
@@ -160,6 +163,9 @@ elif menu == "Biblioteca de Questões":
 
 elif menu == "Gerar Modelo de Prova":
     mostrar_tela_gerar_modelo(supabase)
+
+elif menu == "Criar Lista de Treino":
+    exibir_gerador_listas(supabase)
 
 elif menu == "Provas Elaboradas":
     mostrar_tela_provas_elaboradas(supabase)
