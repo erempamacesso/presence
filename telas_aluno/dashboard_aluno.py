@@ -198,7 +198,7 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
                 st.session_state.menu_active = "notas"
                 st.rerun()
         with c4:
-            if st.button("🏋️\nTreino", use_container_width=True):
+            if st.button("🏋️\nQUESTÕES PARA TREINAR", use_container_width=True):
                 st.session_state.menu_active = "treino"
                 st.rerun()
 
