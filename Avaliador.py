@@ -168,26 +168,30 @@ with tab_treino:
         "Escolha uma lista para praticar. O Tutor IA MarIO ajudará você com as explicações!"
     )
 
-    res_listas = (
-        supabase.table("listas_exercicios").select("*").eq("ativa", True).execute()
-    )
+    try:
+        res_listas = (
+            supabase.table("listas_exercicios").select("*").eq("ativa", True).execute()
+        )
 
-    if not res_listas.data:
-        st.info("Nenhuma lista de treino disponível no momento.")
-    else:
-        for lista in res_listas.data:
-            with st.container(border=True):
-                col_info, col_btn = st.columns([3, 1])
-                with col_info:
-                    st.markdown(f"**{lista['titulo']}**")
-                    st.caption(f"Questões: {len(lista['questoes_ids'])}")
+        if not res_listas.data:
+            st.info("Nenhuma lista de treino disponível no momento.")
+        else:
+            for lista in res_listas.data:
+                with st.container(border=True):
+                    col_info, col_btn = st.columns([3, 1])
+                    with col_info:
+                        st.markdown(f"**{lista['titulo']}**")
+                        st.caption(f"Questões: {len(lista['questoes_ids'])}")
 
-                with col_btn:
-                    if st.button(
-                        "Iniciar Prática",
-                        key=f"treino_{lista['id']}",
-                        use_container_width=True,
-                    ):
-                        st.session_state.lista_config = lista
-                        st.session_state.etapa = "em_exercicio"
-                        st.rerun()
+                    with col_btn:
+                        if st.button(
+                            "Iniciar Prática",
+                            key=f"treino_{lista['id']}",
+                            use_container_width=True,
+                        ):
+                            st.session_state.lista_config = lista
+                            st.session_state.etapa = "em_exercicio"
+                            st.rerun()
+    except Exception as e:
+        st.error("Não foi possível carregar as listas de treino.")
+        st.caption(f"Detalhe técnico: {e}")

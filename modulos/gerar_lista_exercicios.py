@@ -1,6 +1,12 @@
 import streamlit as st
 import pandas as pd
 import time
+import re
+
+
+def limpar_tag(t):
+    """Remove tags HTML para exibição limpa no multiselect"""
+    return re.sub("<[^>]+>", "", str(t))[:60] + "..."
 
 
 def exibir_gerador_listas(supabase):
@@ -42,11 +48,6 @@ def exibir_gerador_listas(supabase):
         st.write(f"Questões encontradas: {len(df_filtrado)}")
 
         # Seleção de questões simplificada
-        import re
-
-        def limpar_tag(t):
-            return re.sub("<[^>]+>", "", str(t))[:60] + "..."
-
         df_filtrado["exibicao"] = df_filtrado.apply(
             lambda r: f"[{r['serie']}] {limpar_tag(r['enunciado'])} (ID:{r['id']})",
             axis=1,
@@ -86,14 +87,26 @@ def exibir_gerador_listas(supabase):
 
     st.divider()
     st.subheader("📋 Listas Existentes")
-    res_listas = (
-        supabase.table("listas_exercicios").select("*").order("id", desc=True).execute()
-    )
-    if res_listas.data:
-        df_listas = pd.DataFrame(res_listas.data)
-        st.dataframe(
-            df_listas[["titulo", "ativa"]],
-            use_container_width=True,
-            hide_index=True,
-            column_config={"ativa": st.column_config.CheckboxColumn("Ativa?")},
+
+    try:
+        res_listas = (
+            supabase.table("listas_exercicios")
+            .select("*")
+            .order("id", desc=True)
+            .execute()
+        )
+        if res_listas.data:
+            df_listas = pd.DataFrame(res_listas.data)
+            st.dataframe(
+                df_listas[["titulo", "ativa"]],
+                use_container_width=True,
+                hide_index=True,
+                column_config={"ativa": st.column_config.CheckboxColumn("Ativa?")},
+            )
+        else:
+            st.info("Nenhuma lista de treino criada ainda.")
+    except Exception as e:
+        st.error(f"⚠️ Erro ao acessar a tabela 'listas_exercicios': {e}")
+        st.info(
+            "Dica: Verifique se a tabela foi criada no Supabase e se as políticas RLS permitem o acesso."
         )
