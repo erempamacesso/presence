@@ -35,7 +35,7 @@ def explicar_com_ia(enunciado, resposta_aluno, resposta_correta):
     try:
         config = genai.types.GenerationConfig(max_output_tokens=200, temperature=0.7)
         resposta = model.generate_content(prompt, generation_config=config)
-        return respuesta.text
+        return resposta.text
     except Exception as e:
         return f"O Tutor MarIO está um pouco ocupado agora, mas a resposta certa é a alternativa {resposta_correta}!"
 
