@@ -3,7 +3,7 @@ from supabase import create_client
 import pandas as pd
 import re  # Importação necessária para a função de limpar o texto
 import random  # Necessário para embaralhar as questões
-from modulos.execucao_lista import exibir_execucao_lista
+from telas_aluno.execucao_lista import exibir_execucao_lista
 
 # --- 1. CONFIGURAÇÃO E CONEXÃO ---
 st.set_page_config(page_title="EREMPAM - Avaliação", layout="centered")

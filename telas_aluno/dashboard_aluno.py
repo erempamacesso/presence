@@ -1,7 +1,14 @@
 import streamlit as st
 from datetime import datetime, time as dt_time
-from telas_aluno.desempenho import mostrar_tela_desempenho
 import random
+
+# Importação do módulo de desempenho já existente
+from telas_aluno.desempenho import mostrar_tela_desempenho
+
+# =========================================================
+# 🎯 NOVA IMPORTAÇÃO: Arquivo de exercícios dentro de telas_aluno
+# =========================================================
+from telas_aluno import execucao_lista
 
 
 def _converter_data(data_val):
@@ -50,215 +57,204 @@ def _prova_disponivel_agora(prova):
     )
 
     hora_inicio = (
-        _converter_hora(prova.get(campo_hora_inicio))
-        if campo_hora_inicio
-        else dt_time(0, 0)
+        _converter_hora(prova.get(campo_hora_inicio)) if campo_hora_inicio else None
     )
-    hora_fim = (
-        _converter_hora(prova.get(campo_hora_fim))
-        if campo_hora_fim
-        else dt_time(23, 59, 59)
-    )
+    hora_fim = _converter_hora(prova.get(campo_hora_fim)) if campo_hora_fim else None
 
-    if data_inicio and agora < datetime.combine(data_inicio, hora_inicio):
+    if data_inicio and agora.date() < data_inicio:
         return False
-    if data_fim and agora > datetime.combine(data_fim, hora_fim):
+    if data_fim and agora.date() > data_fim:
         return False
+
+    if data_inicio and agora.date() == data_inicio and hora_inicio:
+        if agora.time() < hora_inicio:
+            return False
+
+    if data_fim and agora.date() == data_fim and hora_fim:
+        if agora.time() > hora_fim:
+            return False
+
     return True
 
 
-def mostrar_tela_dashboard(db_alunos, db_provas):
-    aluno = st.session_state.aluno
+def mostrar_dashboard(db_alunos, db_provas):
+    # Inicializa estados de navegação se não existirem
+    if "menu_active" not in st.session_state:
+        st.session_state.menu_active = "home"
+
+    aluno = st.session_state.get("aluno")
+    if not aluno:
+        st.error("Perfil de estudante não identificado.")
+        return
+
+    nome_aluno = aluno.get("nome", "Estudante")
+    serie_aluno = aluno.get("serie", "Geral")
 
     # =========================================================
-    # BLOCO 1: ESTILIZAÇÃO (CSS SEGURO E SEM HTML FATIADO)
+    # BLOCO 1: ESTILIZAÇÃO CUSTOMIZADA (CSS)
     # =========================================================
     st.markdown(
         """
         <style>
-        /* Fundo da Página */
-        [data-testid="stAppViewContainer"] {
-            background-color: #E0E0E0 !important;
-            font-family: 'Segoe UI', sans-serif;
+        .cabecalho-aluno {
+            background-color: #1e3a8a;
+            padding: 20px;
+            border-radius: 12px;
+            color: white;
+            text-align: center;
+            margin-bottom: 25px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
-        
-        [data-testid="stHeader"] {
-            visibility: hidden;
-        }
-
-        /* Centralizador Mobile */
-        .mobile-wrapper {
-            max-width: 420px;
-            margin: 0 auto;
-            padding: 10px;
-        }
-
         .area-comandos {
-            margin: 15px 0;
+            background-color: #f3f4f6;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
         }
-
-        /* ============================================
-           ESTILO DOS BOTÕES (CORRETO E SEGURO)
-           ============================================ */
-        div[data-testid="stButton"] > button {
-            background-color: #4b5563 !important; /* Fundo Cinza Escuro */
-            color: #ffffff !important; /* Texto Branco */
-            border: none !important; 
+        .btn-sair {
+            text-align: center;
+            margin-top: 30px;
+        }
+        div.stButton > button {
             border-radius: 12px !important;
-            height: 65px !important;
             font-weight: 700 !important;
-            text-transform: uppercase !important;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
-            transition: all 0.2s ease !important;
+            height: 50px;
         }
-
-        div[data-testid="stButton"] > button:hover {
-            background-color: #1f2937 !important; /* Fica quase preto ao clicar */
+        /* Grid de Cards da Home */
+        .stButton > button[key^="menu_"] {
+            height: 65px !important;
+            font-size: 16px !important;
+            color: white !important;
+            transition: all 0.2s ease-in-out;
+        }
+        /* Botões Azuis (Provas e Atividades) */
+        div block- Levantamento { }
+        button[id^="b1_"], button[id^="b2_"] {
+            background-color: #2563eb !important;
+        }
+        button[id^="b1_"]:hover, button[id^="b2_"]:hover {
+            background-color: #1d4ed8 !important;
             transform: scale(0.98);
         }
-
-        /* ============================================
-           BOTÃO DE INICIAR PROVA (VERDE VIBRANTE)
-           ============================================ */
-        .btn-iniciar div[data-testid="stButton"] > button {
-            background-color: #10b981 !important; 
-            font-size: 14px !important;
-            font-weight: 800 !important;
-            box-shadow: 0 4px 10px rgba(16, 185, 129, 0.4) !important; 
-            height: 55px !important;
+        /* Botões Cinzas (Notas e Treino) */
+        button[id^="b3_"], button[id^="b4_"] {
+            background-color: #4b5563 !important;
         }
-
-        .btn-iniciar div[data-testid="stButton"] > button:hover {
-            background-color: #059669 !important;
+        button[id^="b3_"]:hover, button[id^="b4_"]:hover {
+            background-color: #1f2937 !important;
+            transform: scale(0.98);
         }
-
-        /* ============================================
-           BOTÃO SAIR (VERMELHO DISCRETO)
-           ============================================ */
-        .btn-sair div[data-testid="stButton"] > button {
-            background-color: transparent !important;
-            color: #ef4444 !important; 
-            box-shadow: none !important;
-            height: auto !important;
-        }
-        
-        .btn-sair div[data-testid="stButton"] > button:hover {
-            background-color: #fee2e2 !important; 
-        }
-
-        /* Ajuste de colunas para ficar lado a lado no celular */
-        [data-testid="column"] { width: 48% !important; flex: 1 1 48% !important; }
-        [data-testid="stHorizontalBlock"] { display: flex !important; flex-direction: row !important; gap: 10px !important; }
         </style>
-    """,
+        """,
         unsafe_allow_html=True,
     )
 
-    # Início do Wrapper (Tudo aqui fica alinhado como celular)
-    st.markdown('<div class="mobile-wrapper">', unsafe_allow_html=True)
-
     # =========================================================
-    # BLOCO 2: CABEÇALHO (IDENTIDADE DO ALUNO)
+    # BLOCO 2: CABEÇALHO DO ESTUDANTE
     # =========================================================
-    matricula = aluno.get("numero_matricula", "0000000")
     st.markdown(
         f"""
-        <div style="text-align: center; margin-bottom: 20px;">
-            <div style="color: #d97706; font-weight: 800; font-size: 14px;">ID: {matricula}</div>
-            <div style="color: #222; font-weight: 800; font-size: 18px; line-height: 1.2;">{aluno["nome"]}</div>
-            <div style="color: #555; font-size: 12px; margin-top: 5px;">{aluno.get("turma", "ESTUDANTE")} • EREMPAM</div>
+        <div class="cabecalho-aluno">
+            <h2 style='margin:0; color:white;'>👋 Olá, {nome_aluno}!</h2>
+            <p style='margin:5px 0 0 0; opacity:0.9; font-size:14px;'>Série/Ano: <b>{serie_aluno}</b> | Portal do Estudante</p>
         </div>
-    """,
+        """,
         unsafe_allow_html=True,
     )
 
-    # =========================================================
-    # BLOCO 3: MENU PRINCIPAL E BUSCA DE PROVAS
-    # =========================================================
     st.markdown('<div class="area-comandos">', unsafe_allow_html=True)
 
-    if "menu_active" not in st.session_state:
-        st.session_state.menu_active = "home"
+    # =========================================================
+    # BLOCO 3: ROTEAMENTO DE MENUS ATIVOS
+    # =========================================================
 
-    # --- TELA INICIAL (MENU COMPLETO) ---
+    # --- TELA 1: HOME (MENU PRINCIPAL DE TILES) ---
     if st.session_state.menu_active == "home":
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button("📝\nSimulados", use_container_width=True):
+        st.markdown(
+            '<p style="text-align:center; font-weight:700; color:#4b5563; margin-bottom:15px;">O QUE VOCÊ DESEJA FAZER HOJE?</p>',
+            unsafe_allow_html=True,
+        )
+
+        # Grid 2x2 de navegação por botões customizados
+        row1_col1, row1_col2 = st.columns(2)
+        row2_col1, row2_col2 = st.columns(2)
+
+        with row1_col1:
+            if st.button(
+                "📝 SIMULADOS DISPONÍVEIS",
+                key="menu_provas",
+                use_container_width=True,
+                id="b1_p",
+            ):
                 st.session_state.menu_active = "provas"
                 st.rerun()
-        with c2:
-            if st.button("✅\nHistórico", use_container_width=True):
-                st.session_state.menu_active = "historico"
+
+        with row1_col2:
+            if st.button(
+                "📅 ATIVIDADES AGENDADAS",
+                key="menu_atividades",
+                use_container_width=True,
+                id="b2_a",
+            ):
+                st.session_state.menu_active = "provas"
                 st.rerun()
 
-        c3, c4 = st.columns(2)
-        with c3:
-            if st.button("📊\nNotas", use_container_width=True):
+        with row2_col1:
+            if st.button(
+                "📊 VER MEU BOLETIM / NOTAS",
+                key="menu_notas",
+                use_container_width=True,
+                id="b3_n",
+            ):
                 st.session_state.menu_active = "notas"
                 st.rerun()
-        with c4:
-            if st.button("🏋️\nQUESTÕES PARA TREINAR", use_container_width=True):
+
+        with row2_col2:
+            if st.button(
+                "🏋️ QUESTÕES PARA TREINAR",
+                key="menu_treino",
+                use_container_width=True,
+                id="b4_t",
+            ):
                 st.session_state.menu_active = "treino"
                 st.rerun()
 
-        c5, c6 = st.columns(2)
-        with c5:
-            st.button("🛠️\nSuporte", disabled=True, use_container_width=True)
-        with c6:
-            st.button("⚙️\nPerfil", disabled=True, use_container_width=True)
-
-    # =========================================================
-    # BLOCO 3: ROTEAMENTO DAS TELAS (PROVAS E NOTAS)
-    # =========================================================
-
-    # --- TELA DE PROVAS ---
+    # --- TELA 2: PROVAS E SIMULADOS ---
     elif st.session_state.menu_active == "provas":
         if st.button("⬅ VOLTAR AO MENU", use_container_width=True):
             st.session_state.menu_active = "home"
             st.rerun()
 
         st.markdown(
-            '<p style="text-align:center; font-weight:800; color:#333; margin-top:15px;">SIMULADOS DISPONÍVEIS</p>',
+            '<p style="text-align:center; font-weight:800; color:#333; margin-top:15px;">📝 AVALIAÇÕES DISPONÍVEIS PARA SUA SÉRIE</p>',
             unsafe_allow_html=True,
         )
 
-        # Filtra a série do aluno
-        turma_aluno = str(aluno.get("turma", ""))
-        serie_aluno = turma_aluno[:2] + " Ano" if len(turma_aluno) >= 2 else "1º Ano"
-
         try:
             res = (
-                db_provas.table("modelos_prova")
-                .select("*")
-                .eq("serie", serie_aluno)
-                .eq("ativa", True)
-                .execute()
+                db_provas.table("modelos_prova").select("*").eq("ativa", True).execute()
             )
 
-            provas_disponiveis = [
-                prova for prova in (res.data or []) if _prova_disponivel_agora(prova)
-            ]
+            provas_validas = []
+            if res.data:
+                for p in res.data:
+                    if _prova_disponivel_agora(p):
+                        provas_validas.append(p)
 
-            if provas_disponiveis:
-                for prova in provas_disponiveis:
+            if provas_validas:
+                for prova in provas_validas:
                     with st.container(border=True):
-                        st.markdown(
-                            f"""
-                            <div style="padding: 5px;">
-                                <div style="font-size: 16px; font-weight: 800; color: #1e293b;">{prova.get('titulo', 'Simulado')}</div>
-                                <div style="font-size: 13px; color: #64748b; margin-bottom: 10px;">
-                                    ⏱️ {prova.get('tempo_duracao', 60)} min | 🧩 {len(prova.get('questoes_ids', []))} Questões
-                                </div>
-                            </div>
-                        """,
-                            unsafe_allow_html=True,
+                        st.subheader(
+                            f"🔹 {prova.get('titulo', 'Avaliação Sem Título')}"
+                        )
+                        st.caption(
+                            f"Questões: {len(prova.get('questoes_ids', []))} | Tempo: {prova.get('tempo_duracao', 60)} min"
                         )
 
-                        # Botão de Iniciar Estilizado
                         if st.button(
-                            "INICIAR AGORA",
-                            key=f"start_prova_{prova['id']}",
+                            "▶ INICIAR AVALIAÇÃO",
+                            key=f"btn_prov_{prova['id']}",
                             type="primary",
                             use_container_width=True,
                         ):
@@ -266,35 +262,79 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
                             st.session_state.etapa = "instrucoes"
                             st.rerun()
             else:
-                st.info(f"Nenhum simulado aberto para o {serie_aluno}.")
+                st.info(f"Nenhum simulado aberto para o {serie_aluno} no momento.")
 
         except Exception as e:
             st.error("Erro ao conectar com o banco de dados das provas.")
 
-    # --- TELA DE NOTAS (DESEMPENHO) ---
+    # --- TELA 3: NOTAS (DESEMPENHO) ---
     elif st.session_state.menu_active == "notas":
         if st.button("⬅ VOLTAR AO MENU", use_container_width=True):
             st.session_state.menu_active = "home"
             st.rerun()
 
         st.write("---")
-        # CHAMA A FUNÇÃO DO ARQUIVO desempenho.py
-        from telas_aluno.desempenho import mostrar_tela_desempenho
-
         mostrar_tela_desempenho(db_alunos, db_provas)
+
+    # =========================================================
+    # 🏋️ NOVA TELA 4: LISTAS DE EXERCÍCIOS PARA TREINO
+    # =========================================================
+    elif st.session_state.menu_active == "treino":
+        if st.button("⬅ VOLTAR AO MENU", use_container_width=True):
+            st.session_state.menu_active = "home"
+            st.rerun()
+
+        st.markdown(
+            '<p style="text-align:center; font-weight:800; color:#333; margin-top:15px;">🏋️ LISTAS DE EXERCÍCIOS PARA TREINAR</p>',
+            unsafe_allow_html=True,
+        )
+
+        try:
+            # Busca todas as listas de exercícios marcadas como ativas
+            res_listas = (
+                db_provas.table("listas_exercicios")
+                .select("*")
+                .eq("ativa", True)
+                .execute()
+            )
+
+            if res_listas.data:
+                for lista in res_listas.data:
+                    with st.container(border=True):
+                        st.subheader(f"📖 {lista.get('titulo', 'Lista de Treino')}")
+                        q_ids = lista.get("questoes_ids", [])
+                        st.caption(
+                            f"🧩 Total de exercícios nesta lista: {len(q_ids)} questões."
+                        )
+
+                        # Botão que efetivamente aciona o arquivo de execução
+                        if st.button(
+                            "🏋️ COMEÇAR TREINO AGORA",
+                            key=f"btn_lista_{lista['id']}",
+                            type="primary",
+                            use_container_width=True,
+                        ):
+                            # Salva a lista escolhida na sessão
+                            st.session_state.lista_config = lista
+                            # 🚀 MUDA A ETAPA GLOBAL PARA QUE O APP.PY CHAME O EXECUCAO_LISTA.PY
+                            st.session_state.etapa = "execucao_lista"
+                            st.rerun()
+            else:
+                st.info(
+                    "Nenhuma lista de exercícios de treino disponível no momento. Avise seu professor!"
+                )
+
+        except Exception as e:
+            st.error(f"Erro ao conectar com a tabela de listas de exercícios: {e}")
 
     st.markdown("</div>", unsafe_allow_html=True)  # Fecha area-comandos
 
     # =========================================================
-    # BLOCO 4: RODAPÉ E SAÍDA
+    # BLOCO 5: RODAPÉ E SAÍDA
     # =========================================================
     st.write("")
-
     st.markdown('<div class="btn-sair">', unsafe_allow_html=True)
     if st.button("🚪 ENCERRAR SESSÃO", use_container_width=True):
-        st.session_state.aluno = None
-        st.session_state.etapa = "login"
+        st.session_state.clear()
         st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("</div>", unsafe_allow_html=True)  # Fim do Wrapper Mobile

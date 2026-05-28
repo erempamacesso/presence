@@ -25,7 +25,7 @@ try:
     from telas_aluno.dashboard_aluno import mostrar_tela_dashboard
     from telas_aluno.execucao_prova import render_instrucoes, render_prova
     from telas_aluno.resultados import render_suspense, render_revisao
-    from modulos.execucao_lista import exibir_execucao_lista
+    from telas_aluno.execucao_lista import exibir_execucao_lista
 except ImportError as e:
     st.error(
         f"❌ Erro crítico de importação: {e}. Verifique se a pasta 'telas_aluno' e o arquivo '__init__.py' existem."

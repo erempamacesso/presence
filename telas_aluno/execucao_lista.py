@@ -41,98 +41,41 @@ def parse_alternativas(alts_raw):
 
 
 # ==========================================
-# 🔍 BUSCA NO BANCO
-# ==========================================
-def buscar_assuntos(supabase, serie):
-    """Retorna lista de assuntos únicos para a série do aluno."""
-    try:
-        res = supabase.table("questoes").select("assunto").eq("serie", serie).execute()
-        assuntos = sorted(set(r["assunto"] for r in res.data if r.get("assunto")))
-        return assuntos
-    except Exception as e:
-        st.error(f"Erro ao buscar assuntos: {e}")
-        return []
-
-
-def buscar_questoes(supabase, serie, assuntos_selecionados, quantidade):
-    """Busca questões da série do aluno, opcionalmente filtradas por assunto."""
-    try:
-        query = supabase.table("questoes").select("*").eq("serie", serie)
-        if assuntos_selecionados:
-            query = query.in_("assunto", assuntos_selecionados)
-        res = query.limit(quantidade * 4).execute()
-        if not res.data:
-            return []
-        dados = res.data[:]
-        random.shuffle(dados)
-        return dados[:quantidade]
-    except Exception as e:
-        st.error(f"Erro ao buscar questões: {e}")
-        return []
-
-
-# ==========================================
 # 📝 PÁGINA PRINCIPAL
 # ==========================================
 def exibir_execucao_lista(supabase):
+    # Tenta recuperar a configuração vinda do dashboard
+    config = st.session_state.get("lista_config")
+    aluno = st.session_state.get("aluno")
 
-    # Série do aluno vinda do login/session
-    serie_aluno = st.session_state.get("serie_aluno") or st.session_state.get("serie")
-
-    if not serie_aluno:
-        st.error("Série do aluno não encontrada na sessão.")
+    if not config or not aluno:
+        st.warning("Nenhuma configuração de treino encontrada.")
+        if st.button("Voltar ao Menu"):
+            st.session_state.etapa = "home"
+            st.rerun()
         return
 
+    serie_aluno = aluno.get("turma", "2º Ano")[:2] + " Ano"
+    st.title(f"📚 {config.get('titulo', 'Treino Livre')}")
+    st.caption(f"Série: {serie_aluno} | Responda e receba feedback imediato.")
+
     # ── Estados da página ──────────────────────────────────────────────
-    if "el_fase" not in st.session_state:
-        st.session_state.el_fase = "filtros"  # "filtros" | "questoes"
-    if "el_questoes" not in st.session_state:
-        st.session_state.el_questoes = []
     if "el_respondidas" not in st.session_state:
         st.session_state.el_respondidas = {}  # {id_q: letra_marcada}
 
-    # ══════════════════════════════════════════════════════════════════
-    # FASE 1 — FILTROS
-    # ══════════════════════════════════════════════════════════════════
-    if st.session_state.el_fase == "filtros":
-
-        st.markdown(
-            f"## 📚 Treino — {serie_aluno}",
-        )
-        st.caption("Escolha os assuntos e a quantidade de questões para começar.")
-        st.divider()
-
-        assuntos = buscar_assuntos(supabase, serie_aluno)
-        if not assuntos:
-            st.warning("Nenhuma questão encontrada para sua série no banco de dados.")
-            return
-
-        assuntos_sel = st.multiselect(
-            "Filtrar por assunto",
-            options=assuntos,
-            placeholder="Todos os assuntos",
-        )
-
-        quantidade = st.select_slider(
-            "Quantidade de questões",
-            options=[5, 10, 15, 20, 30, 40, 50],
-            value=10,
-        )
-
-        st.write("")  # espaço
-        if st.button("▶ Iniciar treino", type="primary", use_container_width=True):
-            with st.spinner("Carregando questões..."):
-                qs = buscar_questoes(supabase, serie_aluno, assuntos_sel, quantidade)
-            if not qs:
-                st.error(
-                    "Nenhuma questão encontrada com esses filtros. Tente outros assuntos."
-                )
+    # Carrega as questões apenas uma vez
+    if "el_questoes" not in st.session_state or not st.session_state.el_questoes:
+        with st.spinner("Carregando questões selecionadas..."):
+            ids = config.get("questoes_ids", [])
+            res = supabase.table("questoes").select("*").in_("id", ids).execute()
+            if res.data:
+                mapa_questoes = {q["id"]: q for q in res.data}
+                st.session_state.el_questoes = [
+                    mapa_questoes[id_q] for id_q in ids if id_q in mapa_questoes
+                ]
             else:
-                st.session_state.el_questoes = qs
-                st.session_state.el_respondidas = {}
-                st.session_state.el_fase = "questoes"
-                st.rerun()
-        return
+                st.error("Não foi possível carregar as questões.")
+                return
 
     # ══════════════════════════════════════════════════════════════════
     # FASE 2 — QUESTÕES
@@ -271,13 +214,14 @@ def exibir_execucao_lista(supabase):
 
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("🔄 Repetir com novos filtros", use_container_width=True):
-            for k in ["el_fase", "el_questoes", "el_respondidas"]:
+        if st.button("🔄 Novo Treino", use_container_width=True):
+            for k in ["el_questoes", "el_respondidas", "lista_config"]:
                 st.session_state.pop(k, None)
+            st.session_state.menu_active = "treino"
             st.rerun()
     with col2:
-        if st.button("⬅️ Voltar ao menu", type="secondary", use_container_width=True):
-            for k in ["el_fase", "el_questoes", "el_respondidas"]:
+        if st.button("⬅️ Sair do Treino", type="secondary", use_container_width=True):
+            for k in ["el_questoes", "el_respondidas", "lista_config"]:
                 st.session_state.pop(k, None)
             st.session_state.etapa = "home"
             st.rerun()
