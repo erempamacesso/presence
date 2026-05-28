@@ -1,6 +1,8 @@
 import streamlit as st
 from datetime import datetime, time as dt_time
 import random
+import re
+import unicodedata
 
 # Importação do módulo de desempenho já existente
 from telas_aluno.desempenho import mostrar_tela_desempenho
@@ -36,6 +38,27 @@ def _campo_existente(prova, candidatos):
         if campo in prova:
             return campo
     return None
+
+
+def _normalizar_texto(valor):
+    texto = unicodedata.normalize("NFKD", str(valor or ""))
+    texto = texto.encode("ascii", "ignore").decode("ascii").lower()
+    return re.sub(r"\s+", " ", texto).strip()
+
+
+def _questao_compativel_com_serie(questao, serie_aluno):
+    serie_questao = _normalizar_texto(questao.get("serie"))
+    serie_aluno_norm = _normalizar_texto(serie_aluno)
+
+    if not serie_questao or not serie_aluno_norm or serie_aluno_norm == "geral":
+        return True
+
+    numeros_questao = set(re.findall(r"\d+", serie_questao))
+    numeros_aluno = set(re.findall(r"\d+", serie_aluno_norm))
+    if numeros_questao and numeros_aluno:
+        return bool(numeros_questao & numeros_aluno)
+
+    return serie_questao in serie_aluno_norm or serie_aluno_norm in serie_questao
 
 
 def _prova_disponivel_agora(prova):
@@ -286,42 +309,59 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
         )
 
         try:
-            # Busca todas as listas de exercícios marcadas como ativas
-            res_listas = (
-                db_provas.table("listas_exercicios")
-                .select("*")
-                .eq("ativa", True)
+            res_questoes = (
+                db_provas.table("questoes")
+                .select("id, enunciado, assunto, serie")
                 .execute()
             )
 
-            if res_listas.data:
-                for lista in res_listas.data:
-                    with st.container(border=True):
-                        st.subheader(f"📖 {lista.get('titulo', 'Lista de Treino')}")
-                        q_ids = lista.get("questoes_ids", [])
-                        st.caption(
-                            f"🧩 Total de exercícios nesta lista: {len(q_ids)} questões."
-                        )
+            questoes = res_questoes.data or []
+            questoes_serie = [
+                q for q in questoes if _questao_compativel_com_serie(q, serie_aluno)
+            ]
+            questoes_treino = questoes_serie or questoes
 
-                        # Botão que efetivamente aciona o arquivo de execução
-                        if st.button(
-                            "🏋️ COMEÇAR TREINO AGORA",
-                            key=f"btn_lista_{lista['id']}",
-                            type="primary",
-                            use_container_width=True,
-                        ):
-                            # Salva a lista escolhida na sessão
-                            st.session_state.lista_config = lista
-                            # 🚀 MUDA A ETAPA GLOBAL PARA QUE O APP.PY CHAME O EXECUCAO_LISTA.PY
-                            st.session_state.etapa = "em_exercicio"
-                            st.rerun()
+            if questoes_treino:
+                random.shuffle(questoes_treino)
+                questoes_treino = questoes_treino[:20]
+                q_ids = [q["id"] for q in questoes_treino if q.get("id") is not None]
+                assuntos = sorted(
+                    {
+                        str(q.get("assunto", "")).strip()
+                        for q in questoes_treino
+                        if q.get("assunto")
+                    }
+                )
+
+                with st.container(border=True):
+                    st.subheader("📖 Treino livre")
+                    st.caption(
+                        f"🧩 Total de exercícios neste treino: {len(q_ids)} questões."
+                    )
+                    if assuntos:
+                        st.caption(f"Assuntos: {', '.join(assuntos[:5])}")
+
+                    if st.button(
+                        "🏋️ COMEÇAR TREINO AGORA",
+                        key="btn_treino_livre",
+                        type="primary",
+                        use_container_width=True,
+                    ):
+                        st.session_state.lista_config = {
+                            "id": "treino_livre",
+                            "titulo": "Treino Livre",
+                            "questoes_ids": q_ids,
+                            "ativa": True,
+                        }
+                        st.session_state.etapa = "em_exercicio"
+                        st.rerun()
             else:
                 st.info(
-                    "Nenhuma lista de exercícios de treino disponível no momento. Avise seu professor!"
+                    "Nenhuma questão de treino disponível no momento. Avise seu professor!"
                 )
 
         except Exception as e:
-            st.error(f"Erro ao conectar com a tabela de listas de exercícios: {e}")
+            st.error(f"Erro ao conectar com a tabela de questões: {e}")
 
     st.markdown("</div>", unsafe_allow_html=True)  # Fecha area-comandos
 
