@@ -69,68 +69,45 @@ def extrair_texto_alternativa(conteudo):
 # 📝 TELA ESTILO QCONCURSOS
 # ==========================================
 def exibir_execucao_lista(supabase):
-    st.title("📚 QTreino - Resolução de Questões")
-    st.caption("Filtre, responda e receba feedback imediato questão por questão.")
+    # Tenta recuperar a configuração vinda do dashboard
+    config = st.session_state.get("lista_config")
+
+    if not config:
+        st.warning("Nenhuma configuração de treino encontrada.")
+        if st.button("Voltar ao Menu"):
+            st.session_state.etapa = "home"
+            st.rerun()
+        return
+
+    st.title(f"📚 {config.get('titulo', 'Treino Livre')}")
+    st.caption(
+        "Responda as questões e use o botão de verificação para feedback imediato."
+    )
 
     # --- INICIALIZAÇÃO DE ESTADOS ---
-    if "qc_questoes" not in st.session_state:
-        st.session_state.qc_questoes = []
     if "qc_respondidas" not in st.session_state:
         st.session_state.qc_respondidas = {}  # Guarda {id_questao: alternativa_marcada}
 
-    # ==========================================
-    # 🔍 PAINEL DE FILTROS (MECANISMO DE BUSCA)
-    # ==========================================
-    # Se já tem questões carregadas, o expander fica fechado. Se não, fica aberto.
-    expander_aberto = len(st.session_state.qc_questoes) == 0
-
-    with st.expander("⚙️ Filtros de Busca", expanded=expander_aberto):
-        with st.form("form_filtros_qc"):
-            c1, c2, c3 = st.columns([2, 2, 1])
-            lista_series = ["Todas", "1º ANO", "2º ANO", "3º ANO", "9º ANO", "EJA"]
-
-            filtro_serie = c1.selectbox("Série / Ano:", lista_series)
-            filtro_assunto = c2.text_input(
-                "Assunto (Opcional):", placeholder="Ex: Frações, Revolução..."
-            )
-            limite_q = c3.number_input(
-                "Quantidade:", min_value=1, max_value=50, value=10
-            )
-
-            btn_buscar = st.form_submit_button(
-                "🔍 Filtrar Questões", type="primary", use_container_width=True
-            )
-
-            if btn_buscar:
-                with st.spinner("Buscando no banco de dados..."):
-                    # Monta a query dinâmica no Supabase
-                    query = supabase.table("questoes").select("*")
-                    if filtro_serie != "Todas":
-                        query = query.eq("serie", filtro_serie)
-                    if filtro_assunto:
-                        query = query.ilike("assunto", f"%{filtro_assunto}%")
-
-                    res = query.limit(limite_q).execute()
-
-                    if res.data:
-                        st.session_state.qc_questoes = res.data
-                        st.session_state.qc_respondidas = (
-                            {}
-                        )  # Reseta o progresso ao buscar novas
-                        st.rerun()
-                    else:
-                        st.warning("Nenhuma questão encontrada com esses filtros.")
+    # Carrega as questões apenas uma vez para não dar refresh no banco a cada clique
+    if "qc_questoes" not in st.session_state or not st.session_state.qc_questoes:
+        with st.spinner("Carregando questões selecionadas..."):
+            ids = config.get("questoes_ids", [])
+            res = supabase.table("questoes").select("*").in_("id", ids).execute()
+            if res.data:
+                # Reordena para manter a ordem aleatória sorteada no dashboard
+                mapa_questoes = {q["id"]: q for q in res.data}
+                st.session_state.qc_questoes = [
+                    mapa_questoes[id_q] for id_q in ids if id_q in mapa_questoes
+                ]
+            else:
+                st.error("Não foi possível carregar as questões.")
+                return
 
     # ==========================================
     # 📖 LISTA DE QUESTÕES (RENDERIZAÇÃO INDIVIDUAL)
     # ==========================================
     questoes = st.session_state.qc_questoes
-
-    if not questoes:
-        st.info("👆 Utilize o painel acima para buscar questões e iniciar seu treino.")
-        return
-
-    st.write(f"**{len(questoes)} questões encontradas.** Bom estudo!")
+    st.write(f"**Praticando {len(questoes)} questões.** Bom estudo!")
     st.divider()
 
     for i, q in enumerate(questoes):
@@ -223,10 +200,12 @@ def exibir_execucao_lista(supabase):
     # RODAPÉ
     # ==========================================
     st.divider()
-    if st.button("⬅️ Sair do Treino", type="secondary", use_container_width=True):
-        keys_limpeza = ["qc_questoes", "qc_respondidas"]
+    if st.button(
+        "⬅️ Encerrar e Voltar ao Dashboard", type="secondary", use_container_width=True
+    ):
+        keys_limpeza = ["qc_questoes", "qc_respondidas", "lista_config"]
         for k in keys_limpeza:
             if k in st.session_state:
                 del st.session_state[k]
-        st.session_state.etapa = "ante_sala"
+        st.session_state.etapa = "home"
         st.rerun()
