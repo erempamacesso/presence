@@ -55,7 +55,7 @@ def exibir_execucao_lista(supabase):
             st.rerun()
         return
 
-    serie_aluno = aluno.get("turma", "2º Ano")[:2] + " Ano"
+    serie_aluno = aluno.get("serie") or aluno.get("turma", "2º Ano")
     st.title(f"📚 {config.get('titulo', 'Treino Livre')}")
     st.caption(f"Série: {serie_aluno} | Responda e receba feedback imediato.")
 
@@ -218,10 +218,12 @@ def exibir_execucao_lista(supabase):
             for k in ["el_questoes", "el_respondidas", "lista_config"]:
                 st.session_state.pop(k, None)
             st.session_state.menu_active = "treino"
+            st.session_state.etapa = "home"
             st.rerun()
     with col2:
         if st.button("⬅️ Sair do Treino", type="secondary", use_container_width=True):
             for k in ["el_questoes", "el_respondidas", "lista_config"]:
                 st.session_state.pop(k, None)
+            st.session_state.menu_active = "treino"
             st.session_state.etapa = "home"
             st.rerun()
