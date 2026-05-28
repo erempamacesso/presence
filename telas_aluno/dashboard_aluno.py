@@ -77,7 +77,7 @@ def _prova_disponivel_agora(prova):
     return True
 
 
-def mostrar_dashboard(db_alunos, db_provas):
+def mostrar_tela_dashboard(db_alunos, db_provas):
     # Inicializa estados de navegação se não existirem
     if "menu_active" not in st.session_state:
         st.session_state.menu_active = "home"
@@ -317,7 +317,7 @@ def mostrar_dashboard(db_alunos, db_provas):
                             # Salva a lista escolhida na sessão
                             st.session_state.lista_config = lista
                             # 🚀 MUDA A ETAPA GLOBAL PARA QUE O APP.PY CHAME O EXECUCAO_LISTA.PY
-                            st.session_state.etapa = "execucao_lista"
+                            st.session_state.etapa = "em_exercicio"
                             st.rerun()
             else:
                 st.info(
