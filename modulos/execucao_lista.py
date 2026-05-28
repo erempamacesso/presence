@@ -9,7 +9,7 @@ import ast
 # ==========================================
 @st.cache_resource
 def configurar_tutor_ia():
-    """Configura o modelo Gemini via Secrets de forma otimizada para não cair."""
+    """Configura o modelo Gemini via Secrets de forma otimizada."""
     if "GEMINI_API_KEY" not in st.secrets:
         st.error("Chave GEMINI_API_KEY não configurada nos Secrets do Streamlit.")
         return None
@@ -38,7 +38,10 @@ def explicar_com_ia(enunciado, resposta_aluno, resposta_correta):
         resposta = model.generate_content(prompt, generation_config=config)
         return resposta.text
     except Exception as e:
-        return f"⚠️ O Tutor MarIO está processando muitas dúvidas agora. Lembre-se: o gabarito correto é a alternativa {resposta_correta}!"
+        return (
+            f"⚠️ O Tutor MarIO está ocupado agora. "
+            f"Lembre-se: o gabarito correto é a alternativa {resposta_correta}!"
+        )
 
 
 # ==========================================
@@ -60,80 +63,216 @@ def extrair_texto_alternativa(conteudo):
                 dict_convertido = ast.literal_eval(conteudo)
                 if isinstance(dict_convertido, dict):
                     return str(dict_convertido.get("texto", ""))
-            except:
+            except Exception:
                 pass
     return str(conteudo)
 
 
 # ==========================================
-# 📝 TELA ESTILO QCONCURSOS
+# 🔍 CARREGAMENTO DE SÉRIES DISPONÍVEIS
+# ==========================================
+@st.cache_data(ttl=300)
+def carregar_series(_supabase):
+    """Busca todas as séries únicas da tabela questoes. Cache de 5 minutos."""
+    try:
+        res = _supabase.table("questoes").select("serie").execute()
+        if res.data:
+            series = sorted(set(q["serie"] for q in res.data if q.get("serie")))
+            return series
+    except Exception as e:
+        st.error(f"Erro ao carregar séries: {e}")
+    return []
+
+
+# ==========================================
+# 📋 PAINEL DE FILTROS
+# ==========================================
+def exibir_painel_filtros(supabase):
+    """
+    Exibe o painel lateral (ou expandido) de filtros.
+    Retorna (series_selecionadas, quantidade) ou None se o aluno ainda
+    não confirmou o início.
+    """
+    st.title("📚 Treino de Questões")
+    st.write("Selecione os filtros e clique em **Iniciar Treino**.")
+
+    series_disponiveis = carregar_series(supabase)
+
+    if not series_disponiveis:
+        st.warning("Nenhuma série encontrada no banco de dados.")
+        return None
+
+    series_selecionadas = st.multiselect(
+        "Filtrar por Série",
+        options=series_disponiveis,
+        default=[],
+        placeholder="Todas as séries (sem filtro)",
+    )
+
+    quantidade = st.slider(
+        "Quantidade de questões",
+        min_value=5,
+        max_value=50,
+        value=10,
+        step=5,
+    )
+
+    if st.button("🚀 Iniciar Treino", type="primary", use_container_width=True):
+        return series_selecionadas, quantidade
+
+    return None
+
+
+# ==========================================
+# 📦 CARREGAMENTO DE QUESTÕES
+# ==========================================
+def carregar_questoes(supabase, series_selecionadas, quantidade):
+    """
+    Busca questões do banco. Filtra por série se fornecido,
+    ordena aleatoriamente e limita pela quantidade escolhida.
+    """
+    try:
+        query = supabase.table("questoes").select("*")
+
+        if series_selecionadas:
+            query = query.in_("serie", series_selecionadas)
+
+        # Ordena aleatoriamente pelo Postgres e limita
+        res = query.limit(quantidade * 3).execute()  # Pega mais para poder embaralhar
+
+        if not res.data:
+            return []
+
+        import random
+
+        dados = res.data[:]
+        random.shuffle(dados)
+        return dados[:quantidade]
+
+    except Exception as e:
+        st.error(f"Erro ao carregar questões: {e}")
+        return []
+
+
+# ==========================================
+# 📝 TELA DE EXECUÇÃO DA LISTA
 # ==========================================
 def exibir_execucao_lista(supabase):
-    # Tenta recuperar a configuração vinda do dashboard
-    config = st.session_state.get("lista_config")
+    """
+    Página principal de resolução de questões.
+    Gerencia dois estados internos:
+      - "filtros": mostra o painel de seleção
+      - "respondendo": mostra as questões carregadas
+    """
 
-    if not config:
-        st.warning("Nenhuma configuração de treino encontrada.")
-        if st.button("Voltar ao Menu"):
-            st.session_state.etapa = "home"
+    # --- INICIALIZAÇÃO DO ESTADO INTERNO DA PÁGINA ---
+    if "exec_estado" not in st.session_state:
+        st.session_state.exec_estado = "filtros"
+
+    if "exec_respondidas" not in st.session_state:
+        # { id_questao: letra_marcada }
+        st.session_state.exec_respondidas = {}
+
+    if "exec_comentarios" not in st.session_state:
+        # { id_questao: texto_comentario }  ← FIX: persiste os comentários da IA
+        st.session_state.exec_comentarios = {}
+
+    if "exec_questoes" not in st.session_state:
+        st.session_state.exec_questoes = []
+
+    # ==========================================
+    # ESTADO 1: PAINEL DE FILTROS
+    # ==========================================
+    if st.session_state.exec_estado == "filtros":
+        resultado = exibir_painel_filtros(supabase)
+
+        if resultado is not None:
+            series_sel, qtd = resultado
+            with st.spinner("Carregando questões..."):
+                questoes = carregar_questoes(supabase, series_sel, qtd)
+
+            if not questoes:
+                st.error(
+                    "Nenhuma questão encontrada com os filtros selecionados. "
+                    "Tente outras séries ou aumente a quantidade."
+                )
+            else:
+                # Salva e muda de estado
+                st.session_state.exec_questoes = questoes
+                st.session_state.exec_respondidas = {}
+                st.session_state.exec_comentarios = {}
+                st.session_state.exec_estado = "respondendo"
+                st.rerun()
+
+        return  # Aguarda interação no painel de filtros
+
+    # ==========================================
+    # ESTADO 2: RESOLUÇÃO DAS QUESTÕES
+    # ==========================================
+    questoes = st.session_state.exec_questoes
+
+    if not questoes:
+        st.warning("Nenhuma questão carregada. Volte aos filtros.")
+        if st.button("⬅️ Voltar aos Filtros"):
+            st.session_state.exec_estado = "filtros"
             st.rerun()
         return
 
-    st.title(f"📚 {config.get('titulo', 'Treino Livre')}")
-    st.caption(
-        "Responda as questões e use o botão de verificação para feedback imediato."
+    # Calcula progresso
+    total = len(questoes)
+    respondidas = len(st.session_state.exec_respondidas)
+    acertos = sum(
+        1
+        for id_q, letra in st.session_state.exec_respondidas.items()
+        for q in questoes
+        if str(q["id"]) == id_q
+        and letra
+        == str(q.get("resposta_correta") or q.get("gabarito", "")).strip().upper()
     )
 
-    # --- INICIALIZAÇÃO DE ESTADOS ---
-    if "qc_respondidas" not in st.session_state:
-        st.session_state.qc_respondidas = {}  # Guarda {id_questao: alternativa_marcada}
+    # Cabeçalho com progresso
+    col1, col2, col3 = st.columns([3, 1, 1])
+    with col1:
+        st.title("📝 Resolução de Questões")
+    with col2:
+        st.metric("Respondidas", f"{respondidas}/{total}")
+    with col3:
+        if respondidas > 0:
+            st.metric("Acertos", f"{acertos}/{respondidas}")
 
-    # Carrega as questões apenas uma vez para não dar refresh no banco a cada clique
-    if "qc_questoes" not in st.session_state or not st.session_state.qc_questoes:
-        with st.spinner("Carregando questões selecionadas..."):
-            ids = config.get("questoes_ids", [])
-            res = supabase.table("questoes").select("*").in_("id", ids).execute()
-            if res.data:
-                # Reordena para manter a ordem aleatória sorteada no dashboard
-                mapa_questoes = {q["id"]: q for q in res.data}
-                st.session_state.qc_questoes = [
-                    mapa_questoes[id_q] for id_q in ids if id_q in mapa_questoes
-                ]
-            else:
-                st.error("Não foi possível carregar as questões.")
-                return
+    if respondidas > 0:
+        st.progress(respondidas / total)
 
-    # ==========================================
-    # 📖 LISTA DE QUESTÕES (RENDERIZAÇÃO INDIVIDUAL)
-    # ==========================================
-    questoes = st.session_state.qc_questoes
-    st.write(f"**Praticando {len(questoes)} questões.** Bom estudo!")
     st.divider()
 
+    # ==========================================
+    # RENDERIZAÇÃO INDIVIDUAL DE CADA QUESTÃO
+    # ==========================================
     for i, q in enumerate(questoes):
         id_q = str(q["id"])
-
-        # Verifica se o aluno já respondeu ESTA questão específica
-        ja_respondeu = id_q in st.session_state.qc_respondidas
+        ja_respondeu = id_q in st.session_state.exec_respondidas
 
         with st.container(border=True):
-            # Cabeçalho da Questão
+            # Cabeçalho
             serie_str = q.get("serie", "Geral")
             assunto_str = q.get("assunto", "Sem Assunto")
             st.markdown(
-                f"**Q{i+1}.** <span style='color:gray; font-size:0.9em'>({serie_str} | {assunto_str}) ID: {id_q}</span>",
+                f"**Q{i + 1}.** "
+                f"<span style='color:gray; font-size:0.85em'>"
+                f"({serie_str} | {assunto_str})"
+                f"</span>",
                 unsafe_allow_html=True,
             )
 
             enunciado_puro = limpar_html(q.get("enunciado", ""))
             st.write(enunciado_puro)
 
-            # Processamento das Alternativas
+            # Processa alternativas
             alts = q.get("alternativas", {})
             if isinstance(alts, str):
                 try:
                     alts = ast.literal_eval(alts)
-                except:
+                except Exception:
                     alts = {}
 
             opcoes = []
@@ -145,15 +284,20 @@ def exibir_execucao_lista(supabase):
                     opcoes.append(label)
                     mapa_letras[label] = letra
 
-            # Se já respondeu, descobre qual foi a opção para deixar marcada no radio
+            if not opcoes:
+                st.warning("Esta questão não possui alternativas cadastradas.")
+                continue
+
+            # Descobre qual opção estava marcada (para manter após rerun)
             idx_selecionado = None
             if ja_respondeu:
-                letra_marcada = st.session_state.qc_respondidas[id_q]
+                letra_marcada = st.session_state.exec_respondidas[id_q]
                 for idx_opt, opt_txt in enumerate(opcoes):
                     if opt_txt.startswith(f"{letra_marcada})"):
                         idx_selecionado = idx_opt
+                        break
 
-            # Componente Radio (Desabilita apenas se já tiver respondido)
+            # Radio de alternativas
             escolha = st.radio(
                 f"alternativas_q{id_q}",
                 options=opcoes,
@@ -163,49 +307,82 @@ def exibir_execucao_lista(supabase):
                 label_visibility="collapsed",
             )
 
-            # ==========================================
-            # AÇÃO DE RESPONDER E FEEDBACK IMEDIATO
-            # ==========================================
+            # --- BOTÃO DE RESPONDER ---
             if not ja_respondeu:
-                # Botão para submeter apenas esta questão
-                if st.button("Responder", key=f"btn_resp_{id_q}"):
+                if st.button("✅ Responder", key=f"btn_resp_{id_q}"):
                     if escolha:
-                        st.session_state.qc_respondidas[id_q] = mapa_letras[escolha]
+                        st.session_state.exec_respondidas[id_q] = mapa_letras[escolha]
                         st.rerun()
                     else:
                         st.warning("Selecione uma alternativa antes de responder!")
+
+            # --- FEEDBACK PÓS-RESPOSTA ---
             else:
-                # Lógica de Gabarito e IA para quando a questão estiver respondida
-                letra_marcada = st.session_state.qc_respondidas[id_q]
+                letra_marcada = st.session_state.exec_respondidas[id_q]
                 gabarito = (
-                    str(q.get("resposta_correta") or q.get("gabarito")).strip().upper()
+                    str(q.get("resposta_correta") or q.get("gabarito", ""))
+                    .strip()
+                    .upper()
                 )
 
                 if letra_marcada == gabarito:
-                    st.success(f"✅ **Acertou!** Gabarito: {gabarito}")
+                    st.success(f"✅ **Acertou!** Gabarito: **{gabarito}**")
                 else:
                     st.error(
-                        f"❌ **Errou.** Você marcou {letra_marcada}, o correto é **{gabarito}**."
+                        f"❌ **Errou.** Você marcou **{letra_marcada}**, "
+                        f"o correto é **{gabarito}**."
                     )
 
-                # Botão para chamar a IA
-                if st.button("✨ Comentário do Tutor MarIO", key=f"btn_ia_{id_q}"):
-                    with st.spinner("Gerando comentário..."):
-                        comentario = explicar_com_ia(
-                            enunciado_puro, letra_marcada, gabarito
-                        )
-                        st.info(f"🤖 **Comentário do Tutor:**\n\n{comentario}")
+                # Exibe comentário já gerado (persiste entre reruns)  ← FIX PRINCIPAL
+                if id_q in st.session_state.exec_comentarios:
+                    st.info(
+                        f"🤖 **Tutor MarIO:**\n\n"
+                        f"{st.session_state.exec_comentarios[id_q]}"
+                    )
+                else:
+                    # Botão para gerar o comentário pela primeira vez
+                    if st.button("✨ Comentário do Tutor MarIO", key=f"btn_ia_{id_q}"):
+                        with st.spinner("Gerando comentário..."):
+                            comentario = explicar_com_ia(
+                                enunciado_puro, letra_marcada, gabarito
+                            )
+                            # Salva no session_state para persistir
+                            st.session_state.exec_comentarios[id_q] = comentario
+                        st.rerun()
 
     # ==========================================
     # RODAPÉ
     # ==========================================
     st.divider()
-    if st.button(
-        "⬅️ Encerrar e Voltar ao Dashboard", type="secondary", use_container_width=True
-    ):
-        keys_limpeza = ["qc_questoes", "qc_respondidas", "lista_config"]
-        for k in keys_limpeza:
-            if k in st.session_state:
-                del st.session_state[k]
-        st.session_state.etapa = "home"
-        st.rerun()
+
+    # Placar final se tudo respondido
+    if respondidas == total:
+        pct = round(acertos / total * 100)
+        if pct >= 70:
+            st.balloons()
+            st.success(
+                f"🎉 **Treino concluído!** Você acertou **{acertos}/{total}** ({pct}%). Ótimo desempenho!"
+            )
+        else:
+            st.warning(
+                f"📊 **Treino concluído!** Você acertou **{acertos}/{total}** ({pct}%). Continue praticando!"
+            )
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        if st.button("🔄 Novo Treino (mesmos filtros)", use_container_width=True):
+            # Mantém questoes mas reseta respostas
+            st.session_state.exec_respondidas = {}
+            st.session_state.exec_comentarios = {}
+            st.rerun()
+
+    with col_b:
+        if st.button(
+            "⬅️ Voltar e Mudar Filtros",
+            type="secondary",
+            use_container_width=True,
+        ):
+            for k in ["exec_questoes", "exec_respondidas", "exec_comentarios"]:
+                st.session_state.pop(k, None)
+            st.session_state.exec_estado = "filtros"
+            st.rerun()
