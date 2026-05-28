@@ -185,7 +185,6 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
                 "📝 SIMULADOS DISPONÍVEIS",
                 key="menu_provas",
                 use_container_width=True,
-                id="b1_p",
             ):
                 st.session_state.menu_active = "provas"
                 st.rerun()
@@ -195,7 +194,6 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
                 "📅 ATIVIDADES AGENDADAS",
                 key="menu_atividades",
                 use_container_width=True,
-                id="b2_a",
             ):
                 st.session_state.menu_active = "provas"
                 st.rerun()
@@ -205,7 +203,6 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
                 "📊 VER MEU BOLETIM / NOTAS",
                 key="menu_notas",
                 use_container_width=True,
-                id="b3_n",
             ):
                 st.session_state.menu_active = "notas"
                 st.rerun()
@@ -215,7 +212,6 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
                 "🏋️ QUESTÕES PARA TREINAR",
                 key="menu_treino",
                 use_container_width=True,
-                id="b4_t",
             ):
                 st.session_state.menu_active = "treino"
                 st.rerun()
