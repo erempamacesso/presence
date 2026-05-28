@@ -61,6 +61,27 @@ def _questao_compativel_com_serie(questao, serie_aluno):
     return serie_questao in serie_aluno_norm or serie_aluno_norm in serie_questao
 
 
+def _questao_compativel_com_assuntos(questao, termos):
+    if not termos:
+        return True
+
+    texto_busca = _normalizar_texto(
+        " ".join(
+            [
+                questao.get("assunto", ""),
+                questao.get("enunciado", ""),
+                questao.get("serie", ""),
+            ]
+        )
+    )
+    return any(termo in texto_busca for termo in termos)
+
+
+def _extrair_termos_estudo(texto):
+    termos = re.split(r"[,;\n]+", texto or "")
+    return [_normalizar_texto(termo) for termo in termos if _normalizar_texto(termo)]
+
+
 def _prova_disponivel_agora(prova):
     agora = datetime.now()
     data_inicio = _converter_data(prova.get("data_inicio"))
@@ -138,6 +159,84 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
         .btn-sair {
             text-align: center;
             margin-top: 30px;
+        }
+        .treino-hero {
+            background: linear-gradient(135deg, #0f766e 0%, #155e75 54%, #334155 100%);
+            border-radius: 8px;
+            color: #ffffff;
+            padding: 26px;
+            margin: 10px 0 18px 0;
+            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
+        }
+        .treino-hero h2 {
+            color: #ffffff !important;
+            font-size: 28px;
+            line-height: 1.15;
+            margin: 0 0 8px 0;
+            letter-spacing: 0;
+        }
+        .treino-hero p {
+            color: rgba(255,255,255,0.9);
+            font-size: 15px;
+            margin: 0;
+            max-width: 760px;
+        }
+        .treino-stats {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 18px;
+        }
+        .treino-stat {
+            background: rgba(255,255,255,0.13);
+            border: 1px solid rgba(255,255,255,0.22);
+            border-radius: 8px;
+            padding: 12px;
+        }
+        .treino-stat strong {
+            display: block;
+            color: #ffffff;
+            font-size: 22px;
+            line-height: 1.1;
+        }
+        .treino-stat span {
+            display: block;
+            color: rgba(255,255,255,0.78);
+            font-size: 12px;
+            margin-top: 4px;
+        }
+        .assuntos-wrap {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin: 6px 0 12px 0;
+        }
+        .assunto-chip {
+            background: #e0f2fe;
+            color: #075985;
+            border: 1px solid #bae6fd;
+            border-radius: 999px;
+            padding: 6px 10px;
+            font-size: 13px;
+            font-weight: 700;
+        }
+        .treino-card {
+            background: #ffffff;
+            border: 1px solid #dbe3ea;
+            border-radius: 8px;
+            padding: 18px;
+            margin-top: 14px;
+        }
+        @media (max-width: 720px) {
+            .treino-hero {
+                padding: 20px;
+            }
+            .treino-hero h2 {
+                font-size: 23px;
+            }
+            .treino-stats {
+                grid-template-columns: 1fr;
+            }
         }
         div.stButton > button {
             border-radius: 12px !important;
@@ -303,11 +402,6 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
             st.session_state.menu_active = "home"
             st.rerun()
 
-        st.markdown(
-            '<p style="text-align:center; font-weight:800; color:#333; margin-top:15px;">🏋️ LISTAS DE EXERCÍCIOS PARA TREINAR</p>',
-            unsafe_allow_html=True,
-        )
-
         try:
             res_questoes = (
                 db_provas.table("questoes")
@@ -319,43 +413,112 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
             questoes_serie = [
                 q for q in questoes if _questao_compativel_com_serie(q, serie_aluno)
             ]
-            questoes_treino = questoes_serie or questoes
+            base_questoes = questoes_serie or questoes
+            assuntos_disponiveis = sorted(
+                {
+                    str(q.get("assunto", "")).strip()
+                    for q in base_questoes
+                    if q.get("assunto")
+                }
+            )
 
-            if questoes_treino:
-                random.shuffle(questoes_treino)
-                questoes_treino = questoes_treino[:20]
-                q_ids = [q["id"] for q in questoes_treino if q.get("id") is not None]
-                assuntos = sorted(
-                    {
-                        str(q.get("assunto", "")).strip()
-                        for q in questoes_treino
-                        if q.get("assunto")
-                    }
+            st.markdown(
+                f"""
+                <section class="treino-hero">
+                    <h2>Escolha seu foco de estudo</h2>
+                    <p>Digite um ou mais assuntos e o portal monta uma sequência de questões para praticar agora.</p>
+                    <div class="treino-stats">
+                        <div class="treino-stat">
+                            <strong>{len(base_questoes)}</strong>
+                            <span>questões disponíveis</span>
+                        </div>
+                        <div class="treino-stat">
+                            <strong>{len(assuntos_disponiveis)}</strong>
+                            <span>assuntos encontrados</span>
+                        </div>
+                        <div class="treino-stat">
+                            <strong>5-30</strong>
+                            <span>questões por treino</span>
+                        </div>
+                    </div>
+                </section>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            if assuntos_disponiveis:
+                chips = "".join(
+                    f'<span class="assunto-chip">{assunto}</span>'
+                    for assunto in assuntos_disponiveis[:8]
+                )
+                st.markdown(
+                    f"""
+                    <div class="assuntos-wrap">
+                        {chips}
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
                 )
 
-                with st.container(border=True):
-                    st.subheader("📖 Treino livre")
-                    st.caption(
-                        f"🧩 Total de exercícios neste treino: {len(q_ids)} questões."
-                    )
-                    if assuntos:
-                        st.caption(f"Assuntos: {', '.join(assuntos[:5])}")
+            with st.container(border=False):
+                st.markdown('<div class="treino-card">', unsafe_allow_html=True)
+                assunto_digitado = st.text_input(
+                    "O que você quer estudar hoje?",
+                    placeholder="Ex: termoquímica, funções orgânicas, cinemática",
+                    key="treino_assuntos",
+                )
+                quantidade = st.slider(
+                    "Quantidade de questões",
+                    min_value=5,
+                    max_value=30,
+                    value=20,
+                    step=5,
+                    key="treino_quantidade",
+                )
 
-                    if st.button(
-                        "🏋️ COMEÇAR TREINO AGORA",
-                        key="btn_treino_livre",
-                        type="primary",
-                        use_container_width=True,
-                    ):
-                        st.session_state.lista_config = {
-                            "id": "treino_livre",
-                            "titulo": "Treino Livre",
-                            "questoes_ids": q_ids,
-                            "ativa": True,
-                        }
-                        st.session_state.etapa = "em_exercicio"
-                        st.rerun()
-            else:
+                termos = _extrair_termos_estudo(assunto_digitado)
+                questoes_filtradas = [
+                    q for q in base_questoes if _questao_compativel_com_assuntos(q, termos)
+                ]
+
+                if assunto_digitado and not questoes_filtradas:
+                    st.warning(
+                        "Não encontrei questões com esses termos. Tente outro assunto ou use palavras mais gerais."
+                    )
+                elif assunto_digitado:
+                    st.success(
+                        f"Encontrei {len(questoes_filtradas)} questão(ões) para esse foco."
+                    )
+                else:
+                    st.info("Digite um assunto para preparar um treino personalizado.")
+
+                iniciar = st.button(
+                    "COMEÇAR TREINO PERSONALIZADO",
+                    key="btn_treino_personalizado",
+                    type="primary",
+                    use_container_width=True,
+                    disabled=not assunto_digitado or not questoes_filtradas,
+                )
+                st.markdown("</div>", unsafe_allow_html=True)
+
+                if iniciar:
+                    random.shuffle(questoes_filtradas)
+                    questoes_treino = questoes_filtradas[:quantidade]
+                    q_ids = [
+                        q["id"] for q in questoes_treino if q.get("id") is not None
+                    ]
+                    st.session_state.lista_config = {
+                        "id": "treino_personalizado",
+                        "titulo": f"Treino: {assunto_digitado.strip()}",
+                        "questoes_ids": q_ids,
+                        "ativa": True,
+                    }
+                    st.session_state.pop("el_questoes", None)
+                    st.session_state.pop("el_respondidas", None)
+                    st.session_state.etapa = "em_exercicio"
+                    st.rerun()
+
+            if not base_questoes:
                 st.info(
                     "Nenhuma questão de treino disponível no momento. Avise seu professor!"
                 )
