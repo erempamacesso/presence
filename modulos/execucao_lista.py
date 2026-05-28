@@ -23,25 +23,26 @@ def explicar_com_ia(enunciado, resposta_aluno, resposta_correta):
         return "Erro na configuração da IA."
 
     prompt = f"""
-    Você é o Tutor MarIO, um professor empático, motivador e focado em aprendizado ativo. 
-    O aluno está treinando e quer entender uma questão.
+    Você é o Tutor MarIO, um professor especialista em resolução de questões.
+    O aluno está estudando por questões e precisa de um comentário sobre esta:
+    
     ENUNCIADO: {enunciado}
-    RESPOSTA DO ALUNO: {resposta_aluno}
-    GABARITO CORRETO: {resposta_correta}
+    O ALUNO MARCOU: {resposta_aluno}
+    GABARITO OFICIAL: {resposta_correta}
 
-    Explique de forma curta (3 a 4 linhas no máximo) o raciocínio correto. 
-    Se o aluno errou, seja encorajador e dê uma dica memorável para ele fixar o conteúdo.
+    Explique de forma pedagógica, direta e curta (máximo 4 linhas) por que o gabarito é a {resposta_correta}. 
+    Se o aluno marcou errado, explique sutilmente o erro da alternativa dele.
     """
     try:
-        config = genai.types.GenerationConfig(max_output_tokens=200, temperature=0.7)
+        config = genai.types.GenerationConfig(max_output_tokens=250, temperature=0.7)
         resposta = model.generate_content(prompt, generation_config=config)
         return resposta.text
     except Exception as e:
-        return f"O Tutor MarIO está um pouco ocupado agora, mas a resposta certa é a alternativa {resposta_correta}!"
+        return f"⚠️ O Tutor MarIO está processando muitas dúvidas agora. Lembre-se: o gabarito correto é a alternativa {resposta_correta}!"
 
 
 # ==========================================
-# 🛠️ HELPERS DE LIMPEZA E TRATAMENTO
+# 🛠️ HELPERS DE LIMPEZA
 # ==========================================
 def limpar_html(html):
     if not html:
@@ -65,109 +66,92 @@ def extrair_texto_alternativa(conteudo):
 
 
 # ==========================================
-# 📝 TELA DE EXECUÇÃO COM FILTROS DINÂMICOS
+# 📝 TELA ESTILO QCONCURSOS
 # ==========================================
 def exibir_execucao_lista(supabase):
-    st.title("🏋️ Centro de Treino Livre")
-    st.caption(
-        "Escolha os filtros, responda as questões e use o Tutor MarIO para tirar dúvidas!"
-    )
+    st.title("📚 QTreino - Resolução de Questões")
+    st.caption("Filtre, responda e receba feedback imediato questão por questão.")
 
-    # 1. Recupera dados do aluno logado para definir os filtros padrões
-    aluno_logado = st.session_state.get("aluno", {})
-    serie_padrao = aluno_logado.get("serie", "1º ANO")
-    turma_padrao = aluno_logado.get("turma", "A")
-
-    # 2. Inicialização dos estados de controle da sessão
-    if "respostas_treino" not in st.session_state:
-        st.session_state.respostas_treino = {}
-    if "corrigido" not in st.session_state:
-        st.session_state.corrigido = False
-    if "treino_carregado" not in st.session_state:
-        st.session_state.treino_carregado = False
-    if "questoes_treino_filtradas" not in st.session_state:
-        st.session_state.questoes_treino_filtradas = []
+    # --- INICIALIZAÇÃO DE ESTADOS ---
+    if "qc_questoes" not in st.session_state:
+        st.session_state.qc_questoes = []
+    if "qc_respondidas" not in st.session_state:
+        st.session_state.qc_respondidas = {}  # Guarda {id_questao: alternativa_marcada}
 
     # ==========================================
-    # 🔍 PAINEL DE FILTROS (SÉRIE E TURMA)
+    # 🔍 PAINEL DE FILTROS (MECANISMO DE BUSCA)
     # ==========================================
-    # Só exibe as caixas de seleção se o aluno ainda não começou o treino ou resetou
-    if not st.session_state.treino_carregado:
-        with st.form("painel_filtros_treino"):
-            st.subheader("Configurar Filtros de Exercícios")
-            col1, col2 = st.columns(2)
+    # Se já tem questões carregadas, o expander fica fechado. Se não, fica aberto.
+    expander_aberto = len(st.session_state.qc_questoes) == 0
 
-            # Listas de opções (ajuste conforme a realidade da sua escola)
-            lista_series = ["1º ANO", "2º ANO", "3º ANO", "9º ANO", "EJA"]
-            lista_turmas = ["A", "B", "C", "D", "ÚNICA"]
+    with st.expander("⚙️ Filtros de Busca", expanded=expander_aberto):
+        with st.form("form_filtros_qc"):
+            c1, c2, c3 = st.columns([2, 2, 1])
+            lista_series = ["Todas", "1º ANO", "2º ANO", "3º ANO", "9º ANO", "EJA"]
 
-            # Define o index padrão baseado no cadastro do aluno
-            idx_s = (
-                lista_series.index(serie_padrao) if serie_padrao in lista_series else 0
+            filtro_serie = c1.selectbox("Série / Ano:", lista_series)
+            filtro_assunto = c2.text_input(
+                "Assunto (Opcional):", placeholder="Ex: Frações, Revolução..."
             )
-            idx_t = (
-                lista_turmas.index(turma_padrao) if turma_padrao in lista_turmas else 0
+            limite_q = c3.number_input(
+                "Quantidade:", min_value=1, max_value=50, value=10
             )
 
-            serie_selecionada = col1.selectbox(
-                "Selecione a Série:", lista_series, index=idx_s
-            )
-            turma_selecionada = col2.selectbox(
-                "Selecione a Turma:", lista_turmas, index=idx_t
+            btn_buscar = st.form_submit_button(
+                "🔍 Filtrar Questões", type="primary", use_container_width=True
             )
 
-            limite_questoes = st.slider(
-                "Quantidade máxima de questões:", min_value=2, max_value=20, value=5
-            )
+            if btn_buscar:
+                with st.spinner("Buscando no banco de dados..."):
+                    # Monta a query dinâmica no Supabase
+                    query = supabase.table("questoes").select("*")
+                    if filtro_serie != "Todas":
+                        query = query.eq("serie", filtro_serie)
+                    if filtro_assunto:
+                        query = query.ilike("assunto", f"%{filtro_assunto}%")
 
-            botao_buscar = st.form_submit_button(
-                "🎲 GERAR LISTA DE EXERCÍCIOS", type="primary", use_container_width=True
-            )
+                    res = query.limit(limite_q).execute()
 
-            if botao_buscar:
-                with st.spinner("Buscando questões correspondentes no Supabase..."):
-                    try:
-                        # Roda a consulta filtrando por serie e turma direto na tabela 'questoes'
-                        # NOTA: Certifique-se de que a coluna 'turma' exista na sua tabela 'questoes'.
-                        # Se a sua tabela 'questoes' possuir apenas a coluna 'serie', remova o .eq("turma", ...) abaixo.
-                        res = (
-                            supabase.table("questoes")
-                            .select("*")
-                            .eq("serie", serie_selecionada)
-                            .eq("turma", turma_selecionada)
-                            .limit(limite_questoes)
-                            .execute()
-                        )
+                    if res.data:
+                        st.session_state.qc_questoes = res.data
+                        st.session_state.qc_respondidas = (
+                            {}
+                        )  # Reseta o progresso ao buscar novas
+                        st.rerun()
+                    else:
+                        st.warning("Nenhuma questão encontrada com esses filtros.")
 
-                        if res.data:
-                            st.session_state.questoes_treino_filtradas = res.data
-                            st.session_state.treino_carregado = True
-                            st.session_state.respostas_treino = {}
-                            st.session_state.corrigido = False
-                            st.rerun()
-                        else:
-                            st.warning(
-                                f"Não encontramos questões cadastradas para o {serie_selecionada} - Turma {turma_selecionada}."
-                            )
-                    except Exception as e:
-                        st.error(f"Erro ao consultar tabela de questões: {e}")
+    # ==========================================
+    # 📖 LISTA DE QUESTÕES (RENDERIZAÇÃO INDIVIDUAL)
+    # ==========================================
+    questoes = st.session_state.qc_questoes
+
+    if not questoes:
+        st.info("👆 Utilize o painel acima para buscar questões e iniciar seu treino.")
         return
 
-    # ==========================================
-    # 📝 EXIBIÇÃO E RESOLUÇÃO DOS EXERCÍCIOS
-    # ==========================================
-    questoes = st.session_state.questoes_treino_filtradas
-    st.info(f"📋 Treinando com **{len(questoes)}** questões selecionadas do banco.")
+    st.write(f"**{len(questoes)} questões encontradas.** Bom estudo!")
+    st.divider()
 
-    for idx, q in enumerate(questoes):
+    for i, q in enumerate(questoes):
         id_q = str(q["id"])
 
+        # Verifica se o aluno já respondeu ESTA questão específica
+        ja_respondeu = id_q in st.session_state.qc_respondidas
+
         with st.container(border=True):
-            st.markdown(f"### Questão {idx + 1}")
+            # Cabeçalho da Questão
+            serie_str = q.get("serie", "Geral")
+            assunto_str = q.get("assunto", "Sem Assunto")
+            st.markdown(
+                f"**Q{i+1}.** <span style='color:gray; font-size:0.9em'>({serie_str} | {assunto_str}) ID: {id_q}</span>",
+                unsafe_allow_html=True,
+            )
+
             enunciado_puro = limpar_html(q.get("enunciado", ""))
             st.write(enunciado_puro)
 
-            # Processamento das alternativas (JSON do Banco para Dicionário)
+            # Processamento das Alternativas
             alts = q.get("alternativas", {})
             if isinstance(alts, str):
                 try:
@@ -175,113 +159,72 @@ def exibir_execucao_lista(supabase):
                 except:
                     alts = {}
 
-            # Monta as opções textuais do st.radio
             opcoes = []
-            mapeamento_letras = {}
+            mapa_letras = {}
             for letra in ["A", "B", "C", "D", "E"]:
                 if letra in alts:
-                    texto_limpo = extrair_texto_alternativa(alts[letra])
-                    label = f"({letra}) {texto_limpo}"
+                    txt = extrair_texto_alternativa(alts[letra])
+                    label = f"{letra}) {txt}"
                     opcoes.append(label)
-                    mapeamento_letras[label] = letra
+                    mapa_letras[label] = letra
 
-            # Preserva o estado caso o aluno já tenha clicado em alguma alternativa
+            # Se já respondeu, descobre qual foi a opção para deixar marcada no radio
             idx_selecionado = None
-            resposta_previa = st.session_state.respostas_treino.get(id_q)
-            if resposta_previa:
-                for i_opt, opt_txt in enumerate(opcoes):
-                    if opt_txt.startswith(f"({resposta_previa})"):
-                        idx_selecionado = i_opt
+            if ja_respondeu:
+                letra_marcada = st.session_state.qc_respondidas[id_q]
+                for idx_opt, opt_txt in enumerate(opcoes):
+                    if opt_txt.startswith(f"{letra_marcada})"):
+                        idx_selecionado = idx_opt
 
-            # Renderiza as alternativas. Fica desabilitado após a correção.
-            escolha_label = st.radio(
-                f"Alternativas para a questão {idx+1}:",
+            # Componente Radio (Desabilita apenas se já tiver respondido)
+            escolha = st.radio(
+                f"alternativas_q{id_q}",
                 options=opcoes,
                 index=idx_selecionado,
-                key=f"dinamico_q_{id_q}",
-                disabled=st.session_state.corrigido,
+                key=f"radio_{id_q}",
+                disabled=ja_respondeu,
                 label_visibility="collapsed",
             )
 
-            if escolha_label:
-                st.session_state.respostas_treino[id_q] = mapeamento_letras[
-                    escolha_label
-                ]
-
-            # 🟢 🔴 APRESENTAÇÃO DO GABARITO (PÓS-CORREÇÃO)
-            if st.session_state.corrigido:
-                gabarito_oficial = (
+            # ==========================================
+            # AÇÃO DE RESPONDER E FEEDBACK IMEDIATO
+            # ==========================================
+            if not ja_respondeu:
+                # Botão para submeter apenas esta questão
+                if st.button("Responder", key=f"btn_resp_{id_q}"):
+                    if escolha:
+                        st.session_state.qc_respondidas[id_q] = mapa_letras[escolha]
+                        st.rerun()
+                    else:
+                        st.warning("Selecione uma alternativa antes de responder!")
+            else:
+                # Lógica de Gabarito e IA para quando a questão estiver respondida
+                letra_marcada = st.session_state.qc_respondidas[id_q]
+                gabarito = (
                     str(q.get("resposta_correta") or q.get("gabarito")).strip().upper()
                 )
-                voto_aluno = (
-                    st.session_state.respostas_treino.get(id_q, "").strip().upper()
-                )
 
-                if voto_aluno == gabarito_oficial:
-                    st.success(
-                        f"🎯 **Você Acertou!** A alternativa correta é a **({gabarito_oficial})**."
-                    )
+                if letra_marcada == gabarito:
+                    st.success(f"✅ **Acertou!** Gabarito: {gabarito}")
                 else:
                     st.error(
-                        f"❌ **Resposta Incorreta.** Você marcou a alternativa **({voto_aluno})**, mas o gabarito correto é a **({gabarito_oficial})**."
+                        f"❌ **Errou.** Você marcou {letra_marcada}, o correto é **{gabarito}**."
                     )
 
-                # BOTÃO INDIVIDUAL DO TUTOR IA
-                if st.button(
-                    f"✨ Pedir explicação ao Tutor MarIO", key=f"btn_ai_dinamico_{id_q}"
-                ):
-                    with st.spinner("O Tutor MarIO está analisando a questão..."):
-                        txt_voto = (
-                            f"Alternativa {voto_aluno}"
-                            if voto_aluno
-                            else "Não respondeu"
+                # Botão para chamar a IA
+                if st.button("✨ Comentário do Tutor MarIO", key=f"btn_ia_{id_q}"):
+                    with st.spinner("Gerando comentário..."):
+                        comentario = explicar_com_ia(
+                            enunciado_puro, letra_marcada, gabarito
                         )
-                        explicacao = explicar_com_ia(
-                            enunciado_puro, txt_voto, gabarito_oficial
-                        )
-                        st.info(f"🤖 **Tutor MarIO:** {explicacao}")
+                        st.info(f"🤖 **Comentário do Tutor:**\n\n{comentario}")
 
+    # ==========================================
+    # RODAPÉ
+    # ==========================================
     st.divider()
-
-    # ==========================================
-    # 🔘 BOTÕES DE CONTROLE INFERIOR
-    # ==========================================
-    col_b1, col_b2 = st.columns(2)
-
-    if not st.session_state.corrigido:
-        if col_b1.button(
-            "🔍 CORRIGIR EXERCÍCIOS E VER GABARITO",
-            type="primary",
-            use_container_width=True,
-        ):
-            if len(st.session_state.respostas_treino) < len(questoes):
-                st.warning(
-                    "⚠️ Responda todas as perguntas antes de solicitar a correção!"
-                )
-            else:
-                st.session_state.corrigido = True
-                st.rerun()
-    else:
-        if col_b1.button(
-            "🔄 Escolher Outros Filtros / Novo Treino", use_container_width=True
-        ):
-            # Reseta todos os estados para voltar à tela de seleção de Série/Turma
-            st.session_state.treino_carregado = False
-            st.session_state.corrigido = False
-            st.session_state.respostas_treino = {}
-            st.session_state.questoes_treino_filtradas = []
-            st.rerun()
-
-    if col_b2.button(
-        "⬅️ Sair do Centro de Treino", type="secondary", use_container_width=True
-    ):
-        # Limpa a memória e volta para a tela inicial do aluno
-        keys_limpeza = [
-            "questoes_treino_filtradas",
-            "respostas_treino",
-            "corrigido",
-            "treino_carregado",
-        ]
+    if st.button("⬅️ Sair do Treino", type="secondary", use_container_width=True):
+        keys_limpeza = ["qc_questoes", "qc_respondidas"]
         for k in keys_limpeza:
             if k in st.session_state:
                 del st.session_state[k]
