@@ -61,25 +61,8 @@ def _questao_compativel_com_serie(questao, serie_aluno):
     return serie_questao in serie_aluno_norm or serie_aluno_norm in serie_questao
 
 
-def _questao_compativel_com_assuntos(questao, termos):
-    if not termos:
-        return True
-
-    texto_busca = _normalizar_texto(
-        " ".join(
-            [
-                questao.get("assunto", ""),
-                questao.get("enunciado", ""),
-                questao.get("serie", ""),
-            ]
-        )
-    )
-    return any(termo in texto_busca for termo in termos)
-
-
-def _extrair_termos_estudo(texto):
-    termos = re.split(r"[,;\n]+", texto or "")
-    return [_normalizar_texto(termo) for termo in termos if _normalizar_texto(termo)]
+def _questao_do_assunto(questao, assunto):
+    return _normalizar_texto(questao.get("assunto")) == _normalizar_texto(assunto)
 
 
 def _prova_disponivel_agora(prova):
@@ -204,21 +187,6 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
             color: rgba(255,255,255,0.78);
             font-size: 12px;
             margin-top: 4px;
-        }
-        .assuntos-wrap {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-            margin: 6px 0 12px 0;
-        }
-        .assunto-chip {
-            background: #e0f2fe;
-            color: #075985;
-            border: 1px solid #bae6fd;
-            border-radius: 999px;
-            padding: 6px 10px;
-            font-size: 13px;
-            font-weight: 700;
         }
         .treino-card {
             background: #ffffff;
@@ -426,7 +394,7 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
                 f"""
                 <section class="treino-hero">
                     <h2>Escolha seu foco de estudo</h2>
-                    <p>Digite um ou mais assuntos e o portal monta uma sequência de questões para praticar agora.</p>
+                    <p>Selecione um assunto e o portal monta uma sequência de questões para praticar agora.</p>
                     <div class="treino-stats">
                         <div class="treino-stat">
                             <strong>{len(base_questoes)}</strong>
@@ -446,26 +414,13 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
                 unsafe_allow_html=True,
             )
 
-            if assuntos_disponiveis:
-                chips = "".join(
-                    f'<span class="assunto-chip">{assunto}</span>'
-                    for assunto in assuntos_disponiveis[:8]
-                )
-                st.markdown(
-                    f"""
-                    <div class="assuntos-wrap">
-                        {chips}
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
             with st.container(border=False):
                 st.markdown('<div class="treino-card">', unsafe_allow_html=True)
-                assunto_digitado = st.text_input(
+                assunto_escolhido = st.selectbox(
                     "O que você quer estudar hoje?",
-                    placeholder="Ex: termoquímica, funções orgânicas, cinemática",
-                    key="treino_assuntos",
+                    options=["Selecione um assunto"] + assuntos_disponiveis,
+                    index=0,
+                    key="treino_assunto_escolhido",
                 )
                 quantidade = st.slider(
                     "Quantidade de questões",
@@ -476,28 +431,30 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
                     key="treino_quantidade",
                 )
 
-                termos = _extrair_termos_estudo(assunto_digitado)
+                assunto_valido = assunto_escolhido != "Selecione um assunto"
                 questoes_filtradas = [
-                    q for q in base_questoes if _questao_compativel_com_assuntos(q, termos)
+                    q
+                    for q in base_questoes
+                    if assunto_valido and _questao_do_assunto(q, assunto_escolhido)
                 ]
 
-                if assunto_digitado and not questoes_filtradas:
+                if assunto_valido and not questoes_filtradas:
                     st.warning(
-                        "Não encontrei questões com esses termos. Tente outro assunto ou use palavras mais gerais."
+                        "Não encontrei questões para esse assunto. Tente escolher outro."
                     )
-                elif assunto_digitado:
+                elif assunto_valido:
                     st.success(
                         f"Encontrei {len(questoes_filtradas)} questão(ões) para esse foco."
                     )
                 else:
-                    st.info("Digite um assunto para preparar um treino personalizado.")
+                    st.info("Escolha um assunto na lista para preparar um treino personalizado.")
 
                 iniciar = st.button(
                     "COMEÇAR TREINO PERSONALIZADO",
                     key="btn_treino_personalizado",
                     type="primary",
                     use_container_width=True,
-                    disabled=not assunto_digitado or not questoes_filtradas,
+                    disabled=not assunto_valido or not questoes_filtradas,
                 )
                 st.markdown("</div>", unsafe_allow_html=True)
 
@@ -509,7 +466,7 @@ def mostrar_tela_dashboard(db_alunos, db_provas):
                     ]
                     st.session_state.lista_config = {
                         "id": "treino_personalizado",
-                        "titulo": f"Treino: {assunto_digitado.strip()}",
+                        "titulo": f"Treino: {assunto_escolhido}",
                         "questoes_ids": q_ids,
                         "ativa": True,
                     }
