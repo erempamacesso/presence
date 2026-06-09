@@ -78,8 +78,8 @@ except Exception as e:
 if "page" in st.query_params:
     pagina_destino = st.query_params.get("page")
 
-    # Se o link tiver "?page=criar_evento", direciona para a tela correta
-    if pagina_destino == "criar_evento":
+    # Se o link tiver "?page=eventos_erempam", direciona para a tela correta
+    if pagina_destino in ["criar_evento", "eventos_erempam"]:
         st.session_state.pagina = "gestao_feira"
 
     # Limpa a URL logo em seguida para o usuário poder navegar livremente depois
@@ -165,20 +165,20 @@ with st.sidebar:
         """
         <style>
         /* Estilo para o texto do botão */
-        div[data-testid="stSidebar"] button p:contains("Criar um evento") {
+        div[data-testid="stSidebar"] button p:contains("EVENTOS EREMPAM") {
             color: white !important;
             font-weight: bold !important;
         }
         
         /* Estilo para o corpo do botão */
-        div[data-testid="stSidebar"] button:has(p:contains("Criar um evento")) {
+        div[data-testid="stSidebar"] button:has(p:contains("EVENTOS EREMPAM")) {
             background-color: #FF8000 !important;
             border: none !important;
             transition: 0.3s;
         }
 
         /* Efeito Hover */
-        div[data-testid="stSidebar"] button:has(p:contains("Criar um evento")):hover {
+        div[data-testid="stSidebar"] button:has(p:contains("EVENTOS EREMPAM")):hover {
             background-color: #e67300 !important;
             transform: scale(1.02);
         }
@@ -189,7 +189,7 @@ with st.sidebar:
 
     # Botão Laranja (agora sincronizado com o CSS)
     st.button(
-        "Criar um evento",
+        "EVENTOS EREMPAM",
         on_click=mudar_pagina,
         args=("gestao_feira",),
         use_container_width=True,
