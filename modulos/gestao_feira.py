@@ -19,6 +19,17 @@ def exibir_gestao_feira(supabase_conn):
         except:
             return str(data_iso)
 
+    def converter_data(val):
+        if not val:
+            return datetime.date.today()
+        if isinstance(val, datetime.date):
+            return val
+        try:
+            str_data = str(val).split("T")[0]
+            return datetime.datetime.strptime(str_data, "%Y-%m-%d").date()
+        except:
+            return datetime.date.today()
+
     # 1. Função de busca com cache
     @st.cache_data(ttl=60)
     def buscar_eventos_vitrine(_supabase):
@@ -31,9 +42,10 @@ def exibir_gestao_feira(supabase_conn):
             .execute()
         )
 
-    aba_config, aba_vitrine, aba_trabalhos = st.tabs(
+    aba_config, aba_eventos, aba_vitrine, aba_trabalhos = st.tabs(
         [
-            "⚙️ Configuração",
+            "➕ Novo Evento",
+            "🛠️ Editar Eventos",
             "👀 Vitrine de Eventos",
             "👨‍🏫 Gestão de Trabalhos",
         ]
@@ -43,35 +55,11 @@ def exibir_gestao_feira(supabase_conn):
     # ABA 1: CONFIGURAÇÃO E EDIÇÃO
     # ==========================================
     with aba_config:
-        st.subheader("Configuração de Eventos")
+        st.subheader("Criar Novo Evento")
 
-        # Busca todos os eventos para permitir edição
-        try:
-            res_todos = (
-                supabase_conn.table("feira_eventos")
-                .select("*")
-                .order("created_at", desc=True)
-                .execute()
-            )
-            eventos_lista = res_todos.data if res_todos.data else []
-
-            # Mapeamento por ID para evitar problemas com nomes duplicados
-            opcoes_eventos = {f"{e['nome']} (ID: {e['id']})": e for e in eventos_lista}
-            lista_display = ["-- NOVO EVENTO --"] + list(opcoes_eventos.keys())
-
-            escolha = st.selectbox(
-                "Selecione um evento para editar ou criar um novo:",
-                options=lista_display,
-            )
-
-            ev_edit = opcoes_eventos.get(escolha)
-            is_edit = ev_edit is not None
-            id_suffix = str(ev_edit["id"]) if is_edit else "novo"
-
-        except Exception:  # Captura qualquer erro na busca inicial
-            ev_edit = None
-            is_edit = False
-            id_suffix = "erro"
+        ev_edit = None
+        is_edit = False
+        id_suffix = "novo"
 
         with st.form(f"form_evento_{id_suffix}", clear_on_submit=not is_edit):
             nome_evento = st.text_input(
@@ -206,12 +194,26 @@ def exibir_gestao_feira(supabase_conn):
             if salvar_evento:
                 if not nome_evento:
                     st.warning("⚠️ Você precisa digitar pelo menos o nome do evento!")
+                elif data_fim < data_inicio:
+                    st.warning(
+                        "⚠️ A data de fim do evento não pode ser anterior à data de início."
+                    )
+                elif data_insc_final < data_insc_abertura:
+                    st.warning(
+                        "⚠️ A data final das inscrições não pode ser anterior à abertura."
+                    )
+                elif max_alunos < min_alunos:
+                    st.warning(
+                        "⚠️ O máximo de alunos por grupo não pode ser menor que o mínimo."
+                    )
                 else:
                     try:
-                        token = st.secrets["GITHUB_TOKEN"]
-                        g = Github(token)
-                        repo = g.get_repo("erempamacesso/presence")
                         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                        repo = None
+                        if arquivo_banner or arquivo_pdf:
+                            token = st.secrets["GITHUB_TOKEN"]
+                            g = Github(token)
+                            repo = g.get_repo("erempamacesso/presence")
 
                         link_foto_final = (
                             ev_edit.get("imagem_capa_link", "") if is_edit else ""
@@ -275,31 +277,245 @@ def exibir_gestao_feira(supabase_conn):
                     except Exception as e:
                         st.error(f"🚨 Erro: {e}")
 
-        # Botão de exclusão (fora do form de edição para segurança)
-        if is_edit:
-            st.divider()
-            with st.expander("🗑️ Zona de Perigo"):
-                st.warning(
-                    f"Isso apagará permanentemente o evento '{ev_edit['nome']}'."
+    # ==========================================
+    # ABA 2: EDIÇÃO COMPLETA DE EVENTOS
+    # ==========================================
+    with aba_eventos:
+        st.subheader("Editar Eventos Cadastrados")
+
+        try:
+            res_todos = (
+                supabase_conn.table("feira_eventos")
+                .select("*")
+                .order("created_at", desc=True)
+                .execute()
+            )
+            eventos_lista = res_todos.data or []
+
+            if not eventos_lista:
+                st.info("Nenhum evento cadastrado ainda.")
+            else:
+                opcoes_eventos = {
+                    f"{e.get('nome', 'Evento sem nome')} (ID: {e['id']})": e
+                    for e in eventos_lista
+                }
+                escolha_evento = st.selectbox(
+                    "Selecione o evento para editar:",
+                    options=list(opcoes_eventos.keys()),
+                    key="evento_editor_select",
                 )
-                if st.button(
-                    f"Confirmar Exclusão de {ev_edit['nome']}",
-                    type="secondary",
-                    use_container_width=True,
-                ):
-                    try:
-                        supabase_conn.table("feira_eventos").delete().eq(
-                            "id", ev_edit["id"]
-                        ).execute()
-                        st.success("Evento removido!")
-                        st.cache_data.clear()
-                        time.sleep(1)
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao deletar: {e}")
+                ev_edit = opcoes_eventos[escolha_evento]
+                id_suffix = str(ev_edit["id"])
+
+                with st.form(f"form_editar_evento_{id_suffix}"):
+                    nome_evento = st.text_input(
+                        "Nome do Evento",
+                        value=ev_edit.get("nome", ""),
+                        placeholder="Ex: NATUMAT 2026",
+                        key=f"edit_nome_{id_suffix}",
+                    )
+
+                    st.markdown("##### 🗓️ Datas do Evento")
+                    col1, col2 = st.columns(2)
+                    data_inicio = col1.date_input(
+                        "Data de Início do Evento",
+                        value=converter_data(ev_edit.get("data_inicio")),
+                        format="DD/MM/YYYY",
+                        key=f"edit_ev_ini_{id_suffix}",
+                    )
+                    data_fim = col2.date_input(
+                        "Data de Fim do Evento",
+                        value=converter_data(ev_edit.get("data_fim")),
+                        format="DD/MM/YYYY",
+                        key=f"edit_ev_fim_{id_suffix}",
+                    )
+
+                    st.markdown("##### ⏳ Período de Inscrições")
+                    col_insc1, col_insc2 = st.columns(2)
+                    data_insc_abertura = col_insc1.date_input(
+                        "Abertura das Inscrições",
+                        value=converter_data(ev_edit.get("insc_abertura")),
+                        format="DD/MM/YYYY",
+                        key=f"edit_insc_ab_{id_suffix}",
+                    )
+                    data_insc_final = col_insc2.date_input(
+                        "Encerramento das Inscrições",
+                        value=converter_data(ev_edit.get("insc_final")),
+                        format="DD/MM/YYYY",
+                        key=f"edit_insc_fn_{id_suffix}",
+                    )
+
+                    st.markdown("##### 📍 Detalhes e Regras")
+                    col3, col4 = st.columns(2)
+                    local_ev = col3.text_input(
+                        "Local da Feira",
+                        value=ev_edit.get("onde", ""),
+                        placeholder="Ex: Pátio e Laboratórios",
+                        key=f"edit_local_{id_suffix}",
+                    )
+                    turmas_ev = col4.text_input(
+                        "Público-Alvo / Turmas",
+                        value=ev_edit.get("turmas", ""),
+                        placeholder="Ex: 1º e 2º Anos",
+                        key=f"edit_turmas_{id_suffix}",
+                    )
+
+                    col5, col6 = st.columns(2)
+                    min_alunos = col5.number_input(
+                        "Mínimo de Alunos por Grupo",
+                        min_value=1,
+                        value=int(ev_edit.get("min_membros", 4) or 4),
+                        key=f"edit_min_{id_suffix}",
+                    )
+                    max_alunos = col6.number_input(
+                        "Máximo de Alunos por Grupo",
+                        min_value=1,
+                        value=int(ev_edit.get("max_membros", 8) or 8),
+                        key=f"edit_max_{id_suffix}",
+                    )
+
+                    observacoes = st.text_area(
+                        "Observações Extras",
+                        value=ev_edit.get("observacoes", ""),
+                        placeholder="Digite instruções adicionais...",
+                        key=f"edit_obs_{id_suffix}",
+                    )
+
+                    status_evento = st.toggle(
+                        "Evento Ativo?",
+                        value=bool(ev_edit.get("ativo", True)),
+                        key=f"edit_ativo_{id_suffix}",
+                    )
+
+                    st.markdown("---")
+                    st.write("🖼️ **Banner de Divulgação (Imagem)**")
+                    if ev_edit.get("imagem_capa_link"):
+                        st.caption(f"Banner atual: {ev_edit.get('imagem_capa_link')}")
+                    arquivo_banner = st.file_uploader(
+                        "Enviar novo banner (opcional)",
+                        type=["png", "jpg", "jpeg"],
+                        key=f"edit_banner_{id_suffix}",
+                    )
+
+                    st.write("📄 **Edital Oficial (PDF)**")
+                    if ev_edit.get("edital_link"):
+                        st.caption(f"Edital atual: {ev_edit.get('edital_link')}")
+                    arquivo_pdf = st.file_uploader(
+                        "Enviar novo edital (opcional)",
+                        type=["pdf"],
+                        key=f"edit_pdf_{id_suffix}",
+                    )
+
+                    salvar_evento = st.form_submit_button(
+                        "💾 SALVAR ALTERAÇÕES DO EVENTO",
+                        type="primary",
+                        use_container_width=True,
+                    )
+
+                    if salvar_evento:
+                        if not nome_evento:
+                            st.warning("⚠️ Você precisa digitar o nome do evento.")
+                        elif data_fim < data_inicio:
+                            st.warning(
+                                "⚠️ A data de fim do evento não pode ser anterior à data de início."
+                            )
+                        elif data_insc_final < data_insc_abertura:
+                            st.warning(
+                                "⚠️ A data final das inscrições não pode ser anterior à abertura."
+                            )
+                        elif max_alunos < min_alunos:
+                            st.warning(
+                                "⚠️ O máximo de alunos por grupo não pode ser menor que o mínimo."
+                            )
+                        else:
+                            try:
+                                ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                                repo = None
+                                if arquivo_banner or arquivo_pdf:
+                                    token = st.secrets["GITHUB_TOKEN"]
+                                    g = Github(token)
+                                    repo = g.get_repo("erempamacesso/presence")
+
+                                link_foto_final = ev_edit.get("imagem_capa_link", "")
+                                if arquivo_banner:
+                                    path_img = (
+                                        f"banners/banner_{ts}_{arquivo_banner.name}"
+                                    )
+                                    repo.create_file(
+                                        path_img,
+                                        f"Upload Banner: {nome_evento}",
+                                        arquivo_banner.read(),
+                                        branch="main",
+                                    )
+                                    link_foto_final = f"https://raw.githubusercontent.com/erempamacesso/presence/main/{path_img}"
+
+                                link_pdf_final = ev_edit.get("edital_link", "")
+                                if arquivo_pdf:
+                                    path_pdf = f"editais/edital_{ts}_{arquivo_pdf.name}"
+                                    repo.create_file(
+                                        path_pdf,
+                                        f"Upload Edital: {nome_evento}",
+                                        arquivo_pdf.read(),
+                                        branch="main",
+                                    )
+                                    link_pdf_final = f"https://raw.githubusercontent.com/erempamacesso/presence/main/{path_pdf}"
+
+                                dados_para_salvar = {
+                                    "nome": nome_evento,
+                                    "data_inicio": str(data_inicio),
+                                    "data_fim": str(data_fim),
+                                    "insc_abertura": str(data_insc_abertura),
+                                    "insc_final": str(data_insc_final),
+                                    "onde": local_ev,
+                                    "turmas": turmas_ev,
+                                    "min_membros": min_alunos,
+                                    "max_membros": max_alunos,
+                                    "observacoes": observacoes,
+                                    "imagem_capa_link": link_foto_final,
+                                    "edital_link": link_pdf_final,
+                                    "ativo": status_evento,
+                                }
+
+                                supabase_conn.table("feira_eventos").update(
+                                    dados_para_salvar
+                                ).eq("id", ev_edit["id"]).execute()
+
+                                st.success(
+                                    f"✅ Evento '{nome_evento}' atualizado com sucesso!"
+                                )
+                                st.cache_data.clear()
+                                time.sleep(1.5)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"🚨 Erro ao atualizar evento: {e}")
+
+                st.divider()
+                with st.expander("🗑️ Zona de Perigo"):
+                    st.warning(
+                        f"Isso apagará permanentemente o evento '{ev_edit.get('nome', '')}'."
+                    )
+                    if st.button(
+                        f"Confirmar Exclusão de {ev_edit.get('nome', '')}",
+                        type="secondary",
+                        use_container_width=True,
+                        key=f"delete_evento_{id_suffix}",
+                    ):
+                        try:
+                            supabase_conn.table("feira_eventos").delete().eq(
+                                "id", ev_edit["id"]
+                            ).execute()
+                            st.success("Evento removido!")
+                            st.cache_data.clear()
+                            time.sleep(1)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao deletar: {e}")
+
+        except Exception as e:
+            st.error(f"Erro ao carregar eventos para edição: {e}")
 
     # ==========================================
-    # ABA 2: VITRINE (FORMATO BR)
+    # ABA 3: VITRINE (FORMATO BR)
     # ==========================================
     with aba_vitrine:
         st.subheader("👀 Eventos Ativos na Vitrine")
@@ -403,7 +619,7 @@ def exibir_gestao_feira(supabase_conn):
             st.error(f"Erro ao carregar vitrine: {e}")
 
     # ==========================================
-    # ABA 2: GESTÃO DE TRABALHOS (CADASTRO E EDIÇÃO)
+    # ABA 4: GESTÃO DE TRABALHOS (CADASTRO E EDIÇÃO)
     # ==========================================
     with aba_trabalhos:
         aba_cad, aba_edit = st.tabs(["➕ Novo Trabalho", "🔧 Editar / Excluir"])
