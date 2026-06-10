@@ -157,20 +157,26 @@ def exibir_gestao_feira(supabase_conn):
                 .execute()
             )
             eventos_lista = res_todos.data if res_todos.data else []
-            nomes_eventos = ["-- NOVO EVENTO --"] + [e["nome"] for e in eventos_lista]
 
-            evento_selecionado_nome = st.selectbox(
-                "Selecione um evento para editar ou criar um novo:", nomes_eventos
+            # Mapeamento por ID para evitar problemas com nomes duplicados
+            opcoes_eventos = {f"{e['nome']} (ID: {e['id']})": e for e in eventos_lista}
+            lista_display = ["-- NOVO EVENTO --"] + list(opcoes_eventos.keys())
+
+            escolha = st.selectbox(
+                "Selecione um evento para editar ou criar um novo:",
+                options=lista_display,
             )
-            ev_edit = next(
-                (e for e in eventos_lista if e["nome"] == evento_selecionado_nome), None
-            )
+
+            ev_edit = opcoes_eventos.get(escolha)
             is_edit = ev_edit is not None
+            id_suffix = str(ev_edit["id"]) if is_edit else "novo"
+
         except:
             ev_edit = None
             is_edit = False
+            id_suffix = "erro"
 
-        with st.form("form_evento_mestre", clear_on_submit=not is_edit):
+        with st.form(f"form_evento_{id_suffix}", clear_on_submit=not is_edit):
             nome_evento = st.text_input(
                 "Nome do Evento",
                 value=ev_edit["nome"] if is_edit else "",
@@ -180,9 +186,11 @@ def exibir_gestao_feira(supabase_conn):
             st.markdown("##### 🗓️ Datas do Evento")
             col1, col2 = st.columns(2)
 
-            def converter_data(data_str):
+            def converter_data(val):
+                if isinstance(val, datetime.date):
+                    return val
                 try:
-                    return datetime.datetime.strptime(data_str, "%Y-%m-%d").date()
+                    return datetime.datetime.strptime(str(val), "%Y-%m-%d").date()
                 except:
                     return datetime.date.today()
 
@@ -197,10 +205,16 @@ def exibir_gestao_feira(supabase_conn):
                 else datetime.date.today()
             )
             data_inicio = col1.date_input(
-                "Data de Início do Evento", value=d_ini, format="DD/MM/YYYY"
+                "Data de Início do Evento",
+                value=d_ini,
+                format="DD/MM/YYYY",
+                key=f"ev_ini_{id_suffix}",
             )
             data_fim = col2.date_input(
-                "Data de Fim do Evento", value=d_fim, format="DD/MM/YYYY"
+                "Data de Fim do Evento",
+                value=d_fim,
+                format="DD/MM/YYYY",
+                key=f"ev_fim_{id_suffix}",
             )
 
             st.markdown("##### ⏳ Período de Inscrições")
@@ -217,10 +231,16 @@ def exibir_gestao_feira(supabase_conn):
                 else datetime.date.today()
             )
             data_insc_abertura = col_insc1.date_input(
-                "Abertura das Inscrições", value=d_i_ab, format="DD/MM/YYYY"
+                "Abertura das Inscrições",
+                value=d_i_ab,
+                format="DD/MM/YYYY",
+                key=f"insc_ab_{id_suffix}",
             )
             data_insc_final = col_insc2.date_input(
-                "Encerramento das Inscrições", value=d_i_fn, format="DD/MM/YYYY"
+                "Encerramento das Inscrições",
+                value=d_i_fn,
+                format="DD/MM/YYYY",
+                key=f"insc_fn_{id_suffix}",
             )
 
             st.markdown("##### 📍 Detalhes e Regras")
@@ -241,11 +261,13 @@ def exibir_gestao_feira(supabase_conn):
                 "Mínimo de Alunos por Grupo",
                 min_value=1,
                 value=int(ev_edit.get("min_membros", 4)) if is_edit else 4,
+                key=f"min_{id_suffix}",
             )
             max_alunos = col6.number_input(
                 "Máximo de Alunos por Grupo",
                 min_value=1,
                 value=int(ev_edit.get("max_membros", 8)) if is_edit else 8,
+                key=f"max_{id_suffix}",
             )
 
             observacoes = st.text_area(
@@ -258,7 +280,7 @@ def exibir_gestao_feira(supabase_conn):
                 st.toggle(
                     "Evento Ativo?",
                     value=bool(ev_edit.get("ativo", True)),
-                    key="ev_ativo_toggle",
+                    key=f"ev_ativo_{id_suffix}",
                 )
 
             st.markdown("---")
@@ -271,7 +293,9 @@ def exibir_gestao_feira(supabase_conn):
             arquivo_pdf = st.file_uploader("Arraste o edital aqui", type=["pdf"])
 
             salvar_evento = st.form_submit_button(
-                "💾 EVENTOS EREMPAM", type="primary", use_container_width=True
+                "💾 SALVAR ALTERAÇÕES" if is_edit else "🚀 CRIAR EVENTO",
+                type="primary",
+                use_container_width=True,
             )
 
             if salvar_evento:
@@ -324,7 +348,7 @@ def exibir_gestao_feira(supabase_conn):
                             "imagem_capa_link": link_foto_final,
                             "edital_link": link_pdf_final,
                             "ativo": (
-                                st.session_state.get("ev_ativo_toggle", True)
+                                st.session_state.get(f"ev_ativo_{id_suffix}", True)
                                 if is_edit
                                 else True
                             ),
@@ -349,6 +373,29 @@ def exibir_gestao_feira(supabase_conn):
 
                     except Exception as e:
                         st.error(f"🚨 Erro: {e}")
+
+        # Botão de exclusão (fora do form de edição para segurança)
+        if is_edit:
+            st.divider()
+            with st.expander("🗑️ Zona de Perigo"):
+                st.warning(
+                    f"Isso apagará permanentemente o evento '{ev_edit['nome']}'."
+                )
+                if st.button(
+                    f"Confirmar Exclusão de {ev_edit['nome']}",
+                    type="secondary",
+                    use_container_width=True,
+                ):
+                    try:
+                        supabase_conn.table("feira_eventos").delete().eq(
+                            "id", ev_edit["id"]
+                        ).execute()
+                        st.success("Evento removido!")
+                        st.cache_data.clear()
+                        time.sleep(1)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao deletar: {e}")
 
     # ==========================================
     # ABA 2: GESTÃO DE TRABALHOS (CADASTRO E EDIÇÃO)
