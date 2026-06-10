@@ -287,7 +287,7 @@ def exibir_gestao_feira(supabase_conn):
             res_todos = (
                 supabase_conn.table("feira_eventos")
                 .select("*")
-                .order("created_at", desc=True)
+                .order("id", desc=True)
                 .execute()
             )
             eventos_lista = res_todos.data or []
