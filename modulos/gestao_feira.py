@@ -31,11 +31,10 @@ def exibir_gestao_feira(supabase_conn):
             .execute()
         )
 
-    aba_ver, aba_evento, aba_trabalhos = st.tabs(
+    aba_ver, aba_trabalhos = st.tabs(
         [
-            "👀 Ver Eventos Ativos",
-            "📅 1. Eventos EREMPAM",
-            "👨‍🏫 2. Gestão de Trabalhos",
+            "� Ver e Gerenciar Eventos",
+            "‍🏫 2. Gestão de Trabalhos",
         ]
     )
 
@@ -43,109 +42,6 @@ def exibir_gestao_feira(supabase_conn):
     # ABA 0: VITRINE (FORMATO BR)
     # ==========================================
     with aba_ver:
-        if st.button("🔄 Atualizar Vitrine"):
-            st.cache_data.clear()
-            st.rerun()
-
-        try:
-            res = buscar_eventos_vitrine(supabase_conn)
-            eventos = res.data
-
-            if not eventos:
-                st.info("Nenhum evento ativo no momento.")
-            else:
-                for ev in eventos:
-                    with st.container(border=True):
-                        col_img, col_info, col_btn = st.columns([1.5, 3, 1.5])
-
-                        with col_img:
-                            link_db = ev.get("imagem_capa_link", "")
-                            nome_evento = ev.get("nome", "").upper()
-
-                            # 1. Identifica o caminho do arquivo dentro do GitHub
-                            # Se for o NATUMAT antigo ou um link incompleto, ajustamos o caminho
-                            caminho_no_github = ""
-                            if "NATUMAT" in nome_evento:
-                                caminho_no_github = "banners/natumat_2026.png"
-                            elif link_db:
-                                # Extrai apenas o final do link (ex: banners/arquivo.png)
-                                caminho_no_github = link_db.split("/main/")[-1]
-
-                            if caminho_no_github:
-                                try:
-                                    # 2. USA O TOKEN PARA BUSCAR A IMAGEM NO REPO PRIVADO
-                                    token = st.secrets["GITHUB_TOKEN"]
-                                    g = Github(token)
-                                    # Certifique-se que o nome do repo aqui seja o mesmo do seu secrets
-                                    repo = g.get_repo("erempamacesso/presence")
-
-                                    contents = repo.get_contents(caminho_no_github)
-                                    # Exibe a imagem usando os bytes decodificados (sem precisar de URL pública)
-                                    st.image(
-                                        contents.decoded_content,
-                                        use_container_width=True,
-                                    )
-
-                                except Exception as e:
-                                    st.error("Erro ao carregar imagem privada")
-                                    # Opcional: st.write(e) para debug
-                            else:
-                                st.markdown(
-                                    "<div style='height: 150px; background-color: #f0f2f6; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #888;'>🖼️ Sem Imagem</div>",
-                                    unsafe_allow_html=True,
-                                )
-
-                        with col_info:
-                            st.subheader(f"🏆 {ev.get('nome', 'Evento')}")
-
-                            # Datas do Evento (Formatadas BR)
-                            d_ini = formatar_data_br(ev.get("data_inicio"))
-                            d_fim = formatar_data_br(ev.get("data_fim"))
-                            st.markdown(
-                                f"🗓️ **Período do Evento:** <span style='color: #ff4b4b;'>{d_ini} até {d_fim}</span>",
-                                unsafe_allow_html=True,
-                            )
-
-                            # Datas de Inscrição (Formatadas BR)
-                            d_insc_ini = formatar_data_br(ev.get("insc_abertura"))
-                            d_insc_fim = formatar_data_br(ev.get("insc_final"))
-                            if d_insc_ini and d_insc_fim:
-                                st.markdown(
-                                    f"✍️ **Inscrições:** <span style='color: #2e7d32; font-weight: bold;'>{d_insc_ini} a {d_insc_fim}</span>",
-                                    unsafe_allow_html=True,
-                                )
-
-                            st.write(f"📍 **Onde:** {ev.get('onde', 'EREM PAM')}")
-                            st.write(f"👥 **Turmas:** {ev.get('turmas', 'Geral')}")
-
-                        with col_btn:
-                            v_min, v_max = ev.get("min_membros", 0), ev.get(
-                                "max_membros", 0
-                            )
-                            st.markdown(
-                                f"""
-                                <div style="background-color: #f8f9fa; padding: 10px; border-radius: 8px; text-align: center; border: 1px solid #e6e6e6; margin-bottom: 12px;">
-                                    <span style="font-size: 0.70rem; color: #666; text-transform: uppercase; letter-spacing: 0.5px;">ALUNOS POR GRUPO</span><br>
-                                    <span style="font-size: 1.4rem; font-weight: 800; color: #1f77b4;">{v_min} a {v_max}</span>
-                                </div>
-                            """,
-                                unsafe_allow_html=True,
-                            )
-
-                            if ev.get("edital_link"):
-                                st.link_button(
-                                    "📄 Ver Edital",
-                                    ev["edital_link"],
-                                    use_container_width=True,
-                                )
-
-        except Exception as e:
-            st.error(f"Erro ao carregar vitrine: {e}")
-
-    # ==========================================
-    # ABA 1: FORMULÁRIO
-    # ==========================================
-    with aba_evento:
         st.subheader("Configuração de Eventos")
 
         # Busca todos os eventos para permitir edição
@@ -171,7 +67,7 @@ def exibir_gestao_feira(supabase_conn):
             is_edit = ev_edit is not None
             id_suffix = str(ev_edit["id"]) if is_edit else "novo"
 
-        except:
+        except Exception: # Captura qualquer erro na busca inicial
             ev_edit = None
             is_edit = False
             id_suffix = "erro"
@@ -198,16 +94,9 @@ def exibir_gestao_feira(supabase_conn):
                 except:
                     return datetime.date.today()
 
-            d_ini = (
-                converter_data(ev_edit.get("data_inicio"))
-                if is_edit
-                else datetime.date.today()
-            )
-            d_fim = (
-                converter_data(ev_edit.get("data_fim"))
-                if is_edit
-                else datetime.date.today()
-            )
+            # Restante do formulário de edição/criação
+            d_ini = converter_data(ev_edit.get("data_inicio")) if is_edit else datetime.date.today()
+            d_fim = converter_data(ev_edit.get("data_fim")) if is_edit else datetime.date.today()
 
             data_inicio = col1.date_input(
                 "Data de Início do Evento",
@@ -225,16 +114,8 @@ def exibir_gestao_feira(supabase_conn):
             st.markdown("##### ⏳ Período de Inscrições")
             col_insc1, col_insc2 = st.columns(2)
 
-            d_i_ab = (
-                converter_data(ev_edit.get("insc_abertura"))
-                if is_edit
-                else datetime.date.today()
-            )
-            d_i_fn = (
-                converter_data(ev_edit.get("insc_final"))
-                if is_edit
-                else datetime.date.today()
-            )
+            d_i_ab = converter_data(ev_edit.get("insc_abertura")) if is_edit else datetime.date.today()
+            d_i_fn = converter_data(ev_edit.get("insc_final")) if is_edit else datetime.date.today()
 
             data_insc_abertura = col_insc1.date_input(
                 "Abertura das Inscrições",
@@ -399,6 +280,108 @@ def exibir_gestao_feira(supabase_conn):
                         st.rerun()
                     except Exception as e:
                         st.error(f"Erro ao deletar: {e}")
+
+        st.divider() # Separador entre a área de edição e a vitrine
+
+        st.subheader("👀 Eventos Ativos (Vitrine)")
+        if st.button("🔄 Atualizar Vitrine"):
+            st.cache_data.clear()
+            st.rerun()
+
+        try:
+            res = buscar_eventos_vitrine(supabase_conn)
+            eventos = res.data
+
+            if not eventos:
+                st.info("Nenhum evento ativo no momento.")
+            else:
+                for ev in eventos:
+                    with st.container(border=True):
+                        col_img, col_info, col_btn = st.columns([1.5, 3, 1.5])
+
+                        with col_img:
+                            link_db = ev.get("imagem_capa_link", "")
+                            nome_evento = ev.get("nome", "").upper()
+
+                            # 1. Identifica o caminho do arquivo dentro do GitHub
+                            # Se for o NATUMAT antigo ou um link incompleto, ajustamos o caminho
+                            caminho_no_github = ""
+                            if "NATUMAT" in nome_evento:
+                                caminho_no_github = "banners/natumat_2026.png"
+                            elif link_db:
+                                # Extrai apenas o final do link (ex: banners/arquivo.png)
+                                caminho_no_github = link_db.split("/main/")[-1]
+
+                            if caminho_no_github:
+                                try:
+                                    # 2. USA O TOKEN PARA BUSCAR A IMAGEM NO REPO PRIVADO
+                                    token = st.secrets["GITHUB_TOKEN"]
+                                    g = Github(token)
+                                    # Certifique-se que o nome do repo aqui seja o mesmo do seu secrets
+                                    repo = g.get_repo("erempamacesso/presence")
+
+                                    contents = repo.get_contents(caminho_no_github)
+                                    # Exibe a imagem usando os bytes decodificados (sem precisar de URL pública)
+                                    st.image(
+                                        contents.decoded_content,
+                                        use_container_width=True,
+                                    )
+
+                                except Exception as e:
+                                    st.error("Erro ao carregar imagem privada")
+                                    # Opcional: st.write(e) para debug
+                            else:
+                                st.markdown(
+                                    "<div style='height: 150px; background-color: #f0f2f6; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #888;'>🖼️ Sem Imagem</div>",
+                                    unsafe_allow_html=True,
+                                )
+
+                        with col_info:
+                            st.subheader(f"🏆 {ev.get('nome', 'Evento')}")
+
+                            # Datas do Evento (Formatadas BR)
+                            d_ini = formatar_data_br(ev.get("data_inicio"))
+                            d_fim = formatar_data_br(ev.get("data_fim"))
+                            st.markdown(
+                                f"🗓️ **Período do Evento:** <span style='color: #ff4b4b;'>{d_ini} até {d_fim}</span>",
+                                unsafe_allow_html=True,
+                            )
+
+                            # Datas de Inscrição (Formatadas BR)
+                            d_insc_ini = formatar_data_br(ev.get("insc_abertura"))
+                            d_insc_fim = formatar_data_br(ev.get("insc_final"))
+                            if d_insc_ini and d_insc_fim:
+                                st.markdown(
+                                    f"✍️ **Inscrições:** <span style='color: #2e7d32; font-weight: bold;'>{d_insc_ini} a {d_insc_fim}</span>",
+                                    unsafe_allow_html=True,
+                                )
+
+                            st.write(f"📍 **Onde:** {ev.get('onde', 'EREM PAM')}")
+                            st.write(f"👥 **Turmas:** {ev.get('turmas', 'Geral')}")
+
+                        with col_btn:
+                            v_min, v_max = ev.get("min_membros", 0), ev.get(
+                                "max_membros", 0
+                            )
+                            st.markdown(
+                                f"""
+                                <div style="background-color: #f8f9fa; padding: 10px; border-radius: 8px; text-align: center; border: 1px solid #e6e6e6; margin-bottom: 12px;">
+                                    <span style="font-size: 0.70rem; color: #666; text-transform: uppercase; letter-spacing: 0.5px;">ALUNOS POR GRUPO</span><br>
+                                    <span style="font-size: 1.4rem; font-weight: 800; color: #1f77b4;">{v_min} a {v_max}</span>
+                                </div>
+                            """,
+                                unsafe_allow_html=True,
+                            )
+
+                            if ev.get("edital_link"):
+                                st.link_button(
+                                    "📄 Ver Edital",
+                                    ev["edital_link"],
+                                    use_container_width=True,
+                                )
+
+        except Exception as e:
+            st.error(f"Erro ao carregar vitrine: {e}")
 
     # ==========================================
     # ABA 2: GESTÃO DE TRABALHOS (CADASTRO E EDIÇÃO)
