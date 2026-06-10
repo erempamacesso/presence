@@ -187,10 +187,14 @@ def exibir_gestao_feira(supabase_conn):
             col1, col2 = st.columns(2)
 
             def converter_data(val):
+                if not val:
+                    return datetime.date.today()
                 if isinstance(val, datetime.date):
                     return val
                 try:
-                    return datetime.datetime.strptime(str(val), "%Y-%m-%d").date()
+                    # Extrai apenas a parte YYYY-MM-DD caso venha com timestamp (T00:00:00)
+                    str_data = str(val).split("T")[0]
+                    return datetime.datetime.strptime(str_data, "%Y-%m-%d").date()
                 except:
                     return datetime.date.today()
 
@@ -204,6 +208,7 @@ def exibir_gestao_feira(supabase_conn):
                 if is_edit
                 else datetime.date.today()
             )
+
             data_inicio = col1.date_input(
                 "Data de Início do Evento",
                 value=d_ini,
@@ -230,6 +235,7 @@ def exibir_gestao_feira(supabase_conn):
                 if is_edit
                 else datetime.date.today()
             )
+
             data_insc_abertura = col_insc1.date_input(
                 "Abertura das Inscrições",
                 value=d_i_ab,
@@ -276,8 +282,9 @@ def exibir_gestao_feira(supabase_conn):
                 placeholder="Digite instruções adicionais...",
             )
 
+            status_evento = True
             if is_edit:
-                st.toggle(
+                status_evento = st.toggle(
                     "Evento Ativo?",
                     value=bool(ev_edit.get("ativo", True)),
                     key=f"ev_ativo_{id_suffix}",
@@ -347,11 +354,7 @@ def exibir_gestao_feira(supabase_conn):
                             "observacoes": observacoes,
                             "imagem_capa_link": link_foto_final,
                             "edital_link": link_pdf_final,
-                            "ativo": (
-                                st.session_state.get(f"ev_ativo_{id_suffix}", True)
-                                if is_edit
-                                else True
-                            ),
+                            "ativo": status_evento,
                         }
 
                         if is_edit:
