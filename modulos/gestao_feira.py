@@ -31,17 +31,18 @@ def exibir_gestao_feira(supabase_conn):
             .execute()
         )
 
-    aba_ver, aba_trabalhos = st.tabs(
+    aba_config, aba_vitrine, aba_trabalhos = st.tabs(
         [
-            "� Ver e Gerenciar Eventos",
-            "‍🏫 2. Gestão de Trabalhos",
+            "⚙️ Configuração",
+            "👀 Vitrine de Eventos",
+            "👨‍🏫 Gestão de Trabalhos",
         ]
     )
 
     # ==========================================
-    # ABA 0: VITRINE (FORMATO BR)
+    # ABA 1: CONFIGURAÇÃO E EDIÇÃO
     # ==========================================
-    with aba_ver:
+    with aba_config:
         st.subheader("Configuração de Eventos")
 
         # Busca todos os eventos para permitir edição
@@ -67,7 +68,7 @@ def exibir_gestao_feira(supabase_conn):
             is_edit = ev_edit is not None
             id_suffix = str(ev_edit["id"]) if is_edit else "novo"
 
-        except Exception: # Captura qualquer erro na busca inicial
+        except Exception:  # Captura qualquer erro na busca inicial
             ev_edit = None
             is_edit = False
             id_suffix = "erro"
@@ -95,8 +96,16 @@ def exibir_gestao_feira(supabase_conn):
                     return datetime.date.today()
 
             # Restante do formulário de edição/criação
-            d_ini = converter_data(ev_edit.get("data_inicio")) if is_edit else datetime.date.today()
-            d_fim = converter_data(ev_edit.get("data_fim")) if is_edit else datetime.date.today()
+            d_ini = (
+                converter_data(ev_edit.get("data_inicio"))
+                if is_edit
+                else datetime.date.today()
+            )
+            d_fim = (
+                converter_data(ev_edit.get("data_fim"))
+                if is_edit
+                else datetime.date.today()
+            )
 
             data_inicio = col1.date_input(
                 "Data de Início do Evento",
@@ -114,8 +123,16 @@ def exibir_gestao_feira(supabase_conn):
             st.markdown("##### ⏳ Período de Inscrições")
             col_insc1, col_insc2 = st.columns(2)
 
-            d_i_ab = converter_data(ev_edit.get("insc_abertura")) if is_edit else datetime.date.today()
-            d_i_fn = converter_data(ev_edit.get("insc_final")) if is_edit else datetime.date.today()
+            d_i_ab = (
+                converter_data(ev_edit.get("insc_abertura"))
+                if is_edit
+                else datetime.date.today()
+            )
+            d_i_fn = (
+                converter_data(ev_edit.get("insc_final"))
+                if is_edit
+                else datetime.date.today()
+            )
 
             data_insc_abertura = col_insc1.date_input(
                 "Abertura das Inscrições",
@@ -281,9 +298,11 @@ def exibir_gestao_feira(supabase_conn):
                     except Exception as e:
                         st.error(f"Erro ao deletar: {e}")
 
-        st.divider() # Separador entre a área de edição e a vitrine
-
-        st.subheader("👀 Eventos Ativos (Vitrine)")
+    # ==========================================
+    # ABA 2: VITRINE (FORMATO BR)
+    # ==========================================
+    with aba_vitrine:
+        st.subheader("👀 Eventos Ativos na Vitrine")
         if st.button("🔄 Atualizar Vitrine"):
             st.cache_data.clear()
             st.rerun()
