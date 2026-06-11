@@ -144,9 +144,6 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                             # Fallback caso a data no banco esteja com erro
                             d_inicio, d_fim = hoje, hoje
 
-                        st.markdown(f"### {evento['nome']}")
-                        st.caption(f"📅 Período: {d_inicio.strftime('%d/%m/%Y')} até {d_fim.strftime('%d/%m/%Y')}")
-
                         # --- 1ª VERIFICAÇÃO: PERÍODO DE INSCRIÇÃO ---
                         inicio_inscricao, fim_inscricao = _periodo_inscricao(
                             evento, agora
@@ -154,6 +151,14 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                         inscricoes_abertas = inicio_inscricao <= agora <= fim_inscricao
                         aguardando_abertura = agora < inicio_inscricao
                         ja_encerrou = agora > fim_inscricao
+
+                        st.markdown(f"### {evento['nome']}")
+                        st.caption(
+                            f"📅 Data da feira: {d_inicio.strftime('%d/%m/%Y')} até {d_fim.strftime('%d/%m/%Y')}"
+                        )
+                        st.caption(
+                            f"✍️ Inscrições: {inicio_inscricao.strftime('%d/%m/%Y às %H:%M')} até {fim_inscricao.strftime('%d/%m/%Y às %H:%M')}"
+                        )
 
                         # --- 2ª VERIFICAÇÃO: SE JÁ ESTÁ INSCRITO (db_provas) ---
                         ja_inscrito = False
