@@ -104,7 +104,7 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                 st.info("No momento não há eventos com inscrições abertas.")
             else:
                 # Pegamos a data de hoje para comparação
-                hoje = datetime.date.today()
+                agora = datetime.datetime.now()
 
                 for evento in lista_eventos:
                     with st.container(border=True):
@@ -118,27 +118,46 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                                 evento["data_fim"], "%Y-%m-%d"
                             ).date()
 
-                            # Datas do Período de Inscrição (Lógica de Bloqueio)
-                            d_insc_ini = datetime.datetime.strptime(
-                                evento.get("insc_abertura", evento["data_inicio"]),
-                                "%Y-%m-%d",
-                            ).date()
-                            d_insc_fim = datetime.datetime.strptime(
-                                evento.get("insc_final", evento["data_fim"]), "%Y-%m-%d"
-                            ).date()
+                            # --- DATAS DE INSCRIÇÃO (COM HORA) ---
+                            h_ab = datetime.datetime.strptime(
+                                evento.get("insc_hora_abertura", "00:00"), "%H:%M"
+                            ).time()
+                            h_fn = datetime.datetime.strptime(
+                                evento.get("insc_hora_final", "23:59"), "%H:%M"
+                            ).time()
+
+                            # Criamos objetos datetime completos para comparação precisa
+                            dt_insc_ini = datetime.datetime.combine(
+                                datetime.datetime.strptime(
+                                    evento.get("insc_abertura", evento["data_inicio"]),
+                                    "%Y-%m-%d",
+                                ).date(),
+                                h_ab,
+                            )
+                            dt_insc_fim = datetime.datetime.combine(
+                                datetime.datetime.strptime(
+                                    evento.get("insc_final", evento["data_fim"]),
+                                    "%Y-%m-%d",
+                                ).date(),
+                                h_fn,
+                            )
                         except:
                             # Fallback caso a data no banco esteja com erro
-                            d_ev_inicio = d_ev_fim = d_insc_ini = d_insc_fim = hoje
+                            d_ev_inicio = d_ev_fim = agora.date()
+                            dt_insc_ini = dt_insc_fim = agora
 
                         st.markdown(f"### {evento['nome']}")
                         st.caption(
                             f"📅 Período do Evento: {d_ev_inicio.strftime('%d/%m/%Y')} até {d_ev_fim.strftime('%d/%m/%Y')}"
                         )
+                        st.markdown(
+                            f"✍️ **Inscrições:** {dt_insc_ini.strftime('%d/%m/%Y %H:%M')} até {dt_insc_fim.strftime('%d/%m/%Y %H:%M')}"
+                        )
 
                         # --- 1ª VERIFICAÇÃO: PERÍODO DE INSCRIÇÃO ---
-                        inscricoes_abertas = d_insc_ini <= hoje <= d_insc_fim
-                        aguardando_abertura = hoje < d_insc_ini
-                        ja_encerrou = hoje > d_insc_fim
+                        inscricoes_abertas = dt_insc_ini <= agora <= dt_insc_fim
+                        aguardando_abertura = agora < dt_insc_ini
+                        ja_encerrou = agora > dt_insc_fim
 
                         # --- 2ª VERIFICAÇÃO: SE JÁ ESTÁ INSCRITO (db_provas) ---
                         ja_inscrito = False
@@ -182,7 +201,7 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
 
                         elif aguardando_abertura:
                             st.warning(
-                                f"⏳ As inscrições abrem em {d_insc_ini.strftime('%d/%m/%Y')}"
+                                f"⏳ As inscrições abrem em {dt_insc_ini.strftime('%d/%m/%Y às %H:%M')}"
                             )
                             st.button(
                                 "INSCRIÇÕES EM BREVE",
@@ -193,7 +212,7 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
 
                         elif ja_encerrou:
                             st.error(
-                                f"🚫 O prazo de inscrição encerrou em {d_insc_fim.strftime('%d/%m/%Y')}"
+                                f"🚫 O prazo de inscrição encerrou em {dt_insc_fim.strftime('%d/%m/%Y às %H:%M')}"
                             )
                             st.button(
                                 "PRAZO ENCERRADO",
