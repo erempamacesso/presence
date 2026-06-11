@@ -30,14 +30,22 @@ def exibir_gestao_feira(supabase_conn):
         except:
             return datetime.date.today()
 
+    def converter_hora(val, padrao):
+        if not val:
+            return padrao
+        if isinstance(val, datetime.time):
+            return val
+        try:
+            return datetime.datetime.strptime(str(val)[:5], "%H:%M").time()
+        except:
+            return padrao
+
     # 1. Função de busca com cache
     @st.cache_data(ttl=60)
     def buscar_eventos_vitrine(_supabase):
         return (
             _supabase.table("feira_eventos")
-            .select(
-                "id, nome, data_inicio, data_fim, onde, turmas, edital_link, imagem_capa_link, min_membros, max_membros, ativo, insc_abertura, insc_final"
-            )
+            .select("*")
             .eq("ativo", True)
             .execute()
         )
@@ -134,6 +142,22 @@ def exibir_gestao_feira(supabase_conn):
                 format="DD/MM/YYYY",
                 key=f"insc_fn_{id_suffix}",
             )
+            hora_insc_abertura = col_insc1.time_input(
+                "Hora de Abertura",
+                value=converter_hora(
+                    ev_edit.get("insc_hora_abertura") if is_edit else None,
+                    datetime.time(0, 0),
+                ),
+                key=f"hora_insc_ab_{id_suffix}",
+            )
+            hora_insc_final = col_insc2.time_input(
+                "Hora de Encerramento",
+                value=converter_hora(
+                    ev_edit.get("insc_hora_final") if is_edit else None,
+                    datetime.time(23, 59),
+                ),
+                key=f"hora_insc_fn_{id_suffix}",
+            )
 
             st.markdown("##### 📍 Detalhes e Regras")
             col3, col4 = st.columns(2)
@@ -202,6 +226,12 @@ def exibir_gestao_feira(supabase_conn):
                     st.warning(
                         "⚠️ A data final das inscrições não pode ser anterior à abertura."
                     )
+                elif datetime.datetime.combine(
+                    data_insc_final, hora_insc_final
+                ) <= datetime.datetime.combine(data_insc_abertura, hora_insc_abertura):
+                    st.warning(
+                        "⚠️ O encerramento das inscrições precisa ser depois da abertura."
+                    )
                 elif max_alunos < min_alunos:
                     st.warning(
                         "⚠️ O máximo de alunos por grupo não pode ser menor que o mínimo."
@@ -247,6 +277,10 @@ def exibir_gestao_feira(supabase_conn):
                             "data_fim": str(data_fim),
                             "insc_abertura": str(data_insc_abertura),
                             "insc_final": str(data_insc_final),
+                            "insc_hora_abertura": hora_insc_abertura.strftime(
+                                "%H:%M"
+                            ),
+                            "insc_hora_final": hora_insc_final.strftime("%H:%M"),
                             "onde": local_ev,
                             "turmas": turmas_ev,
                             "min_membros": min_alunos,
@@ -268,7 +302,7 @@ def exibir_gestao_feira(supabase_conn):
 
                         # Mensagem de sucesso com datas BR
                         st.success(
-                            f"✅ Evento '{nome_evento}' publicado! Inscrições de {data_insc_abertura.strftime('%d/%m/%Y')} até {data_insc_final.strftime('%d/%m/%Y')}."
+                            f"✅ Evento '{nome_evento}' publicado! Inscrições de {data_insc_abertura.strftime('%d/%m/%Y')} às {hora_insc_abertura.strftime('%H:%M')} até {data_insc_final.strftime('%d/%m/%Y')} às {hora_insc_final.strftime('%H:%M')}."
                         )
                         st.cache_data.clear()
                         time.sleep(2)
@@ -343,6 +377,22 @@ def exibir_gestao_feira(supabase_conn):
                         value=converter_data(ev_edit.get("insc_final")),
                         format="DD/MM/YYYY",
                         key=f"edit_insc_fn_{id_suffix}",
+                    )
+                    hora_insc_abertura = col_insc1.time_input(
+                        "Hora de Abertura",
+                        value=converter_hora(
+                            ev_edit.get("insc_hora_abertura"),
+                            datetime.time(0, 0),
+                        ),
+                        key=f"edit_hora_insc_ab_{id_suffix}",
+                    )
+                    hora_insc_final = col_insc2.time_input(
+                        "Hora de Encerramento",
+                        value=converter_hora(
+                            ev_edit.get("insc_hora_final"),
+                            datetime.time(23, 59),
+                        ),
+                        key=f"edit_hora_insc_fn_{id_suffix}",
                     )
 
                     st.markdown("##### 📍 Detalhes e Regras")
@@ -423,6 +473,14 @@ def exibir_gestao_feira(supabase_conn):
                             st.warning(
                                 "⚠️ A data final das inscrições não pode ser anterior à abertura."
                             )
+                        elif datetime.datetime.combine(
+                            data_insc_final, hora_insc_final
+                        ) <= datetime.datetime.combine(
+                            data_insc_abertura, hora_insc_abertura
+                        ):
+                            st.warning(
+                                "⚠️ O encerramento das inscrições precisa ser depois da abertura."
+                            )
                         elif max_alunos < min_alunos:
                             st.warning(
                                 "⚠️ O máximo de alunos por grupo não pode ser menor que o mínimo."
@@ -466,6 +524,12 @@ def exibir_gestao_feira(supabase_conn):
                                     "data_fim": str(data_fim),
                                     "insc_abertura": str(data_insc_abertura),
                                     "insc_final": str(data_insc_final),
+                                    "insc_hora_abertura": hora_insc_abertura.strftime(
+                                        "%H:%M"
+                                    ),
+                                    "insc_hora_final": hora_insc_final.strftime(
+                                        "%H:%M"
+                                    ),
                                     "onde": local_ev,
                                     "turmas": turmas_ev,
                                     "min_membros": min_alunos,
@@ -586,8 +650,10 @@ def exibir_gestao_feira(supabase_conn):
                             d_insc_ini = formatar_data_br(ev.get("insc_abertura"))
                             d_insc_fim = formatar_data_br(ev.get("insc_final"))
                             if d_insc_ini and d_insc_fim:
+                                h_insc_ini = ev.get("insc_hora_abertura") or "00:00"
+                                h_insc_fim = ev.get("insc_hora_final") or "23:59"
                                 st.markdown(
-                                    f"✍️ **Inscrições:** <span style='color: #2e7d32; font-weight: bold;'>{d_insc_ini} a {d_insc_fim}</span>",
+                                    f"✍️ **Inscrições:** <span style='color: #2e7d32; font-weight: bold;'>{d_insc_ini} às {h_insc_ini} até {d_insc_fim} às {h_insc_fim}</span>",
                                     unsafe_allow_html=True,
                                 )
 

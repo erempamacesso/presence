@@ -1,7 +1,49 @@
 import streamlit as st
 import datetime
 import time
+from zoneinfo import ZoneInfo
 from collections import defaultdict
+
+
+def _converter_data_evento(valor, padrao):
+    if not valor:
+        return padrao
+    try:
+        return datetime.datetime.strptime(str(valor).split("T")[0], "%Y-%m-%d").date()
+    except Exception:
+        return padrao
+
+
+def _converter_hora_evento(valor, padrao):
+    if not valor:
+        return padrao
+    try:
+        return datetime.datetime.strptime(str(valor)[:5], "%H:%M").time()
+    except Exception:
+        return padrao
+
+
+def _periodo_inscricao(evento, agora):
+    data_abertura = _converter_data_evento(
+        evento.get("insc_abertura") or evento.get("data_inicio"),
+        agora.date(),
+    )
+    data_final = _converter_data_evento(
+        evento.get("insc_final") or evento.get("data_fim"),
+        agora.date(),
+    )
+    hora_abertura = _converter_hora_evento(
+        evento.get("insc_hora_abertura"),
+        datetime.time(0, 0),
+    )
+    hora_final = _converter_hora_evento(
+        evento.get("insc_hora_final"),
+        datetime.time(23, 59),
+    )
+
+    inicio = datetime.datetime.combine(data_abertura, hora_abertura)
+    fim = datetime.datetime.combine(data_final, hora_final)
+    return inicio, fim
 
 def mostrar_inscricao_aluno(db_alunos, db_provas):
     # --- 1. ESTILO CSS ---
@@ -86,8 +128,10 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
             if not lista_eventos:
                 st.info("No momento não há eventos com inscrições abertas.")
             else:
-                # Pegamos a data de hoje para comparação
-                hoje = datetime.date.today()
+                agora = datetime.datetime.now(ZoneInfo("America/Fortaleza")).replace(
+                    tzinfo=None
+                )
+                hoje = agora.date()
 
                 for evento in lista_eventos:
                     with st.container(border=True):
@@ -104,9 +148,12 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                         st.caption(f"📅 Período: {d_inicio.strftime('%d/%m/%Y')} até {d_fim.strftime('%d/%m/%Y')}")
 
                         # --- 1ª VERIFICAÇÃO: PERÍODO DE INSCRIÇÃO ---
-                        inscricoes_abertas = d_inicio <= hoje <= d_fim
-                        aguardando_abertura = hoje < d_inicio
-                        ja_encerrou = hoje > d_fim
+                        inicio_inscricao, fim_inscricao = _periodo_inscricao(
+                            evento, agora
+                        )
+                        inscricoes_abertas = inicio_inscricao <= agora <= fim_inscricao
+                        aguardando_abertura = agora < inicio_inscricao
+                        ja_encerrou = agora > fim_inscricao
 
                         # --- 2ª VERIFICAÇÃO: SE JÁ ESTÁ INSCRITO (db_provas) ---
                         ja_inscrito = False
@@ -140,11 +187,15 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                             st.button("INSCRIÇÃO JÁ REALIZADA", key=f"btn_insc_{evento['id']}", disabled=True, use_container_width=True)
 
                         elif aguardando_abertura:
-                            st.warning(f"⏳ As inscrições abrem em {d_inicio.strftime('%d/%m/%Y')}")
+                            st.warning(
+                                f"⏳ As inscrições abrem em {inicio_inscricao.strftime('%d/%m/%Y às %H:%M')}"
+                            )
                             st.button("INSCRIÇÕES EM BREVE", key=f"btn_wait_{evento['id']}", disabled=True, use_container_width=True)
 
                         elif ja_encerrou:
-                            st.error(f"🚫 O prazo de inscrição encerrou em {d_fim.strftime('%d/%m/%Y')}")
+                            st.error(
+                                f"🚫 O prazo de inscrição encerrou em {fim_inscricao.strftime('%d/%m/%Y às %H:%M')}"
+                            )
                             st.button("PRAZO ENCERRADO", key=f"btn_end_{evento['id']}", disabled=True, use_container_width=True)
 
                         else:
