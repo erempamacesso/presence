@@ -40,6 +40,27 @@ def exibir_gestao_feira(supabase_conn):
         except:
             return padrao
 
+    def salvar_evento_supabase(dados, evento_id=None):
+        try:
+            if evento_id:
+                supabase_conn.table("feira_eventos").update(dados).eq(
+                    "id", evento_id
+                ).execute()
+            else:
+                supabase_conn.table("feira_eventos").insert(dados).execute()
+            return True, None
+        except Exception as e:
+            erro = str(e)
+            if "insc_hora_abertura" in erro or "insc_hora_final" in erro:
+                return (
+                    False,
+                    "As colunas de hora ainda não existem na tabela feira_eventos. Rode este SQL no Supabase:\n\n"
+                    "alter table public.feira_eventos\n"
+                    "add column if not exists insc_hora_abertura time default '00:00',\n"
+                    "add column if not exists insc_hora_final time default '23:59';",
+                )
+            raise
+
     # 1. Função de busca com cache
     @st.cache_data(ttl=60)
     def buscar_eventos_vitrine(_supabase):
@@ -291,14 +312,12 @@ def exibir_gestao_feira(supabase_conn):
                             "ativo": status_evento,
                         }
 
-                        if is_edit:
-                            supabase_conn.table("feira_eventos").update(
-                                dados_para_salvar
-                            ).eq("id", ev_edit["id"]).execute()
-                        else:
-                            supabase_conn.table("feira_eventos").insert(
-                                dados_para_salvar
-                            ).execute()
+                        salvou, aviso = salvar_evento_supabase(
+                            dados_para_salvar, ev_edit["id"] if is_edit else None
+                        )
+                        if not salvou:
+                            st.error(aviso)
+                            st.stop()
 
                         # Mensagem de sucesso com datas BR
                         st.success(
@@ -540,9 +559,12 @@ def exibir_gestao_feira(supabase_conn):
                                     "ativo": status_evento,
                                 }
 
-                                supabase_conn.table("feira_eventos").update(
-                                    dados_para_salvar
-                                ).eq("id", ev_edit["id"]).execute()
+                                salvou, aviso = salvar_evento_supabase(
+                                    dados_para_salvar, ev_edit["id"]
+                                )
+                                if not salvou:
+                                    st.error(aviso)
+                                    st.stop()
 
                                 st.success(
                                     f"✅ Evento '{nome_evento}' atualizado com sucesso!"
