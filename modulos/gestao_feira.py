@@ -138,7 +138,9 @@ def exibir_gestao_feira(supabase_conn):
             )
 
             st.markdown("##### ⏳ Período de Inscrições")
-            col_insc1, col_insc2 = st.columns(2)
+            col_insc_data_ab, col_insc_hora_ab, col_insc_data_fn, col_insc_hora_fn = (
+                st.columns(4)
+            )
 
             d_i_ab = (
                 converter_data(ev_edit.get("insc_abertura"))
@@ -151,19 +153,13 @@ def exibir_gestao_feira(supabase_conn):
                 else datetime.date.today()
             )
 
-            data_insc_abertura = col_insc1.date_input(
-                "Abertura das Inscrições",
+            data_insc_abertura = col_insc_data_ab.date_input(
+                "Data de Abertura",
                 value=d_i_ab,
                 format="DD/MM/YYYY",
                 key=f"insc_ab_{id_suffix}",
             )
-            data_insc_final = col_insc2.date_input(
-                "Encerramento das Inscrições",
-                value=d_i_fn,
-                format="DD/MM/YYYY",
-                key=f"insc_fn_{id_suffix}",
-            )
-            hora_insc_abertura = col_insc1.time_input(
+            hora_insc_abertura = col_insc_hora_ab.time_input(
                 "Hora de Abertura",
                 value=converter_hora(
                     ev_edit.get("insc_hora_abertura") if is_edit else None,
@@ -171,7 +167,13 @@ def exibir_gestao_feira(supabase_conn):
                 ),
                 key=f"hora_insc_ab_{id_suffix}",
             )
-            hora_insc_final = col_insc2.time_input(
+            data_insc_final = col_insc_data_fn.date_input(
+                "Data de Encerramento",
+                value=d_i_fn,
+                format="DD/MM/YYYY",
+                key=f"insc_fn_{id_suffix}",
+            )
+            hora_insc_final = col_insc_hora_fn.time_input(
                 "Hora de Encerramento",
                 value=converter_hora(
                     ev_edit.get("insc_hora_final") if is_edit else None,
@@ -384,20 +386,19 @@ def exibir_gestao_feira(supabase_conn):
                     )
 
                     st.markdown("##### ⏳ Período de Inscrições")
-                    col_insc1, col_insc2 = st.columns(2)
-                    data_insc_abertura = col_insc1.date_input(
-                        "Abertura das Inscrições",
+                    (
+                        col_insc_data_ab,
+                        col_insc_hora_ab,
+                        col_insc_data_fn,
+                        col_insc_hora_fn,
+                    ) = st.columns(4)
+                    data_insc_abertura = col_insc_data_ab.date_input(
+                        "Data de Abertura",
                         value=converter_data(ev_edit.get("insc_abertura")),
                         format="DD/MM/YYYY",
                         key=f"edit_insc_ab_{id_suffix}",
                     )
-                    data_insc_final = col_insc2.date_input(
-                        "Encerramento das Inscrições",
-                        value=converter_data(ev_edit.get("insc_final")),
-                        format="DD/MM/YYYY",
-                        key=f"edit_insc_fn_{id_suffix}",
-                    )
-                    hora_insc_abertura = col_insc1.time_input(
+                    hora_insc_abertura = col_insc_hora_ab.time_input(
                         "Hora de Abertura",
                         value=converter_hora(
                             ev_edit.get("insc_hora_abertura"),
@@ -405,7 +406,13 @@ def exibir_gestao_feira(supabase_conn):
                         ),
                         key=f"edit_hora_insc_ab_{id_suffix}",
                     )
-                    hora_insc_final = col_insc2.time_input(
+                    data_insc_final = col_insc_data_fn.date_input(
+                        "Data de Encerramento",
+                        value=converter_data(ev_edit.get("insc_final")),
+                        format="DD/MM/YYYY",
+                        key=f"edit_insc_fn_{id_suffix}",
+                    )
+                    hora_insc_final = col_insc_hora_fn.time_input(
                         "Hora de Encerramento",
                         value=converter_hora(
                             ev_edit.get("insc_hora_final"),
