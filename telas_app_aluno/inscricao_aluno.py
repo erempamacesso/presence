@@ -109,38 +109,35 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                 for evento in lista_eventos:
                     with st.container(border=True):
                         # --- CONVERSÃO DE DATAS DO BANCO ---
+                        def parse_dt(v, default_d):
+                            if not v: return default_d
+                            try:
+                                # Garante pegar apenas a parte da data caso venha com timestamp (T00:00:00)
+                                str_data = str(v).split("T")[0]
+                                return datetime.datetime.strptime(str_data, "%Y-%m-%d").date()
+                            except: return default_d
+
+                        def parse_tm(v, default_t):
+                            if not v: return default_t
+                            try:
+                                return datetime.datetime.strptime(str(v)[:5], "%H:%M").time()
+                            except: return default_t
+
                         try:
                             # Datas da Realização do Evento (Exibição)
-                            d_ev_inicio = datetime.datetime.strptime(
-                                evento["data_inicio"], "%Y-%m-%d"
-                            ).date()
-                            d_ev_fim = datetime.datetime.strptime(
-                                evento["data_fim"], "%Y-%m-%d"
-                            ).date()
+                            d_ev_inicio = parse_dt(evento.get("data_inicio"), agora.date())
+                            d_ev_fim = parse_dt(evento.get("data_fim"), agora.date())
 
                             # --- DATAS DE INSCRIÇÃO (COM HORA) ---
-                            h_ab = datetime.datetime.strptime(
-                                evento.get("insc_hora_abertura", "00:00"), "%H:%M"
-                            ).time()
-                            h_fn = datetime.datetime.strptime(
-                                evento.get("insc_hora_final", "23:59"), "%H:%M"
-                            ).time()
+                            h_ab = parse_tm(evento.get("insc_hora_abertura"), datetime.time(0, 0))
+                            h_fn = parse_tm(evento.get("insc_hora_final"), datetime.time(23, 59))
 
                             # Criamos objetos datetime completos para comparação precisa
-                            dt_insc_ini = datetime.datetime.combine(
-                                datetime.datetime.strptime(
-                                    evento.get("insc_abertura", evento["data_inicio"]),
-                                    "%Y-%m-%d",
-                                ).date(),
-                                h_ab,
-                            )
-                            dt_insc_fim = datetime.datetime.combine(
-                                datetime.datetime.strptime(
-                                    evento.get("insc_final", evento["data_fim"]),
-                                    "%Y-%m-%d",
-                                ).date(),
-                                h_fn,
-                            )
+                            d_insc_ini = parse_dt(evento.get("insc_abertura"), d_ev_inicio)
+                            d_insc_fim = parse_dt(evento.get("insc_final"), d_ev_fim)
+
+                            dt_insc_ini = datetime.datetime.combine(d_insc_ini, h_ab)
+                            dt_insc_fim = datetime.datetime.combine(d_insc_fim, h_fn)
                         except:
                             # Fallback caso a data no banco esteja com erro
                             d_ev_inicio = d_ev_fim = agora.date()
