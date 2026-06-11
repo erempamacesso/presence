@@ -64,12 +64,7 @@ def exibir_gestao_feira(supabase_conn):
     # 1. Função de busca com cache
     @st.cache_data(ttl=60)
     def buscar_eventos_vitrine(_supabase):
-        return (
-            _supabase.table("feira_eventos")
-            .select("*")
-            .eq("ativo", True)
-            .execute()
-        )
+        return _supabase.table("feira_eventos").select("*").eq("ativo", True).execute()
 
     aba_config, aba_eventos, aba_vitrine, aba_trabalhos = st.tabs(
         [
@@ -99,18 +94,6 @@ def exibir_gestao_feira(supabase_conn):
 
             st.markdown("##### 🗓️ Datas do Evento")
             col1, col2 = st.columns(2)
-
-            def converter_data(val):
-                if not val:
-                    return datetime.date.today()
-                if isinstance(val, datetime.date):
-                    return val
-                try:
-                    # Extrai apenas a parte YYYY-MM-DD caso venha com timestamp (T00:00:00)
-                    str_data = str(val).split("T")[0]
-                    return datetime.datetime.strptime(str_data, "%Y-%m-%d").date()
-                except:
-                    return datetime.date.today()
 
             # Restante do formulário de edição/criação
             d_ini = (
@@ -300,9 +283,7 @@ def exibir_gestao_feira(supabase_conn):
                             "data_fim": str(data_fim),
                             "insc_abertura": str(data_insc_abertura),
                             "insc_final": str(data_insc_final),
-                            "insc_hora_abertura": hora_insc_abertura.strftime(
-                                "%H:%M"
-                            ),
+                            "insc_hora_abertura": hora_insc_abertura.strftime("%H:%M"),
                             "insc_hora_final": hora_insc_final.strftime("%H:%M"),
                             "onde": local_ev,
                             "turmas": turmas_ev,
@@ -676,13 +657,36 @@ def exibir_gestao_feira(supabase_conn):
                             )
 
                             # Datas de Inscrição (Formatadas BR)
-                            d_insc_ini = formatar_data_br(ev.get("insc_abertura"))
-                            d_insc_fim = formatar_data_br(ev.get("insc_final"))
-                            if d_insc_ini and d_insc_fim:
-                                h_insc_ini = ev.get("insc_hora_abertura") or "00:00"
-                                h_insc_fim = ev.get("insc_hora_final") or "23:59"
+                            insc_abertura_dt = datetime.datetime.combine(
+                                converter_data(ev.get("insc_abertura")),
+                                converter_hora(
+                                    ev.get("insc_hora_abertura"), datetime.time(0, 0)
+                                ),
+                            )
+                            insc_final_dt = datetime.datetime.combine(
+                                converter_data(ev.get("insc_final")),
+                                converter_hora(
+                                    ev.get("insc_hora_final"), datetime.time(23, 59)
+                                ),
+                            )
+                            now = datetime.datetime.now()
+
+                            if now < insc_abertura_dt:
+                                # Inscrições futuras
                                 st.markdown(
-                                    f"✍️ **Inscrições:** <span style='color: #2e7d32; font-weight: bold;'>{d_insc_ini} às {h_insc_ini} até {d_insc_fim} às {h_insc_fim}</span>",
+                                    f"✍️ **Inscrições:** <span style='color: #ff8c00; font-weight: bold;'>Abrem em {formatar_data_br(ev.get('insc_abertura'))} às {ev.get('insc_hora_abertura') or '00:00'}</span>",
+                                    unsafe_allow_html=True,
+                                )
+                            elif insc_abertura_dt <= now <= insc_final_dt:
+                                # Inscrições abertas
+                                st.markdown(
+                                    f"✍️ **Inscrições:** <span style='color: #2e7d32; font-weight: bold;'>ABERTAS! Até {formatar_data_br(ev.get('insc_final'))} às {ev.get('insc_hora_final') or '23:59'}</span>",
+                                    unsafe_allow_html=True,
+                                )
+                            else:
+                                # Inscrições encerradas
+                                st.markdown(
+                                    f"✍️ **Inscrições:** <span style='color: #d32f2f; font-weight: bold;'>ENCERRADAS em {formatar_data_br(ev.get('insc_final'))} às {ev.get('insc_hora_final') or '23:59'}</span>",
                                     unsafe_allow_html=True,
                                 )
 
