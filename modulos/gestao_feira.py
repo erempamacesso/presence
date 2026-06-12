@@ -873,15 +873,37 @@ def exibir_gestao_feira(supabase_conn):
                 if ev_g_sel != "Selecione...":
                     ev_id = dict_ev_g[ev_g_sel]
 
+                    # --- NOVO FILTRO POR PROFESSOR ---
+                    res_p_ev = (
+                        supabase_conn.table("feira_temas")
+                        .select("professor_nome")
+                        .eq("evento_id", ev_id)
+                        .execute()
+                    )
+                    profs_no_evento = sorted(
+                        list(set([p["professor_nome"] for p in res_p_ev.data]))
+                    )
+
+                    prof_gestao_sel = st.selectbox(
+                        "2. Filtrar por Professor Orientador:",
+                        ["Todos"] + profs_no_evento,
+                        key="filtro_prof_gestao",
+                    )
+
                     # Lógica de alternância entre Lista e Formulário usando Session State
                     if "id_trabalho_edit" not in st.session_state:
                         # --- MODO LISTA ---
-                        res_temas = (
+                        query_temas = (
                             supabase_conn.table("feira_temas")
                             .select("*")
                             .eq("evento_id", ev_id)
-                            .execute()
                         )
+                        if prof_gestao_sel != "Todos":
+                            query_temas = query_temas.eq(
+                                "professor_nome", prof_gestao_sel
+                            )
+
+                        res_temas = query_temas.execute()
                         temas = res_temas.data
 
                         if not temas:
