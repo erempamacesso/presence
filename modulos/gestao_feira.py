@@ -830,88 +830,91 @@ def exibir_gestao_feira(supabase_conn):
 
         with aba_cad:
             st.subheader("Cadastro de Linhas de Pesquisa / Temas")
-        try:
-            res_ev = (
-                supabase_conn.table("feira_eventos")
-                .select("id, nome")
-                .eq("ativo", True)
-                .execute()
-            )
-            dict_eventos = {item["nome"]: item["id"] for item in res_ev.data}
-
-            with st.form("form_novo_trabalho_mestre", clear_on_submit=True):
-                ev_selecionado = (
-                    st.selectbox("Para qual evento?", list(dict_eventos.keys()))
-                    if dict_eventos
-                    else None
-                )
-                res_prof = (
-                    supabase_conn.table("professores_matriculas")
-                    .select("professor")
+            try:
+                res_ev = (
+                    supabase_conn.table("feira_eventos")
+                    .select("id, nome")
+                    .eq("ativo", True)
                     .execute()
                 )
-                lista_profs = ["Selecione..."] + sorted(
-                    list(set([p["professor"] for p in res_prof.data if p["professor"]]))
-                )
-                prof_selecionado = st.selectbox("Professor Orientador", lista_profs)
+                dict_eventos = {item["nome"]: item["id"] for item in res_ev.data}
 
-                titulo = st.text_input("Título da Linha de Pesquisa")
-                descricao = st.text_area("Descrição Breve")
+                with st.form("form_novo_trabalho_mestre", clear_on_submit=True):
+                    ev_selecionado = (
+                        st.selectbox("Para qual evento?", list(dict_eventos.keys()))
+                        if dict_eventos
+                        else None
+                    )
+                    res_prof = (
+                        supabase_conn.table("professores_matriculas")
+                        .select("professor")
+                        .execute()
+                    )
+                    lista_profs = ["Selecione..."] + sorted(
+                        list(
+                            set(
+                                [
+                                    p["professor"]
+                                    for p in res_prof.data
+                                    if p["professor"]
+                                ]
+                            )
+                        )
+                    )
+                    prof_selecionado = st.selectbox("Professor Orientador", lista_profs)
 
-                # --- NOVOS CAMPOS: DISCIPLINA E SÉRIE ---
-                col_disc, col_serie = st.columns(2)
-                disciplina_selecionada = col_disc.selectbox(
-                    "Disciplina do Trabalho",
-                    ["Selecione...", "Química", "Física", "Biologia", "Matemática"],
-                )
+                    titulo = st.text_input("Título da Linha de Pesquisa")
+                    descricao = st.text_area("Descrição Breve")
 
-                serie_selecionada = col_serie.selectbox(
-                    "Série Destinada", ["Selecione...", "1º", "2º", "3º", "Geral"]
-                )
-                # ----------------------------------------
+                    # --- NOVOS CAMPOS ---
+                    col_disc, col_serie = st.columns(2)
+                    disciplina_selecionada = col_disc.selectbox(
+                        "Disciplina do Trabalho",
+                        ["Selecione...", "Química", "Física", "Biologia", "Matemática"],
+                    )
+                    serie_selecionada = col_serie.selectbox(
+                        "Série Destinada", ["Selecione...", "1º", "2º", "3º", "Geral"]
+                    )
 
-                vagas = st.number_input(
-                    "Limite de Grupos (Vagas)", min_value=1, value=5
-                )
+                    vagas = st.number_input(
+                        "Limite de Grupos (Vagas)", min_value=1, value=5
+                    )
 
-                if st.form_submit_button("➕ Adicionar Tema", use_container_width=True):
-                    # Validação para garantir que o professor escolheu a disciplina e a série
-                    if (
-                        ev_selecionado
-                        and prof_selecionado != "Selecione..."
-                        and titulo
-                        and disciplina_selecionada != "Selecione..."
-                        and serie_selecionada != "Selecione..."
+                    if st.form_submit_button(
+                        "➕ Adicionar Tema", use_container_width=True
                     ):
+                        if (
+                            ev_selecionado
+                            and prof_selecionado != "Selecione..."
+                            and titulo
+                            and disciplina_selecionada != "Selecione..."
+                            and serie_selecionada != "Selecione..."
+                        ):
+                            supabase_conn.table("feira_temas").insert(
+                                {
+                                    "evento_id": dict_eventos[ev_selecionado],
+                                    "professor_nome": prof_selecionado,
+                                    "titulo_trabalho": titulo,
+                                    "descricao": descricao,
+                                    "vagas_grupos": vagas,
+                                    "disciplina": disciplina_selecionada,
+                                    "Serie": serie_selecionada,
+                                }
+                            ).execute()
 
-                        supabase_conn.table("feira_temas").insert(
-                            {
-                                "evento_id": dict_eventos[ev_selecionado],
-                                "professor_nome": prof_selecionado,
-                                "titulo_trabalho": titulo,
-                                "descricao": descricao,
-                                "vagas_grupos": vagas,
-                                "disciplina": disciplina_selecionada,  # NOVO CAMPO
-                                "Serie": serie_selecionada,  # NOVO CAMPO (Exatamente como está no Supabase)
-                            }
-                        ).execute()
-
-                        st.success("✅ Linha de pesquisa cadastrada com sucesso!")
-                        st.session_state.current_main_tab_index = main_tab_labels.index(
-                            "👨‍🏫 Gestão de Trabalhos"
-                        )
-                        st.session_state.current_trabalhos_subtab_index = (
-                            sub_tab_labels.index("➕ Novo Trabalho")
-                        )
-                        time.sleep(1.5)
-                        st.rerun()
-                    else:
-                        st.warning(
-                            "⚠️ Preencha todos os campos obrigatórios (Evento, Orientador, Título, Disciplina e Série)!"
-                        )
-
-        except Exception as e:
-            st.error(f"Erro ao carregar dados: {e}")
+                            st.success("✅ Linha de pesquisa cadastrada com sucesso!")
+                            st.session_state.current_main_tab_index = (
+                                main_tab_labels.index("👨‍🏫 Gestão de Trabalhos")
+                            )
+                            st.session_state.current_trabalhos_subtab_index = (
+                                sub_tab_labels.index("➕ Novo Trabalho")
+                            )
+                            time.sleep(1.5)
+                            st.rerun()
+                        else:
+                            st.warning("⚠️ Preencha todos os campos obrigatórios!")
+            except Exception as e:
+                st.error(f"Erro ao carregar dados: {e}")
 
         with aba_edit:
             st.subheader("Gerenciar Trabalhos Cadastrados")
