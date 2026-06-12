@@ -873,90 +873,47 @@ def exibir_gestao_feira(supabase_conn):
                 if ev_g_sel != "Selecione...":
                     ev_id = dict_ev_g[ev_g_sel]
 
-                    # --- NOVO FILTRO POR PROFESSOR ---
-                    res_p_ev = (
+                    # Busca todos os temas para o evento selecionado
+                    res_temas = (
                         supabase_conn.table("feira_temas")
-                        .select("professor_nome")
+                        .select("*")
                         .eq("evento_id", ev_id)
                         .execute()
                     )
-                    profs_no_evento = sorted(
-                        list(set([p["professor_nome"] for p in res_p_ev.data]))
-                    )
+                    temas_evento = res_temas.data
 
-                    prof_gestao_sel = st.selectbox(
-                        "2. Filtrar por Professor Orientador:",
-                        ["Todos"] + profs_no_evento,
-                        key="filtro_prof_gestao",
-                    )
-
-                    # Lógica de alternância entre Lista e Formulário usando Session State
-                    if "id_trabalho_edit" not in st.session_state:
-                        # --- MODO LISTA ---
-                        query_temas = (
-                            supabase_conn.table("feira_temas")
-                            .select("*")
-                            .eq("evento_id", ev_id)
-                        )
-                        if prof_gestao_sel != "Todos":
-                            query_temas = query_temas.eq(
-                                "professor_nome", prof_gestao_sel
-                            )
-
-                        res_temas = query_temas.execute()
-                        temas = res_temas.data
-
-                        if not temas:
-                            st.info("Nenhum trabalho cadastrado para este evento.")
-                        else:
-                            st.markdown("---")
-                            # Cabeçalho da "tabela"
-                            c1, c2, c3, c4 = st.columns([3, 2, 2, 1])
-                            c1.markdown("**Título**")
-                            c2.markdown("**Orientador**")
-                            c3.markdown("**Matéria**")
-                            c4.markdown("**Ação**")
-                            st.divider()
-
-                            for t in temas:
-                                c1, c2, c3, c4 = st.columns([3, 2, 2, 1])
-                                c1.write(t["titulo_trabalho"])
-                                c2.write(t["professor_nome"])
-                                c3.write(t["disciplina"])
-                                # Ao clicar em editar, salvamos o ID no session_state e recarregamos
-                                if c4.button(
-                                    "✏️ Editar",
-                                    key=f"btn_edit_{t['id']}",
-                                    use_container_width=True,
-                                ):
-                                    st.session_state.id_trabalho_edit = t["id"]
-                                    st.rerun()
+                    if not temas_evento:
+                        st.info("Nenhum trabalho cadastrado para este evento.")
                     else:
-                        # --- MODO FORMULÁRIO DE EDIÇÃO ---
-                        id_edit = st.session_state.id_trabalho_edit
-                        res_trabalho = (
-                            supabase_conn.table("feira_temas")
-                            .select("*")
-                            .eq("id", id_edit)
-                            .execute()
+                        # Cria um dicionário para o selectbox: "Título (Professor)" -> dados_do_tema
+                        temas_dict = {
+                            f"{t['titulo_trabalho']} ({t['professor_nome']})": t
+                            for t in temas_evento
+                        }
+
+                        trabalho_selecionado_label = st.selectbox(
+                            "2. Selecione o Trabalho para editar:",
+                            ["Selecione..."] + list(temas_dict.keys()),
+                            key="sel_trabalho_edit_form",
                         )
 
-                        if not res_trabalho.data:
-                            st.error("Trabalho não encontrado.")
-                            if st.button("Voltar"):
-                                del st.session_state.id_trabalho_edit
-                                st.rerun()
-                        else:
-                            t_edit = res_trabalho.data[0]
+                        if trabalho_selecionado_label != "Selecione...":
+                            t_edit = temas_dict[trabalho_selecionado_label]
 
-                            if st.button("⬅️ Voltar para a lista"):
-                                del st.session_state.id_trabalho_edit
-                                st.rerun()
+                            # --- MOSTRAR RESUMO DO TRABALHO ---
+                            with st.container(border=True):
+                                st.markdown(f"#### 📋 Resumo: {t_edit['titulo_trabalho']}")
+                                c_res1, c_res2, c_res3 = st.columns(3)
+                                c_res1.write(f"**Professor:**\n{t_edit['professor_nome']}")
+                                c_res2.write(f"**Disciplina:**\n{t_edit['disciplina']}")
+                                c_res3.write(f"**Série:**\n{t_edit['Serie']}")
+                                st.write(f"**Vagas:** {t_edit['vagas_grupos']} grupos")
+                                if t_edit.get("descricao"):
+                                    st.caption(f"**Descrição:** {t_edit['descricao']}")
 
+                            # --- FORMULÁRIO DE EDIÇÃO ---
                             with st.form(f"form_edit_full_{t_edit['id']}"):
-                                st.markdown(
-                                    f"### ✍️ Editando: {t_edit['titulo_trabalho']}"
-                                )
+                                st.markdown(f"### ✍️ Editando: {t_edit['titulo_trabalho']}")
 
                                 novo_titulo = st.text_input(
                                     "Título do Trabalho",
@@ -1044,7 +1001,6 @@ def exibir_gestao_feira(supabase_conn):
                                         }
                                     ).eq("id", t_edit["id"]).execute()
                                     st.success("Trabalho atualizado!")
-                                    del st.session_state.id_trabalho_edit
                                     time.sleep(1)
                                     st.rerun()
 
@@ -1055,7 +1011,6 @@ def exibir_gestao_feira(supabase_conn):
                                         "id", t_edit["id"]
                                     ).execute()
                                     st.success("Trabalho excluído!")
-                                    del st.session_state.id_trabalho_edit
                                     time.sleep(1)
                                     st.rerun()
             except Exception as e:
