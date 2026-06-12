@@ -75,6 +75,38 @@ def exibir_gestao_feira(supabase_conn):
         ]
     )
 
+    # --- Gerenciamento de estado para abas ---
+    # Inicializa o estado da aba principal se não existir
+    if "current_main_tab_index" not in st.session_state:
+        st.session_state.current_main_tab_index = 0  # Padrão para "➕ Novo Evento"
+
+    # Inicializa o estado da sub-aba de trabalhos se não existir
+    if "current_trabalhos_subtab_index" not in st.session_state:
+        st.session_state.current_trabalhos_subtab_index = (
+            0  # Padrão para "➕ Novo Trabalho"
+        )
+
+    main_tab_labels = [
+        "➕ Novo Evento",
+        "🛠️ Editar Eventos",
+        "👀 Vitrine de Eventos",
+        "👨‍🏫 Gestão de Trabalhos",
+    ]
+
+    # Função de callback para atualizar o estado da aba principal
+    def on_main_tab_change():
+        st.session_state.current_main_tab_index = main_tab_labels.index(
+            st.session_state.main_tabs_selector
+        )
+
+    # Renderiza as abas principais usando o estado
+    aba_config, aba_eventos, aba_vitrine, aba_trabalhos = st.tabs(
+        main_tab_labels,
+        key="main_tabs_selector",
+        index=st.session_state.current_main_tab_index,
+        on_change=on_main_tab_change,
+    )
+
     # ==========================================
     # ABA 1: CONFIGURAÇÃO E EDIÇÃO
     # ==========================================
@@ -308,6 +340,9 @@ def exibir_gestao_feira(supabase_conn):
                         )
                         st.cache_data.clear()
                         time.sleep(2)
+                        st.session_state.current_main_tab_index = main_tab_labels.index(
+                            "➕ Novo Evento"
+                        )
                         st.rerun()
 
                     except Exception as e:
@@ -559,6 +594,9 @@ def exibir_gestao_feira(supabase_conn):
                                 )
                                 st.cache_data.clear()
                                 time.sleep(1.5)
+                                st.session_state.current_main_tab_index = (
+                                    main_tab_labels.index("🛠️ Editar Eventos")
+                                )
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"🚨 Erro ao atualizar evento: {e}")
@@ -581,6 +619,9 @@ def exibir_gestao_feira(supabase_conn):
                             st.success("Evento removido!")
                             st.cache_data.clear()
                             time.sleep(1)
+                            st.session_state.current_main_tab_index = (
+                                main_tab_labels.index("🛠️ Editar Eventos")
+                            )
                             st.rerun()
                         except Exception as e:
                             st.error(f"Erro ao deletar: {e}")
@@ -595,6 +636,9 @@ def exibir_gestao_feira(supabase_conn):
         st.subheader("👀 Eventos Ativos na Vitrine")
         if st.button("🔄 Atualizar Vitrine"):
             st.cache_data.clear()
+            st.session_state.current_main_tab_index = main_tab_labels.index(
+                "👀 Vitrine de Eventos"
+            )
             st.rerun()
 
         try:
@@ -727,24 +771,36 @@ def exibir_gestao_feira(supabase_conn):
                                 temas_evento = res_temas.data
 
                                 if not temas_evento:
-                                    st.info("Nenhuma linha de pesquisa cadastrada para este evento ainda.")
+                                    st.info(
+                                        "Nenhuma linha de pesquisa cadastrada para este evento ainda."
+                                    )
                                 else:
                                     for tema in temas_evento:
                                         with st.container(border=True):
-                                            st.markdown(f"##### 🔬 {tema['titulo_trabalho']}")
-                                            
+                                            st.markdown(
+                                                f"##### 🔬 {tema['titulo_trabalho']}"
+                                            )
+
                                             c_t1, c_t2, c_t3 = st.columns(3)
-                                            c_t1.markdown(f"👤 **Orientador:**\n{tema['professor_nome']}")
-                                            c_t2.markdown(f"🧪 **Disciplina:**\n{tema['disciplina']}")
-                                            c_t3.markdown(f"🎓 **Série:**\n{tema.get('Serie', 'Geral')}")
-                                            
+                                            c_t1.markdown(
+                                                f"👤 **Orientador:**\n{tema['professor_nome']}"
+                                            )
+                                            c_t2.markdown(
+                                                f"🧪 **Disciplina:**\n{tema['disciplina']}"
+                                            )
+                                            c_t3.markdown(
+                                                f"🎓 **Série:**\n{tema.get('Serie', 'Geral')}"
+                                            )
+
                                             if tema.get("descricao"):
-                                                st.caption(f"**Descrição:** {tema['descricao']}")
-                                            
+                                                st.caption(
+                                                    f"**Descrição:** {tema['descricao']}"
+                                                )
+
                                             st.markdown(
                                                 f"<div style='text-align: right; font-size: 0.8rem; color: #666;'>"
-                                                f"👥 Limite: {tema['vagas_grupos']} grupos</div>", 
-                                                unsafe_allow_html=True
+                                                f"👥 Limite: {tema['vagas_grupos']} grupos</div>",
+                                                unsafe_allow_html=True,
                                             )
                             except Exception as e_temas:
                                 st.error(f"Erro ao carregar os trabalhos: {e_temas}")
@@ -756,7 +812,21 @@ def exibir_gestao_feira(supabase_conn):
     # ABA 4: GESTÃO DE TRABALHOS (CADASTRO E EDIÇÃO)
     # ==========================================
     with aba_trabalhos:
-        aba_cad, aba_edit = st.tabs(["➕ Novo Trabalho", "🔧 Editar / Excluir"])
+        sub_tab_labels = ["➕ Novo Trabalho", "🔧 Editar / Excluir"]
+
+        # Função de callback para atualizar o estado da sub-aba de trabalhos
+        def on_trabalhos_subtab_change():
+            st.session_state.current_trabalhos_subtab_index = sub_tab_labels.index(
+                st.session_state.trabalhos_subtabs_selector
+            )
+
+        # Renderiza as sub-abas usando o estado
+        aba_cad, aba_edit = st.tabs(
+            sub_tab_labels,
+            key="trabalhos_subtabs_selector",
+            index=st.session_state.current_trabalhos_subtab_index,
+            on_change=on_trabalhos_subtab_change,
+        )
 
         with aba_cad:
             st.subheader("Cadastro de Linhas de Pesquisa / Temas")
@@ -827,6 +897,12 @@ def exibir_gestao_feira(supabase_conn):
                         ).execute()
 
                         st.success("✅ Linha de pesquisa cadastrada com sucesso!")
+                        st.session_state.current_main_tab_index = main_tab_labels.index(
+                            "👨‍🏫 Gestão de Trabalhos"
+                        )
+                        st.session_state.current_trabalhos_subtab_index = (
+                            sub_tab_labels.index("➕ Novo Trabalho")
+                        )
                         time.sleep(1.5)
                         st.rerun()
                     else:
@@ -853,133 +929,188 @@ def exibir_gestao_feira(supabase_conn):
 
                 if ev_g_sel != "Selecione...":
                     ev_id = dict_ev_g[ev_g_sel]
-                    res_temas = (
+                    # --- CASCATA DE FILTROS ---
+                    # 1. Seleciona o Trabalho (Títulos únicos no evento)
+                    res_t = (
                         supabase_conn.table("feira_temas")
-                        .select("*")
+                        .select("titulo_trabalho")
                         .eq("evento_id", ev_id)
                         .execute()
                     )
+                    titulos_unicos = sorted(
+                        list(set([t["titulo_trabalho"] for t in res_t.data]))
+                    )
 
-                    if not res_temas.data:
-                        st.info("Nenhum trabalho cadastrado para este evento.")
-                    else:
-                        temas = res_temas.data
-                        tema_nomes = {
-                            f"{t['titulo_trabalho']} ({t['professor_nome']})": t
-                            for t in temas
-                        }
-                        tema_sel_nome = st.selectbox(
-                            "2. Selecione o Trabalho para Gerenciar:",
-                            ["Selecione..."] + list(tema_nomes.keys()),
-                            key="sel_tema_gestao",
+                    trabalho_sel = st.selectbox(
+                        "2. Selecione o Título do Trabalho:",
+                        ["Selecione..."] + titulos_unicos,
+                        key="sel_trabalho_gestao",
+                    )
+
+                    if trabalho_sel != "Selecione...":
+                        # 2. Seleção do Professor (Filtrado pelo título e evento)
+                        res_p = (
+                            supabase_conn.table("feira_temas")
+                            .select("*")
+                            .eq("evento_id", ev_id)
+                            .eq("titulo_trabalho", trabalho_sel)
+                            .execute()
+                        )
+                        temas_encontrados = res_p.data
+                        prof_dict = {t["professor_nome"]: t for t in temas_encontrados}
+
+                        prof_sel = st.selectbox(
+                            "3. Selecione o Professor Orientador:",
+                            ["Selecione..."] + list(prof_dict.keys()),
+                            key="sel_prof_gestao",
                         )
 
-                        if tema_sel_nome != "Selecione...":
-                            t_edit = tema_nomes[tema_sel_nome]
+                        if prof_sel != "Selecione...":
+                            t_edit = prof_dict[prof_sel]
 
-                            with st.form(f"form_edit_tema_{t_edit['id']}"):
-                                st.write(
-                                    f"✍️ Editando: **{t_edit['titulo_trabalho']}**"
+                            # --- MOSTRAR RESUMO DO TRABALHO ---
+                            with st.container(border=True):
+                                st.markdown(
+                                    f"#### 📋 Resumo: {t_edit['titulo_trabalho']}"
                                 )
-                                novo_titulo = st.text_input(
-                                    "Título da Linha de Pesquisa",
-                                    value=t_edit["titulo_trabalho"],
+                                c_res1, c_res2, c_res3 = st.columns(3)
+                                c_res1.write(
+                                    f"**Professor:**\n{t_edit['professor_nome']}"
                                 )
-                                nova_desc = st.text_area(
-                                    "Descrição", value=t_edit["descricao"]
-                                )
+                                c_res2.write(f"**Disciplina:**\n{t_edit['disciplina']}")
+                                c_res3.write(f"**Série:**\n{t_edit['Serie']}")
+                                st.write(f"**Vagas:** {t_edit['vagas_grupos']} grupos")
+                                if t_edit.get("descricao"):
+                                    st.caption(f"**Descrição:** {t_edit['descricao']}")
 
-                                res_prof_g = (
-                                    supabase_conn.table("professores_matriculas")
-                                    .select("professor")
-                                    .execute()
-                                )
-                                lista_profs_g = sorted(
-                                    list(
-                                        set(
-                                            [
-                                                p["professor"]
-                                                for p in res_prof_g.data
-                                                if p["professor"]
-                                            ]
+                            # --- OPÇÃO DE EDITAR (LIBERAR FORMULÁRIO) ---
+                            liberar_edicao = st.checkbox(
+                                "🛠️ Abrir formulário de edição para este trabalho",
+                                key=f"btn_edit_{t_edit['id']}",
+                            )
+
+                            if liberar_edicao:
+                                with st.form(f"form_edit_tema_{t_edit['id']}"):
+                                    st.write(
+                                        f"✍️ Editando: **{t_edit['titulo_trabalho']}**"
+                                    )
+                                    novo_titulo = st.text_input(
+                                        "Título da Linha de Pesquisa",
+                                        value=t_edit["titulo_trabalho"],
+                                    )
+                                    nova_desc = st.text_area(
+                                        "Descrição", value=t_edit["descricao"]
+                                    )
+
+                                    res_prof_g = (
+                                        supabase_conn.table("professores_matriculas")
+                                        .select("professor")
+                                        .execute()
+                                    )
+                                    lista_profs_g = sorted(
+                                        list(
+                                            set(
+                                                [
+                                                    p["professor"]
+                                                    for p in res_prof_g.data
+                                                    if p["professor"]
+                                                ]
+                                            )
                                         )
                                     )
-                                )
-                                novo_prof = st.selectbox(
-                                    "Professor Orientador",
-                                    lista_profs_g,
-                                    index=(
-                                        lista_profs_g.index(t_edit["professor_nome"])
-                                        if t_edit["professor_nome"] in lista_profs_g
-                                        else 0
-                                    ),
-                                )
+                                    novo_prof = st.selectbox(
+                                        "Professor Orientador",
+                                        lista_profs_g,
+                                        index=(
+                                            lista_profs_g.index(
+                                                t_edit["professor_nome"]
+                                            )
+                                            if t_edit["professor_nome"] in lista_profs_g
+                                            else 0
+                                        ),
+                                    )
 
-                                col_d, col_s = st.columns(2)
-                                disciplinas = [
-                                    "Química",
-                                    "Física",
-                                    "Biologia",
-                                    "Matemática",
-                                ]
-                                nova_disc = col_d.selectbox(
-                                    "Disciplina",
-                                    disciplinas,
-                                    index=(
-                                        disciplinas.index(t_edit["disciplina"])
-                                        if t_edit["disciplina"] in disciplinas
-                                        else 0
-                                    ),
-                                )
+                                    col_d, col_s = st.columns(2)
+                                    disciplinas = [
+                                        "Química",
+                                        "Física",
+                                        "Biologia",
+                                        "Matemática",
+                                    ]
+                                    nova_disc = col_d.selectbox(
+                                        "Disciplina",
+                                        disciplinas,
+                                        index=(
+                                            disciplinas.index(t_edit["disciplina"])
+                                            if t_edit["disciplina"] in disciplinas
+                                            else 0
+                                        ),
+                                    )
 
-                                series = ["1º", "2º", "3º", "Geral"]
-                                nova_serie = col_s.selectbox(
-                                    "Série",
-                                    series,
-                                    index=(
-                                        series.index(t_edit["Serie"])
-                                        if t_edit["Serie"] in series
-                                        else 0
-                                    ),
-                                )
+                                    series = ["1º", "2º", "3º", "Geral"]
+                                    nova_serie = col_s.selectbox(
+                                        "Série",
+                                        series,
+                                        index=(
+                                            series.index(t_edit["Serie"])
+                                            if t_edit["Serie"] in series
+                                            else 0
+                                        ),
+                                    )
 
-                                novas_vagas = st.number_input(
-                                    "Limite de Grupos (Vagas)",
-                                    min_value=1,
-                                    value=int(t_edit["vagas_grupos"]),
-                                )
+                                    novas_vagas = st.number_input(
+                                        "Limite de Grupos (Vagas)",
+                                        min_value=1,
+                                        value=int(t_edit["vagas_grupos"]),
+                                    )
 
-                                c_salvar, c_deletar = st.columns(2)
-                                btn_upd = c_salvar.form_submit_button(
-                                    "💾 Salvar Alterações",
-                                    use_container_width=True,
-                                    type="primary",
-                                )
-                                btn_del = c_deletar.form_submit_button(
-                                    "🗑️ Excluir Trabalho", use_container_width=True
-                                )
+                                    c_salvar, c_deletar = st.columns(2)
+                                    btn_upd = c_salvar.form_submit_button(
+                                        "💾 Salvar Alterações",
+                                        use_container_width=True,
+                                        type="primary",
+                                    )
+                                    btn_del = c_deletar.form_submit_button(
+                                        "🗑️ Excluir Trabalho", use_container_width=True
+                                    )
 
-                                if btn_upd:
-                                    supabase_conn.table("feira_temas").update(
-                                        {
-                                            "titulo_trabalho": novo_titulo,
-                                            "descricao": nova_desc,
-                                            "professor_nome": novo_prof,
-                                            "disciplina": nova_disc,
-                                            "Serie": nova_serie,
-                                            "vagas_grupos": novas_vagas,
-                                        }
-                                    ).eq("id", t_edit["id"]).execute()
-                                    st.success("Trabalho atualizado com sucesso!")
-                                    time.sleep(1)
-                                    st.rerun()
+                                    if btn_upd:
+                                        supabase_conn.table("feira_temas").update(
+                                            {
+                                                "titulo_trabalho": novo_titulo,
+                                                "descricao": nova_desc,
+                                                "professor_nome": novo_prof,
+                                                "disciplina": nova_disc,
+                                                "Serie": nova_serie,
+                                                "vagas_grupos": novas_vagas,
+                                            }
+                                        ).eq("id", t_edit["id"]).execute()
+                                        st.success("Trabalho atualizado com sucesso!")
+                                        st.session_state.current_main_tab_index = (
+                                            main_tab_labels.index(
+                                                "👨‍🏫 Gestão de Trabalhos"
+                                            )
+                                        )
+                                        st.session_state.current_trabalhos_subtab_index = sub_tab_labels.index(
+                                            "🔧 Editar / Excluir"
+                                        )
+                                        time.sleep(1)
+                                        st.rerun()
 
-                                if btn_del:
-                                    supabase_conn.table("feira_temas").delete().eq(
-                                        "id", t_edit["id"]
-                                    ).execute()
-                                    st.success("Trabalho removido permanentemente!")
-                                    time.sleep(1)
-                                    st.rerun()
+                                    if btn_del:
+                                        supabase_conn.table("feira_temas").delete().eq(
+                                            "id", t_edit["id"]
+                                        ).execute()
+                                        st.success("Trabalho removido permanentemente!")
+                                        st.session_state.current_main_tab_index = (
+                                            main_tab_labels.index(
+                                                "👨‍🏫 Gestão de Trabalhos"
+                                            )
+                                        )
+                                        st.session_state.current_trabalhos_subtab_index = sub_tab_labels.index(
+                                            "🔧 Editar / Excluir"
+                                        )
+                                        time.sleep(1)
+                                        st.rerun()
             except Exception as e:
                 st.error(f"Erro na gestão de trabalhos: {e}")
