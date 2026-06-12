@@ -714,6 +714,41 @@ def exibir_gestao_feira(supabase_conn):
                                     use_container_width=True,
                                 )
 
+                        # --- RECURSO: VER TRABALHOS (SANFONA/ACCORDION) ---
+                        with st.expander("📚 Ver Trabalhos / Linhas de Pesquisa"):
+                            try:
+                                # Busca os temas vinculados a este evento específico
+                                res_temas = (
+                                    supabase_conn.table("feira_temas")
+                                    .select("*")
+                                    .eq("evento_id", ev["id"])
+                                    .execute()
+                                )
+                                temas_evento = res_temas.data
+
+                                if not temas_evento:
+                                    st.info("Nenhuma linha de pesquisa cadastrada para este evento ainda.")
+                                else:
+                                    for tema in temas_evento:
+                                        with st.container(border=True):
+                                            st.markdown(f"##### 🔬 {tema['titulo_trabalho']}")
+                                            
+                                            c_t1, c_t2, c_t3 = st.columns(3)
+                                            c_t1.markdown(f"👤 **Orientador:**\n{tema['professor_nome']}")
+                                            c_t2.markdown(f"🧪 **Disciplina:**\n{tema['disciplina']}")
+                                            c_t3.markdown(f"🎓 **Série:**\n{tema.get('Serie', 'Geral')}")
+                                            
+                                            if tema.get("descricao"):
+                                                st.caption(f"**Descrição:** {tema['descricao']}")
+                                            
+                                            st.markdown(
+                                                f"<div style='text-align: right; font-size: 0.8rem; color: #666;'>"
+                                                f"👥 Limite: {tema['vagas_grupos']} grupos</div>", 
+                                                unsafe_allow_html=True
+                                            )
+                            except Exception as e_temas:
+                                st.error(f"Erro ao carregar os trabalhos: {e_temas}")
+
         except Exception as e:
             st.error(f"Erro ao carregar vitrine: {e}")
 
