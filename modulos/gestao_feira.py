@@ -66,26 +66,6 @@ def exibir_gestao_feira(supabase_conn):
     def buscar_eventos_vitrine(_supabase):
         return _supabase.table("feira_eventos").select("*").eq("ativo", True).execute()
 
-    aba_config, aba_eventos, aba_vitrine, aba_trabalhos = st.tabs(
-        [
-            "➕ Novo Evento",
-            "🛠️ Editar Eventos",
-            "👀 Vitrine de Eventos",
-            "👨‍🏫 Gestão de Trabalhos",
-        ]
-    )
-
-    # --- Gerenciamento de estado para abas ---
-    # Inicializa o estado da aba principal se não existir
-    if "current_main_tab_index" not in st.session_state:
-        st.session_state.current_main_tab_index = 0  # Padrão para "➕ Novo Evento"
-
-    # Inicializa o estado da sub-aba de trabalhos se não existir
-    if "current_trabalhos_subtab_index" not in st.session_state:
-        st.session_state.current_trabalhos_subtab_index = (
-            0  # Padrão para "➕ Novo Trabalho"
-        )
-
     main_tab_labels = [
         "➕ Novo Evento",
         "🛠️ Editar Eventos",
@@ -93,19 +73,8 @@ def exibir_gestao_feira(supabase_conn):
         "👨‍🏫 Gestão de Trabalhos",
     ]
 
-    # Função de callback para atualizar o estado da aba principal
-    def on_main_tab_change():
-        st.session_state.current_main_tab_index = main_tab_labels.index(
-            st.session_state.main_tabs_selector
-        )
-
-    # Renderiza as abas principais usando o estado
-    aba_config, aba_eventos, aba_vitrine, aba_trabalhos = st.tabs(
-        main_tab_labels,
-        key="main_tabs_selector",
-        index=st.session_state.current_main_tab_index,
-        on_change=on_main_tab_change,
-    )
+    # Renderiza as abas principais
+    aba_config, aba_eventos, aba_vitrine, aba_trabalhos = st.tabs(main_tab_labels)
 
     # ==========================================
     # ABA 1: CONFIGURAÇÃO E EDIÇÃO
@@ -340,9 +309,6 @@ def exibir_gestao_feira(supabase_conn):
                         )
                         st.cache_data.clear()
                         time.sleep(2)
-                        st.session_state.current_main_tab_index = main_tab_labels.index(
-                            "➕ Novo Evento"
-                        )
                         st.rerun()
 
                     except Exception as e:
@@ -594,9 +560,6 @@ def exibir_gestao_feira(supabase_conn):
                                 )
                                 st.cache_data.clear()
                                 time.sleep(1.5)
-                                st.session_state.current_main_tab_index = (
-                                    main_tab_labels.index("🛠️ Editar Eventos")
-                                )
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"🚨 Erro ao atualizar evento: {e}")
@@ -619,9 +582,6 @@ def exibir_gestao_feira(supabase_conn):
                             st.success("Evento removido!")
                             st.cache_data.clear()
                             time.sleep(1)
-                            st.session_state.current_main_tab_index = (
-                                main_tab_labels.index("🛠️ Editar Eventos")
-                            )
                             st.rerun()
                         except Exception as e:
                             st.error(f"Erro ao deletar: {e}")
@@ -636,9 +596,6 @@ def exibir_gestao_feira(supabase_conn):
         st.subheader("👀 Eventos Ativos na Vitrine")
         if st.button("🔄 Atualizar Vitrine"):
             st.cache_data.clear()
-            st.session_state.current_main_tab_index = main_tab_labels.index(
-                "👀 Vitrine de Eventos"
-            )
             st.rerun()
 
         try:
@@ -814,19 +771,8 @@ def exibir_gestao_feira(supabase_conn):
     with aba_trabalhos:
         sub_tab_labels = ["➕ Novo Trabalho", "🔧 Editar / Excluir"]
 
-        # Função de callback para atualizar o estado da sub-aba de trabalhos
-        def on_trabalhos_subtab_change():
-            st.session_state.current_trabalhos_subtab_index = sub_tab_labels.index(
-                st.session_state.trabalhos_subtabs_selector
-            )
-
-        # Renderiza as sub-abas usando o estado
-        aba_cad, aba_edit = st.tabs(
-            sub_tab_labels,
-            key="trabalhos_subtabs_selector",
-            index=st.session_state.current_trabalhos_subtab_index,
-            on_change=on_trabalhos_subtab_change,
-        )
+        # Renderiza as sub-abas
+        aba_cad, aba_edit = st.tabs(sub_tab_labels)
 
         with aba_cad:
             st.subheader("Cadastro de Linhas de Pesquisa / Temas")
@@ -903,12 +849,6 @@ def exibir_gestao_feira(supabase_conn):
                             ).execute()
 
                             st.success("✅ Linha de pesquisa cadastrada com sucesso!")
-                            st.session_state.current_main_tab_index = (
-                                main_tab_labels.index("👨‍🏫 Gestão de Trabalhos")
-                            )
-                            st.session_state.current_trabalhos_subtab_index = (
-                                sub_tab_labels.index("➕ Novo Trabalho")
-                            )
                             time.sleep(1.5)
                             st.rerun()
                         else:
@@ -1089,14 +1029,6 @@ def exibir_gestao_feira(supabase_conn):
                                             }
                                         ).eq("id", t_edit["id"]).execute()
                                         st.success("Trabalho atualizado com sucesso!")
-                                        st.session_state.current_main_tab_index = (
-                                            main_tab_labels.index(
-                                                "👨‍🏫 Gestão de Trabalhos"
-                                            )
-                                        )
-                                        st.session_state.current_trabalhos_subtab_index = sub_tab_labels.index(
-                                            "🔧 Editar / Excluir"
-                                        )
                                         time.sleep(1)
                                         st.rerun()
 
@@ -1105,14 +1037,6 @@ def exibir_gestao_feira(supabase_conn):
                                             "id", t_edit["id"]
                                         ).execute()
                                         st.success("Trabalho removido permanentemente!")
-                                        st.session_state.current_main_tab_index = (
-                                            main_tab_labels.index(
-                                                "👨‍🏫 Gestão de Trabalhos"
-                                            )
-                                        )
-                                        st.session_state.current_trabalhos_subtab_index = sub_tab_labels.index(
-                                            "🔧 Editar / Excluir"
-                                        )
                                         time.sleep(1)
                                         st.rerun()
             except Exception as e:
