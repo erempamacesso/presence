@@ -62,315 +62,223 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
         f"🎓 **{aluno.get('nome')}** | Série: **{serie_aluno}** | Turma: **{turma_aluno}**"
     )
 
-    if "passo_insc" not in st.session_state:
-        st.session_state.passo_insc = 1
-
-    # Stepper Visual
-    p1, p2, p3 = [
-        "step-active" if st.session_state.passo_insc == i else "" for i in range(1, 4)
-    ]
-    st.markdown(
-        f"""
-        <div class="step-container">
-            <div class="step {p1}">1. EVENTO</div>
-            <div class="step {p2}">2. TEMA</div>
-            <div class="step {p3}">3. EQUIPE E FINALIZAR</div>
-        </div>
-    """,
-        unsafe_allow_html=True,
+    # --- SISTEMA DE ABAS ---
+    tab_insc, tab_minhas = st.tabs(
+        ["🚀 Realizar Nova Inscrição", "📋 Minhas Inscrições"]
     )
 
-    # ==========================================
-    # PASSO 1: SELEÇÃO DE EVENTO
-    # ==========================================
-    if st.session_state.passo_insc == 1:
-        st.markdown("### 1. EVENTO")
+    # =========================================================================
+    # ABA 1: REALIZAR INSCRIÇÃO (Lógica Original do Stepper)
+    # =========================================================================
+    with tab_insc:
+        if "passo_insc" not in st.session_state:
+            st.session_state.passo_insc = 1
 
-        # --- BOTAO DE VOLTAR PARA A TELA INICIAL ---
-        if st.button("⬅️ Voltar ao Início"):
-            st.session_state.etapa = "ante_sala"
-            st.rerun()
+        # Stepper Visual
+        p1, p2, p3 = [
+            "step-active" if st.session_state.passo_insc == i else ""
+            for i in range(1, 4)
+        ]
+        st.markdown(
+            f"""
+            <div class="step-container">
+                <div class="step {p1}">1. EVENTO</div>
+                <div class="step {p2}">2. TEMA</div>
+                <div class="step {p3}">3. EQUIPE E FINALIZAR</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-        st.markdown("### Selecione o evento desejado:")
+        # PASSO 1: SELEÇÃO DE EVENTO
+        if st.session_state.passo_insc == 1:
+            st.markdown("### 1. SELEÇÃO DE EVENTO")
+            if st.button("⬅️ Voltar ao Início"):
+                st.session_state.etapa = "ante_sala"
+                st.rerun()
 
-        try:
-            # 1. BUSCAR EVENTOS ATIVOS NO BANCO
-            res_eventos = (
-                db_alunos.table("feira_eventos").select("*").eq("ativo", True).execute()
-            )
-            lista_eventos = res_eventos.data
+            try:
+                res_eventos = (
+                    db_alunos.table("feira_eventos")
+                    .select("*")
+                    .eq("ativo", True)
+                    .execute()
+                )
+                if not res_eventos.data:
+                    st.info("No momento não há eventos com inscrições abertas.")
+                else:
+                    agora = datetime.datetime.now()
+                    for evento in res_eventos.data:
+                        with st.container(border=True):
 
-            if not lista_eventos:
-                st.info("No momento não há eventos com inscrições abertas.")
-            else:
-                # Pegamos a data de hoje para comparação
-                agora = datetime.datetime.now()
+                            def parse_dt(v, default_d):
+                                if not v:
+                                    return default_d
+                                try:
+                                    return datetime.datetime.strptime(
+                                        str(v).split("T")[0], "%Y-%m-%d"
+                                    ).date()
+                                except:
+                                    return default_d
 
-                for evento in lista_eventos:
-                    with st.container(border=True):
-                        # --- CONVERSÃO DE DATAS DO BANCO ---
-                        def parse_dt(v, default_d):
-                            if not v: return default_d
-                            try:
-                                # Garante pegar apenas a parte da data caso venha com timestamp (T00:00:00)
-                                str_data = str(v).split("T")[0]
-                                return datetime.datetime.strptime(str_data, "%Y-%m-%d").date()
-                            except: return default_d
+                            def parse_tm(v, default_t):
+                                if not v:
+                                    return default_t
+                                try:
+                                    return datetime.datetime.strptime(
+                                        str(v)[:5], "%H:%M"
+                                    ).time()
+                                except:
+                                    return default_t
 
-                        def parse_tm(v, default_t):
-                            if not v: return default_t
-                            try:
-                                return datetime.datetime.strptime(str(v)[:5], "%H:%M").time()
-                            except: return default_t
-
-                        try:
-                            # Datas da Realização do Evento (Exibição)
-                            d_ev_inicio = parse_dt(evento.get("data_inicio"), agora.date())
+                            d_ev_inicio = parse_dt(
+                                evento.get("data_inicio"), agora.date()
+                            )
                             d_ev_fim = parse_dt(evento.get("data_fim"), agora.date())
-
-                            # --- DATAS DE INSCRIÇÃO (COM HORA) ---
-                            h_ab = parse_tm(evento.get("insc_hora_abertura"), datetime.time(0, 0))
-                            h_fn = parse_tm(evento.get("insc_hora_final"), datetime.time(23, 59))
-
-                            # Criamos objetos datetime completos para comparação precisa
-                            d_insc_ini = parse_dt(evento.get("insc_abertura"), d_ev_inicio)
+                            h_ab = parse_tm(
+                                evento.get("insc_hora_abertura"), datetime.time(0, 0)
+                            )
+                            h_fn = parse_tm(
+                                evento.get("insc_hora_final"), datetime.time(23, 59)
+                            )
+                            d_insc_ini = parse_dt(
+                                evento.get("insc_abertura"), d_ev_inicio
+                            )
                             d_insc_fim = parse_dt(evento.get("insc_final"), d_ev_fim)
-
                             dt_insc_ini = datetime.datetime.combine(d_insc_ini, h_ab)
                             dt_insc_fim = datetime.datetime.combine(d_insc_fim, h_fn)
-                        except:
-                            # Fallback caso a data no banco esteja com erro
-                            d_ev_inicio = d_ev_fim = agora.date()
-                            dt_insc_ini = dt_insc_fim = agora
 
-                        st.markdown(f"### {evento['nome']}")
-                        st.caption(
-                            f"📅 Período do Evento: {d_ev_inicio.strftime('%d/%m/%Y')} até {d_ev_fim.strftime('%d/%m/%Y')}"
-                        )
-                        st.markdown(
-                            f"✍️ **Inscrições:** {dt_insc_ini.strftime('%d/%m/%Y %H:%M')} até {dt_insc_fim.strftime('%d/%m/%Y %H:%M')}"
-                        )
+                            st.markdown(f"### {evento['nome']}")
+                            st.caption(
+                                f"📅 Evento: {d_ev_inicio.strftime('%d/%m/%Y')} a {d_ev_fim.strftime('%d/%m/%Y')}"
+                            )
+                            st.markdown(
+                                f"✍️ **Inscrições:** {dt_insc_ini.strftime('%d/%m/%Y %H:%M')} até {dt_insc_fim.strftime('%d/%m/%Y %H:%M')}"
+                            )
 
-                        # --- 1ª VERIFICAÇÃO: PERÍODO DE INSCRIÇÃO ---
-                        inscricoes_abertas = dt_insc_ini <= agora <= dt_insc_fim
-                        aguardando_abertura = agora < dt_insc_ini
-                        ja_encerrou = agora > dt_insc_fim
+                            ja_inscrito = False
+                            res_ver = (
+                                db_provas.table("feira_inscricoes")
+                                .select("nomes_membros")
+                                .eq("evento_id", evento["id"])
+                                .execute()
+                            )
+                            for insc in res_ver.data:
+                                if aluno.get("nome") in [
+                                    m.replace(" (Líder)", "").strip()
+                                    for m in insc.get("nomes_membros", "").split(",")
+                                ]:
+                                    ja_inscrito = True
+                                    break
 
-                        # --- 2ª VERIFICAÇÃO: SE JÁ ESTÁ INSCRITO (db_provas) ---
-                        ja_inscrito = False
-                        nome_lider_equipe = ""
-
-                        res_verificacao = (
-                            db_provas.table("feira_inscricoes")
-                            .select("nomes_membros")
-                            .eq("evento_id", evento["id"])
-                            .execute()
-                        )
-
-                        for insc in res_verificacao.data:
-                            texto_equipe = insc.get("nomes_membros", "")
-                            membros_extraidos = [
-                                m.replace(" (Líder)", "").strip()
-                                for m in texto_equipe.split(",")
-                            ]
-
-                            if aluno.get("nome") in membros_extraidos:
-                                ja_inscrito = True
-                                nome_lider_equipe = membros_extraidos[0]
-                                break
-
-                        # --- 🛑 LÓGICA DE EXIBIÇÃO DO STATUS/BOTÃO ---
-
-                        if ja_inscrito:
-                            if nome_lider_equipe == aluno.get("nome"):
-                                st.error(f"🚨 Você já inscreveu sua equipe como Líder!")
-                            else:
+                            if ja_inscrito:
                                 st.error(
-                                    f"🚨 Você já está na equipe de **{nome_lider_equipe}**!"
+                                    "🚨 Você já faz parte de uma equipe inscrita para este evento."
                                 )
+                                st.button(
+                                    "JÁ INSCRITO",
+                                    key=f"btn_insc_{evento['id']}",
+                                    disabled=True,
+                                    use_container_width=True,
+                                )
+                            elif agora < dt_insc_ini:
+                                st.warning(
+                                    f"⏳ Inscrições abrem em {dt_insc_ini.strftime('%d/%m às %H:%M')}"
+                                )
+                                st.button(
+                                    "EM BREVE",
+                                    key=f"btn_wait_{evento['id']}",
+                                    disabled=True,
+                                    use_container_width=True,
+                                )
+                            elif agora > dt_insc_fim:
+                                st.error("🚫 Prazo encerrado.")
+                                st.button(
+                                    "PRAZO ENCERRADO",
+                                    key=f"btn_end_{evento['id']}",
+                                    disabled=True,
+                                    use_container_width=True,
+                                )
+                            else:
+                                if st.button(
+                                    f"INSCREVER-SE EM: {evento['nome']}",
+                                    type="primary",
+                                    key=f"btn_{evento['id']}",
+                                    use_container_width=True,
+                                ):
+                                    st.session_state.evento_selecionado = evento
+                                    st.session_state.passo_insc = 2
+                                    st.rerun()
+            except Exception as e:
+                st.error(f"Erro: {e}")
 
-                            st.button(
-                                "INSCRIÇÃO JÁ REALIZADA",
-                                key=f"btn_insc_{evento['id']}",
-                                disabled=True,
-                                use_container_width=True,
-                            )
+        # PASSO 2: FILTRAR TEMAS
+        elif st.session_state.passo_insc == 2:
+            evento = st.session_state.evento_selecionado
+            st.subheader(f"Temas Disponíveis para o {serie_aluno} Ano")
+            if st.button("⬅️ Voltar"):
+                st.session_state.passo_insc = 1
+                st.rerun()
+            try:
+                res_insc = (
+                    db_provas.table("feira_inscricoes")
+                    .select("tema_id, turma")
+                    .eq("evento_id", evento["id"])
+                    .execute()
+                )
+                temas_bloqueados = [i["tema_id"] for i in res_insc.data]
+                disc_bloqueadas_turma = set()
+                res_t_all = (
+                    db_alunos.table("feira_temas")
+                    .select("*")
+                    .eq("evento_id", evento["id"])
+                    .execute()
+                )
+                todos_dict = {t["id"]: t for t in res_t_all.data}
+                for i in res_insc.data:
+                    if i["turma"] == turma_aluno and i["tema_id"] in todos_dict:
+                        disc_bloqueadas_turma.add(
+                            todos_dict[i["tema_id"]].get("disciplina", "")
+                        )
 
-                        elif aguardando_abertura:
+                temas_f = [
+                    t
+                    for t in res_t_all.data
+                    if str(t.get("Serie")).strip() in (serie_aluno, "Geral")
+                ]
+                temas_por_d = defaultdict(list)
+                for t in temas_f:
+                    temas_por_d[t.get("disciplina", "Sem Disciplina")].append(t)
+
+                for d in sorted(temas_por_d.keys()):
+                    bloq_t = d in disc_bloqueadas_turma
+                    label = f"📛 {d} (Sua turma já escolheu)" if bloq_t else f"📚 {d}"
+                    with st.expander(label):
+                        if bloq_t:
                             st.warning(
-                                f"⏳ As inscrições abrem em {dt_insc_ini.strftime('%d/%m/%Y às %H:%M')}"
-                            )
-                            st.button(
-                                "INSCRIÇÕES EM BREVE",
-                                key=f"btn_wait_{evento['id']}",
-                                disabled=True,
-                                use_container_width=True,
-                            )
-
-                        elif ja_encerrou:
-                            st.error(
-                                f"🚫 O prazo de inscrição encerrou em {dt_insc_fim.strftime('%d/%m/%Y às %H:%M')}"
-                            )
-                            st.button(
-                                "PRAZO ENCERRADO",
-                                key=f"btn_end_{evento['id']}",
-                                disabled=True,
-                                use_container_width=True,
-                            )
-
-                        else:
-                            # TUDO OK: Está no prazo e não está inscrito
-                            if st.button(
-                                f"INSCREVER-SE EM: {evento['nome']}",
-                                type="primary",
-                                key=f"btn_{evento['id']}",
-                                use_container_width=True,
-                            ):
-                                st.session_state.evento_selecionado = evento
-                                st.session_state.passo_insc = 2
-                                st.rerun()
-
-        except Exception as e:
-            st.error(f"Erro ao carregar eventos: {e}")
-
-    # ==========================================
-    # PASSO 2: FILTRAR TEMAS E APLICAR TRAVA DUPLA
-    # ==========================================
-    elif st.session_state.passo_insc == 2:
-        evento = st.session_state.evento_selecionado
-        st.subheader(f"Temas Disponíveis para o {serie_aluno} Ano")
-
-        if st.button("⬅️ Voltar"):
-            st.session_state.passo_insc = 1
-            st.rerun()
-
-        try:
-            # ===== ETAPA 1: BUSCAR TODAS AS INSCRIÇÕES DESTE EVENTO =====
-            res_inscricoes = (
-                db_provas.table("feira_inscricoes")
-                .select("tema_id, turma")
-                .eq("evento_id", evento["id"])
-                .execute()
-            )
-
-            inscricoes_feitas = res_inscricoes.data
-
-            # ===== ETAPA 2: CALCULAR BLOQUEIOS =====
-            # Temas específicos que JÁ FORAM ESCOLHIDOS (bloqueio global)
-            temas_escolhidos_global = [insc["tema_id"] for insc in inscricoes_feitas]
-
-            # Disciplinas que JÁ FORAM ESCOLHIDAS PELA MINHA TURMA (bloqueio por turma)
-            temas_da_minha_turma = [
-                insc["tema_id"]
-                for insc in inscricoes_feitas
-                if insc["turma"] == turma_aluno
-            ]
-
-            # Buscar todos os temas para extrair disciplinas
-            res_todos_temas_temp = (
-                db_alunos.table("feira_temas")
-                .select("*")
-                .eq("evento_id", evento["id"])
-                .execute()
-            )
-            todos_temas_dict = {t["id"]: t for t in res_todos_temas_temp.data}
-
-            # Disciplinas bloqueadas para minha turma
-            disciplinas_bloqueadas_turma = set()
-            for tema_id in temas_da_minha_turma:
-                if tema_id in todos_temas_dict:
-                    disciplinas_bloqueadas_turma.add(
-                        todos_temas_dict[tema_id].get("disciplina", "")
-                    )
-
-            # ===== ETAPA 3: BUSCAR TODOS OS TEMAS DO EVENTO =====
-            res_temas = (
-                db_alunos.table("feira_temas")
-                .select("*")
-                .eq("evento_id", evento["id"])
-                .execute()
-            )
-            todos_temas = res_temas.data
-
-            # ===== ETAPA 4: FILTRAR PELA SÉRIE E APLICAR REGRAS =====
-            temas_filtrados = [
-                t
-                for t in todos_temas
-                if str(t.get("Serie")).strip() == serie_aluno
-                or str(t.get("Serie")) == "Geral"
-            ]
-
-            if not temas_filtrados:
-                st.error("Desculpe, não há temas para a sua série neste evento.")
-            else:
-                # ===== ETAPA 5: AGRUPAR POR DISCIPLINA =====
-                temas_por_disciplina = defaultdict(list)
-                for tema in temas_filtrados:
-                    disciplina = tema.get("disciplina", "Sem Disciplina")
-                    temas_por_disciplina[disciplina].append(tema)
-
-                # ===== ETAPA 6: RENDERIZAR COM ACORDEON =====
-                for disciplina in sorted(temas_por_disciplina.keys()):
-                    temas_da_disciplina = temas_por_disciplina[disciplina]
-
-                    # Verificar se esta disciplina está bloqueada para a minha turma
-                    disciplina_bloqueada = disciplina in disciplinas_bloqueadas_turma
-
-                    # Label do acordeon com status
-                    if disciplina_bloqueada:
-                        label = f"📛 {disciplina} (Sua turma já escolheu) - BLOQUEADA"
-                    else:
-                        label = f"📚 {disciplina}"
-
-                    with st.expander(label, expanded=False):
-                        # Se a disciplina está bloqueada, mostrar mensagem
-                        if disciplina_bloqueada:
-                            st.warning(
-                                f"⚠️ A sua turma ({turma_aluno}) já escolheu um trabalho de {disciplina}. Nenhum outro tema desta disciplina está disponível."
+                                f"⚠️ A sua turma já selecionou um trabalho desta disciplina."
                             )
                         else:
-                            # Renderizar os temas da disciplina
-                            for tema in temas_da_disciplina:
-                                tema_escolhido_global = (
-                                    tema["id"] in temas_escolhidos_global
-                                )
-
-                                # Container visual para o tema
-                                if tema_escolhido_global:
-                                    container_class = "tema-card tema-card-bloqueado"
-                                    status = "🚫 INDISPONÍVEL"
-                                else:
-                                    container_class = "tema-card"
-                                    status = "✅ DISPONÍVEL"
-
+                            for tema in temas_por_d[d]:
+                                bloq_g = tema["id"] in temas_bloqueados
                                 st.markdown(
-                                    f'<div class="{container_class}">',
+                                    f'<div class="tema-card {"tema-card-bloqueado" if bloq_g else ""}">',
                                     unsafe_allow_html=True,
                                 )
-
-                                col1, col2 = st.columns([3, 1])
-                                with col1:
+                                c1, c2 = st.columns([3, 1])
+                                with c1:
                                     st.write(f"**{tema['titulo_trabalho']}**")
-                                    st.caption(
-                                        f"👨‍🏫 {tema.get('professor_nome', 'Sem professor')}"
-                                    )
-                                    if tema.get("descricao"):
-                                        st.caption(f"📝 {tema.get('descricao')}")
-
-                                with col2:
-                                    st.caption(status)
-
-                                # Botão de seleção
-                                if tema_escolhido_global:
-                                    st.button(
-                                        "TEMA JÁ ESCOLHIDO",
+                                    st.caption(f"👨‍🏫 {tema.get('professor_nome')}")
+                                if bloq_g:
+                                    c2.button(
+                                        "OCUPADO",
                                         key=f"t_{tema['id']}",
                                         disabled=True,
                                         use_container_width=True,
                                     )
                                 else:
-                                    if st.button(
-                                        "ESCOLHER ESTE TEMA",
+                                    if c2.button(
+                                        "ESCOLHER",
                                         key=f"t_{tema['id']}",
                                         type="primary",
                                         use_container_width=True,
@@ -378,121 +286,161 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                                         st.session_state.tema_selecionado = tema
                                         st.session_state.passo_insc = 3
                                         st.rerun()
-
                                 st.markdown("</div>", unsafe_allow_html=True)
-                                st.divider()
+            except Exception as e:
+                st.error(f"Erro: {e}")
 
-        except Exception as e:
-            st.error(f"Erro ao carregar e filtrar temas: {e}")
-            import traceback
-
-            st.error(traceback.format_exc())
-
-    # ==========================================
-    # PASSO 3: FINALIZAR (Lê de db_alunos | Escreve em db_provas)
-    # ==========================================
-    elif st.session_state.passo_insc == 3:
-        tema = st.session_state.tema_selecionado
-        evento = st.session_state.evento_selecionado
-
-        st.success(f"📍 Inscrição: **{tema['titulo_trabalho']}**")
-
-        # 1. BUSCAR TODOS OS COLEGAS DA TURMA (db_alunos)
-        colegas_turma = []
-        try:
-            res_colegas = (
-                db_alunos.table("alunos")
-                .select("nome")
-                .eq("turma", turma_aluno)
-                .execute()
+        # PASSO 3: FINALIZAR
+        elif st.session_state.passo_insc == 3:
+            tema, evento = (
+                st.session_state.tema_selecionado,
+                st.session_state.evento_selecionado,
             )
-            # Lista inicial com todos (exceto o próprio líder logado)
-            todos_da_turma = [
-                c["nome"] for c in res_colegas.data if c["nome"] != aluno.get("nome")
-            ]
-
-            # 2. BUSCAR QUEM JÁ ESTÁ INSCRITO NESTE EVENTO (db_provas)
-            res_ocupados = (
-                db_provas.table("feira_inscricoes")
-                .select("nomes_membros")
-                .eq("evento_id", evento["id"])
-                .eq("turma", turma_aluno)
-                .execute()
-            )
-
-            # 3. EXTRAIR OS NOMES QUE JÁ ESTÃO EM EQUIPES
-            nomes_ja_ocupados = set()
-            for insc in res_ocupados.data:
-                texto_equipe = insc.get("nomes_membros", "")
-                # Como salvamos como "Nome (Líder), Membro 1, Membro 2"
-                # Vamos quebrar pela vírgula e limpar os espaços e o sufixo "(Líder)"
-                membros_extraidos = [
-                    m.replace(" (Líder)", "").strip() for m in texto_equipe.split(",")
+            st.success(f"📍 Trabalho: **{tema['titulo_trabalho']}**")
+            try:
+                res_col = (
+                    db_alunos.table("alunos")
+                    .select("nome")
+                    .eq("turma", turma_aluno)
+                    .execute()
+                )
+                t_turma = [
+                    c["nome"] for c in res_col.data if c["nome"] != aluno.get("nome")
                 ]
-                for m in membros_extraidos:
-                    nomes_ja_ocupados.add(m)
+                res_oc = (
+                    db_provas.table("feira_inscricoes")
+                    .select("nomes_membros")
+                    .eq("evento_id", evento["id"])
+                    .eq("turma", turma_aluno)
+                    .execute()
+                )
+                ja_em_grupo = set()
+                for insc in res_oc.data:
+                    for m in [
+                        x.replace(" (Líder)", "").strip()
+                        for x in insc.get("nomes_membros", "").split(",")
+                    ]:
+                        ja_em_grupo.add(m)
+                disp = sorted([n for n in t_turma if n not in ja_em_grupo])
 
-            # 4. FILTRAR: Só sobram os que NÃO estão na lista de ocupados
-            colegas_disponiveis = [
-                nome for nome in todos_da_turma if nome not in nomes_ja_ocupados
-            ]
-            colegas_turma = sorted(colegas_disponiveis)
-
-        except Exception as e:
-            st.error(f"Erro ao filtrar disponibilidade de alunos: {e}")
-
-        with st.form("form_final"):
-            st.markdown("### 👥 Membros da Equipe")
-            st.info(
-                f"Olá {aluno.get('nome')}, selecione apenas os colegas que ainda não estão em outros grupos."
-            )
-
-            st.text_input("Líder", value=aluno.get("nome"), disabled=True)
-
-            # Exibe apenas os colegas disponíveis
-            membros_sel = st.multiselect(
-                "Selecione os colegas disponíveis:",
-                options=colegas_turma,
-                help="Se um colega não aparece aqui, é porque ele já faz parte de outra equipe.",
-            )
-
-            if st.form_submit_button(
-                "CONCLUIR INSCRIÇÃO", type="primary", use_container_width=True
-            ):
-                total = len(membros_sel) + 1
-
-                if total < int(evento["min_membros"]) or total > int(
-                    evento["max_membros"]
-                ):
-                    st.error(
-                        f"O grupo deve ter entre {evento['min_membros']} e {evento['max_membros']} integrantes."
+                with st.form("form_f"):
+                    st.markdown("### 👥 Formação da Equipe")
+                    st.text_input(
+                        "Líder (Você)", value=aluno.get("nome"), disabled=True
                     )
-                else:
-                    try:
-                        equipe_str = f"{aluno.get('nome')} (Líder), " + ", ".join(
-                            membros_sel
-                        )
+                    m_sel = st.multiselect(
+                        "Selecione seus colegas disponíveis na turma:", options=disp
+                    )
+                    if st.form_submit_button(
+                        "CONFIRMAR INSCRIÇÃO", type="primary", use_container_width=True
+                    ):
+                        total = len(m_sel) + 1
+                        if total < int(evento["min_membros"]) or total > int(
+                            evento["max_membros"]
+                        ):
+                            st.error(
+                                f"O grupo deve ter entre {evento['min_membros']} e {evento['max_membros']} integrantes."
+                            )
+                        else:
+                            db_provas.table("feira_inscricoes").insert(
+                                {
+                                    "evento_id": evento["id"],
+                                    "tema_id": tema["id"],
+                                    "lider_id": id_aluno,
+                                    "turma": turma_aluno,
+                                    "nomes_membros": f"{aluno.get('nome')} (Líder), {', '.join(m_sel)}",
+                                    "data_inscricao": str(datetime.date.today()),
+                                }
+                            ).execute()
+                            st.balloons()
+                            st.success("Inscrição Realizada!")
+                            time.sleep(2)
+                            st.session_state.passo_insc = 1
+                            st.session_state.etapa = "ante_sala"
+                            st.rerun()
+            except Exception as e:
+                st.error(f"Erro: {e}")
+            if st.button("⬅️ Trocar Tema"):
+                st.session_state.passo_insc = 2
+                st.rerun()
 
-                        dados_insc = {
-                            "evento_id": evento["id"],
-                            "tema_id": tema["id"],
-                            "lider_id": id_aluno,
-                            "turma": turma_aluno,
-                            "nomes_membros": equipe_str,
-                            "data_inscricao": str(datetime.date.today()),
-                        }
+    # =========================================================================
+    # ABA 2: MINHAS INSCRIÇÕES (Visualização e Gestão pelo Líder)
+    # =========================================================================
+    with tab_minhas:
+        st.subheader("📋 Inscrições em que você participa")
+        try:
+            # Busca todas as inscrições para filtrar localmente (garante encontrar o aluno como membro ou líder)
+            res_all = db_provas.table("feira_inscricoes").select("*").execute()
+            minhas_insc = []
+            nome_procurado = aluno.get("nome", "")
 
-                        db_provas.table("feira_inscricoes").insert(dados_insc).execute()
+            for insc in res_all.data or []:
+                membros_limpos = [
+                    m.replace(" (Líder)", "").strip()
+                    for m in insc.get("nomes_membros", "").split(",")
+                ]
+                if nome_procurado in membros_limpos:
+                    minhas_insc.append(insc)
 
-                        st.balloons()
-                        st.success("✅ Inscrição confirmada com sucesso!")
-                        time.sleep(2)
-                        st.session_state.passo_insc = 1
-                        st.session_state.etapa = "ante_sala"
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao salvar: {e}")
+            if not minhas_insc:
+                st.info("Você ainda não está em nenhuma equipe inscrita.")
+            else:
+                for insc in minhas_insc:
+                    # Busca nomes reais do evento e tema para exibição
+                    ev_d = (
+                        db_alunos.table("feira_eventos")
+                        .select("nome")
+                        .eq("id", insc["evento_id"])
+                        .maybe_single()
+                        .execute()
+                        .data
+                    )
+                    tm_d = (
+                        db_alunos.table("feira_temas")
+                        .select("titulo_trabalho, disciplina")
+                        .eq("id", insc["tema_id"])
+                        .maybe_single()
+                        .execute()
+                        .data
+                    )
 
-        if st.button("⬅️ Trocar Tema"):
-            st.session_state.passo_insc = 2
-            st.rerun()
+                    with st.container(border=True):
+                        c_inf, c_ops = st.columns([3, 1])
+                        with c_inf:
+                            st.markdown(f"#### 🏆 {ev_d['nome'] if ev_d else 'Evento'}")
+                            st.markdown(
+                                f"**Trabalho:** {tm_d['titulo_trabalho'] if tm_d else 'Tema'}"
+                            )
+                            st.caption(
+                                f"🧪 Disciplina: {tm_d['disciplina'] if tm_d else '-'}"
+                            )
+                            st.write(f"👥 **Equipe:** {insc['nomes_membros']}")
+
+                        with c_ops:
+                            # Verificação de Liderança
+                            if str(insc.get("lider_id")) == id_aluno:
+                                st.success("🌟 Você é o Líder")
+                                if st.button(
+                                    "🗑️ Excluir Inscrição",
+                                    key=f"del_{insc['id']}",
+                                    use_container_width=True,
+                                    type="secondary",
+                                ):
+                                    db_provas.table("feira_inscricoes").delete().eq(
+                                        "id", insc["id"]
+                                    ).execute()
+                                    st.toast("Inscrição removida com sucesso!")
+                                    time.sleep(1)
+                                    st.rerun()
+                            else:
+                                st.info("👤 Membro do Grupo")
+                                st.button(
+                                    "Bloqueado",
+                                    key=f"lock_{insc['id']}",
+                                    disabled=True,
+                                    use_container_width=True,
+                                    help="Apenas o líder pode excluir ou alterar a inscrição.",
+                                )
+        except Exception as e:
+            st.error(f"Erro ao carregar seu histórico de inscrições: {e}")
