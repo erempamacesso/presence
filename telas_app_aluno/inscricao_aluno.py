@@ -388,14 +388,15 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
             else:
                 for insc in minhas_insc:
                     # Busca nomes reais do evento e tema para exibição
-                    ev_d = (
+                    res_ev_meta = (
                         db_alunos.table("feira_eventos")
-                        .select("nome")
+                        .select("nome, min_membros, max_membros")
                         .eq("id", insc["evento_id"])
                         .maybe_single()
                         .execute()
-                        .data
                     )
+                    ev_d = res_ev_meta.data if res_ev_meta else None
+
                     tm_d = (
                         db_alunos.table("feira_temas")
                         .select("titulo_trabalho, disciplina")
@@ -421,56 +422,117 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                             # Verificação de Liderança
                             if str(insc.get("lider_id")) == id_aluno:
                                 st.success("🌟 Você é o Líder")
-                                
+
                                 # --- NOVO: FUNCIONALIDADE DE EDIÇÃO DE EQUIPE ---
-                                with st.popover("👥 Gerenciar Membros", use_container_width=True):
+                                with st.popover(
+                                    "👥 Gerenciar Membros", use_container_width=True
+                                ):
                                     st.markdown("##### Editar Integrantes")
-                                    try:
-                                        # 1. Buscar todos os colegas da turma
-                                        res_c = db_alunos.table("alunos").select("nome").eq("turma", turma_aluno).execute()
-                                        todos_turma = [c["nome"] for c in res_c.data if c["nome"] != aluno.get("nome")]
-                                        
-                                        # 2. Buscar quem já está em OUTRAS equipes (para não permitir duplicidade)
-                                        res_o = db_provas.table("feira_inscricoes").select("nomes_membros").eq("evento_id", insc["evento_id"]).neq("id", insc["id"]).execute()
-                                        ocupados_outros = set()
-                                        for out in res_o.data:
-                                            for m in [x.replace(" (Líder)", "").strip() for x in out.get("nomes_membros", "").split(",")]:
-                                                ocupados_outros.add(m)
-                                        
-                                        # 3. Filtrar disponíveis (Colegas - Ocupados em outros grupos)
-                                        disp_edit = sorted([n for n in todos_turma if n not in ocupados_outros])
-                                        
-                                        # 4. Identificar membros atuais (sem o prefixo de líder)
-                                        atuais = [m.replace(" (Líder)", "").strip() for m in insc.get("nomes_membros", "").split(",") if "(Líder)" not in m]
-                                        
-                                        novos_membros = st.multiselect(
-                                            "Selecione os integrantes:",
-                                            options=disp_edit,
-                                            default=[m for m in atuais if m in disp_edit],
-                                            key=f"edit_m_{insc['id']}"
+                                    if ev_d:
+                                        try:
+                                            # 1. Buscar todos os colegas da turma
+                                            res_c = (
+                                                db_alunos.table("alunos")
+                                                .select("nome")
+                                                .eq("turma", turma_aluno)
+                                                .execute()
+                                            )
+                                            todos_turma = [
+                                                c["nome"]
+                                                for c in res_c.data
+                                                if c["nome"] != aluno.get("nome")
+                                            ]
+
+                                            # 2. Buscar quem já está em OUTRAS equipes do mesmo evento
+                                            res_o = (
+                                                db_provas.table("feira_inscricoes")
+                                                .select("nomes_membros")
+                                                .eq("evento_id", insc["evento_id"])
+                                                .neq("id", insc["id"])
+                                                .execute()
+                                            )
+                                            ocupados_outros = set()
+                                            for out in res_o.data:
+                                                for m in [
+                                                    x.replace(" (Líder)", "").strip()
+                                                    for x in out.get(
+                                                        "nomes_membros", ""
+                                                    ).split(",")
+                                                ]:
+                                                    ocupados_outros.add(m)
+
+                                            # 3. Filtrar disponíveis
+                                            disp_edit = sorted(
+                                                [
+                                                    n
+                                                    for n in todos_turma
+                                                    if n not in ocupados_outros
+                                                ]
+                                            )
+
+                                            # 4. Identificar membros atuais
+                                            atuais = [
+                                                m.replace(" (Líder)", "").strip()
+                                                for m in insc.get(
+                                                    "nomes_membros", ""
+                                                ).split(",")
+                                                if "(Líder)" not in m
+                                            ]
+
+                                            novos_membros = st.multiselect(
+                                                "Selecione os integrantes:",
+                                                options=disp_edit,
+                                                default=[
+                                                    m for m in atuais if m in disp_edit
+                                                ],
+                                                key=f"edit_m_{insc['id']}",
+                                            )
+
+                                            if st.button(
+                                                "💾 Atualizar Equipe",
+                                                key=f"save_{insc['id']}",
+                                                use_container_width=True,
+                                                type="primary",
+                                            ):
+                                                total = len(novos_membros) + 1
+                                                min_e = int(ev_d.get("min_membros", 1))
+                                                max_e = int(ev_d.get("max_membros", 8))
+
+                                                if total < min_e or total > max_e:
+                                                    st.error(
+                                                        f"A equipe deve ter entre {min_e} e {max_e} integrantes."
+                                                    )
+                                                else:
+                                                    equipe_final = (
+                                                        f"{aluno.get('nome')} (Líder), "
+                                                        + ", ".join(novos_membros)
+                                                    )
+                                                    db_provas.table(
+                                                        "feira_inscricoes"
+                                                    ).update(
+                                                        {"nomes_membros": equipe_final}
+                                                    ).eq(
+                                                        "id", insc["id"]
+                                                    ).execute()
+                                                    st.success("✅ Equipe atualizada!")
+                                                    time.sleep(1)
+                                                    st.rerun()
+
+                                        except Exception as e_edit:
+                                            st.error(
+                                                f"Erro ao carregar edição: {e_edit}"
+                                            )
+                                    else:
+                                        st.warning(
+                                            "Dados do evento não encontrados para validação."
                                         )
-                                        
-                                        if st.button("💾 Atualizar Equipe", key=f"save_{insc['id']}", use_container_width=True, type="primary"):
-                                            # Validação de limites (usando os dados do evento buscados anteriormente)
-                                            total = len(novos_membros) + 1
-                                            # Nota: Como ev_d só tem o nome aqui, precisaríamos do objeto evento completo ou buscar limites
-                                            # Para simplificar, assumimos que o líder sabe o que está fazendo ou validamos no salvamento
-                                            
-                                            equipe_final = f"{aluno.get('nome')} (Líder), " + ", ".join(novos_membros)
-                                            db_provas.table("feira_inscricoes").update({"nomes_membros": equipe_final}).eq("id", insc["id"]).execute()
-                                            st.toast("✅ Equipe atualizada com sucesso!")
-                                            time.sleep(1)
-                                            st.rerun()
-                                            
-                                    except Exception as e_edit:
-                                        st.error(f"Erro ao carregar edição: {e_edit}")
 
                                 if st.button(
-                                    "️ Cancelar Inscrição",
+                                    "🗑️ Cancelar Inscrição",
                                     key=f"del_{insc['id']}",
                                     use_container_width=True,
                                     type="secondary",
-                                    help="Atenção: Isso removerá o grupo permanentemente deste evento."
+                                    help="Atenção: Isso removerá o grupo permanentemente deste evento.",
                                 ):
                                     db_provas.table("feira_inscricoes").delete().eq(
                                         "id", insc["id"]
