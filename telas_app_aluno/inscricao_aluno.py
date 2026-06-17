@@ -62,10 +62,19 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
         f"🎓 **{aluno.get('nome')}** | Série: **{serie_aluno}** | Turma: **{turma_aluno}**"
     )
 
-    # --- SISTEMA DE ABAS ---
-    tab_insc, tab_minhas = st.tabs(
-        ["🚀 Realizar Nova Inscrição", "📋 Minhas Inscrições"]
-    )
+    # --- SISTEMA DE ABAS UNIFICADO ---
+    # Definimos as abas básicas
+    nomes_abas = ["🚀 Realizar Nova Inscrição", "📋 Minhas Inscrições"]
+
+    # Verificamos se o usuário é da organização (admin ou perfil específico)
+    pode_ver_painel = aluno.get("perfil") == "organizacao" or aluno.get("admin") == True
+
+    if pode_ver_painel:
+        nomes_abas.append("📊 Monitoramento (Org.)")
+
+    tabs = st.tabs(nomes_abas)
+    tab_insc = tabs[0]
+    tab_minhas = tabs[1]
 
     # =========================================================================
     # ABA 1: REALIZAR INSCRIÇÃO (Lógica Original do Stepper)
@@ -657,3 +666,10 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                                 )
         except Exception as e:
             st.error(f"Erro ao carregar seu histórico de inscrições: {e}")
+
+    # =========================================================================
+    # ABA 3: PAINEL DE ORGANIZAÇÃO (Apenas para autorizados)
+    # =========================================================================
+    if pode_ver_painel:
+        with tabs[2]:
+            mostrar_painel_organizacao(db_alunos, db_provas)

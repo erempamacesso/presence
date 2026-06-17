@@ -8,7 +8,7 @@ st.set_page_config(
     page_title="Ecossistema EREMPAM",
     layout="wide",
     page_icon="🌍",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="collapsed",
 )
 
 # ==========================================
@@ -17,10 +17,11 @@ st.set_page_config(
 try:
     from telas_app_aluno.login import mostrar_tela_login
     from telas_app_aluno.ante_sala import mostrar_ante_sala
-    from telas_app_aluno.inscricao_aluno import mostrar_inscricao_aluno # <-- TIREI O "_tela"
+    from telas_app_aluno.inscricao_aluno import mostrar_modulo_eventos
 except ImportError as e:
     st.error(f"❌ Erro ao importar módulos: {e}")
     st.stop()
+
 
 # ==========================================
 # CONEXÃO SUPABASE
@@ -40,6 +41,7 @@ def init_connections():
         st.error("🚨 Erro ao carregar as credenciais.")
         st.stop()
 
+
 db_alunos, db_provas = init_connections()
 
 # ==========================================
@@ -55,10 +57,12 @@ if "aluno" not in st.session_state:
 # ROTEAMENTO (O GPS DO APP)
 # ==========================================
 if st.session_state.etapa == "login":
-    mostrar_tela_login(db_alunos) # Usa o banco de alunos para validar matrícula/nascimento
-    
+    mostrar_tela_login(
+        db_alunos
+    )  # Usa o banco de alunos para validar matrícula/nascimento
+
 elif st.session_state.etapa == "ante_sala":
-    mostrar_ante_sala() # O HUB Central (Ecossistema)
-    
-elif st.session_state.etapa == "inscricao_aluno":
-    mostrar_inscricao_aluno(db_alunos, db_provas)
+    mostrar_ante_sala()  # O HUB Central (Ecossistema)
+
+elif st.session_state.etapa == "eventos_erempam":
+    mostrar_modulo_eventos(db_alunos, db_provas)
