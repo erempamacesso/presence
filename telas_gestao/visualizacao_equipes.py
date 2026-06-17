@@ -4,9 +4,15 @@ import os
 
 
 def mostrar_painel_organizacao(db_alunos, db_provas):
-    print(f"URL ALUNOS: {os.getenv('SUPABASE_URL_ALUNOS')}")
     st.title("📊 Painel de Monitoramento - Equipes")
     st.markdown("---")
+
+    # Garante que temos as conexões antes de prosseguir
+    if db_alunos is None or db_provas is None:
+        st.error(
+            "🚨 As conexões com os bancos de dados não foram inicializadas corretamente no arquivo principal."
+        )
+        return
 
     try:
         # 1. Busca e seleção do Evento (Projeto Alunos)
@@ -18,8 +24,11 @@ def mostrar_painel_organizacao(db_alunos, db_provas):
                 .execute()
             )
         except Exception as e_dns:
-            st.error("🚨 Erro de conexão com o Banco de Alunos (DNS)")
-            st.info(f"Detalhe técnico: {e_dns}")
+            st.error(
+                "🚨 Erro de comunicação com o banco de dados (Verifique sua conexão de rede/DNS)"
+            )
+            with st.expander("Ver detalhes técnicos do erro"):
+                st.code(str(e_dns))
             st.stop()
 
         if not res_eventos.data:
@@ -37,8 +46,8 @@ def mostrar_painel_organizacao(db_alunos, db_provas):
             "Filtrar por Série:", ["1º", "2º", "3º", "Geral"], horizontal=True
         )
 
-        # 3. Busca de Dados nos dois bancos distintos
-        # Busca os temas no projeto Chamada/Escola (db_alunos)
+        # 3. Busca de Dados em Ambos os Bancos
+        # Busca os temas cadastrados no Projeto Alunos
         query_temas = (
             db_alunos.table("feira_temas").select("*").eq("evento_id", evento_id)
         )
@@ -47,7 +56,7 @@ def mostrar_painel_organizacao(db_alunos, db_provas):
 
         res_temas = query_temas.execute()
 
-        # Busca as inscrições no projeto Avaliador-Provas (db_provas)
+        # Busca as inscrições feitas no Projeto Provas
         res_inscricoes = (
             db_provas.table("feira_inscricoes")
             .select("*")
@@ -61,73 +70,76 @@ def mostrar_painel_organizacao(db_alunos, db_provas):
             )
             return
 
-        # 4. Criação dos DataFrames para fazer a junção (Merge) em memória
+        # 4. Criação dos DataFrames para Integração em Memória
         df_temas = pd.DataFrame(res_temas.data)
         df_inscricoes = pd.DataFrame(res_inscricoes.data)
 
-        # 5. O "Pulo do Gato": Integrar as tabelas pelo ID do Tema
-        # Fazemos um Left Join para garantir que todos os temas apareçam (mesmo os sem inscrição)
+        # 5. O Cruzamento de Dados (Merge): Associa o ID do tema ao Nome Real do Trabalho
         if not df_inscricoes.empty:
             df_consolidado = pd.merge(
                 df_temas,
                 df_inscricoes,
-                left_on="id",  # Coluna ID da tabela feira_temas (Escola)
-                right_on="tema_id",  # Coluna tema_id da tabela feira_inscricoes (Provas)
+                left_on="id",  # UUID da tabela feira_temas
+                right_on="tema_id",  # Coluna correspondente na feira_inscricoes
                 how="left",
                 suffixes=("_tema", "_insc"),
             )
         else:
-            # Se não houver nenhuma inscrição no banco, criamos as colunas vazias para evitar erros no loop
+            # Caso não existam inscrições ainda, estruturamos colunas vazias preventivas
             df_consolidado = df_temas.copy()
             df_consolidado["turma"] = None
             df_consolidado["nomes_membros"] = None
-            df_consolidado["data_inscricao"] = None
+            df_consolidado["tema_id"] = None
 
-        # 6. Métricas do Painel
+        # 6. Métricas do Painel Superior
         total_temas = len(df_consolidado)
-        vagas_ocupadas = df_consolidado["tema_id"].notna().sum()
-        vagas_disponiveis = total_temas - vagas_ocupadas
+        vagas_ocupadas = (
+            df_consolidado["tema_id"].notna().sum()
+            if "tema_id" in df_consolidado.columns
+            else 0
+        )
+        vagas_disponiveis = max(0, total_temas - vagas_ocupadas)
 
         m1, m2, m3 = st.columns(3)
         m1.metric("Total de Temas", total_temas)
-        m2.metric("Temas Ocupados", vagas_ocupadas)
-        m3.metric("Temas Disponíveis", vagas_disponiveis)
+        m2.metric("Temas Ocupados (Inscritos)", vagas_ocupadas)
+        m3.metric("Temas Disponíveis (Vagos)", vagas_disponiveis)
         st.markdown("---")
 
-        # 7. Renderização Visual dos Cartões de Temas
+        # 7. Renderização Visual Inteligente
         for _, row in df_consolidado.iterrows():
             with st.container(border=True):
                 col_t, col_s = st.columns([3, 1])
 
                 with col_t:
-                    # Exibe o Nome Real do Tema (titulo_trabalho) em vez do UUID hash!
+                    # Aqui passamos a exibir o Nome Real do trabalho em vez do Hash ID!
                     st.markdown(f"### 📘 {row['titulo_trabalho']}")
                     st.caption(
                         f"🧪 {row['disciplina']} | 👨‍🏫 Prof. {row.get('professor_nome', 'N/A')} | 📅 Série: {row['Serie']}"
                     )
-                    if pd.notna(row.get("descricao")):
-                        st.write(f"*{row['descricao']}*")
+                    if pd.notna(row.get("descricao")) and row["descricao"]:
+                        st.markdown(f"*{row['descricao']}*")
 
                 with col_s:
-                    # Se houver correspondência de ID, o tema está ocupado
-                    if pd.notna(row["tema_id"]):
+                    # Verifica se o tema possui par inscrito
+                    if "tema_id" in row and pd.notna(row["tema_id"]):
                         st.success("✅ INSCRITO")
                     else:
                         st.warning("⚪ VAGO")
 
-                # Se o tema possuir uma equipe vinculada, mostra os detalhes traduzidos
-                if pd.notna(row["tema_id"]):
+                # Se houver dados de inscrição atrelados a este tema, mostramos os detalhes expandidos
+                if "tema_id" in row and pd.notna(row["tema_id"]):
                     with st.expander("🔍 Ver Detalhes da Equipe"):
-                        st.write(f"**Turma:** {row['turma']}")
+                        st.write(f"**Turma:** {row.get('turma', 'Não informada')}")
                         st.write("**Membros da Equipe:**")
 
-                        # Separa e lista os nomes dos alunos que vieram da tabela de inscrições
-                        membros = str(row["nomes_membros"]).split(",")
-                        for m in membros:
-                            st.markdown(f"- {m.strip()}")
+                        membros_raw = row.get("nomes_membros", "")
+                        if membros_raw:
+                            membros = str(membros_raw).split(",")
+                            for m in membros:
+                                st.markdown(f"- {m.strip()}")
+                        else:
+                            st.write("*Nenhum nome listado.*")
 
-                        if pd.notna(row.get("data_inscricao")):
-                            st.caption(f"Data da Inscrição: {row['data_inscricao']}")
-
-    except Exception as e:
-        st.error(f"Erro ao carregar dados de gestão: {e}")
+    except Exception as e_geral:
+        st.error(f"Erro ao processar e integrar painel: {e_geral}")
