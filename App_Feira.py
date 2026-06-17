@@ -30,7 +30,7 @@ except ImportError as e:
 @st.cache_resource
 def init_connections():
     try:
-        # O .strip(" '\"") remove espaços, aspas simples e duplas acidentais
+        # Remove espaços e aspas acidentais que causam o erro de DNS
         url_alunos = st.secrets["SUPABASE_URL_ALUNOS"].strip(" '\"")
         key_alunos = st.secrets["SUPABASE_KEY_ALUNOS"].strip(" '\"")
         url_provas = st.secrets["SUPABASE_URL_PROVAS"].strip(" '\"")

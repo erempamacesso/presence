@@ -8,12 +8,18 @@ def mostrar_painel_organizacao(db_alunos, db_provas):
 
     # 1. Seleção do Evento
     try:
-        res_eventos = (
-            db_alunos.table("feira_eventos")
-            .select("id, nome")
-            .eq("ativo", True)
-            .execute()
-        )
+        try:
+            res_eventos = (
+                db_alunos.table("feira_eventos")
+                .select("id, nome")
+                .eq("ativo", True)
+                .execute()
+            )
+        except Exception as e_dns:
+            st.error("🚨 Erro de conexão com o Banco de Alunos (DNS)")
+            st.info(f"Detalhe técnico: {e_dns}")
+            st.stop()
+
         if not res_eventos.data:
             st.warning("Não há eventos ativos no momento.")
             return
@@ -31,19 +37,24 @@ def mostrar_painel_organizacao(db_alunos, db_provas):
 
         # 3. Busca de Dados
         # Busca todos os temas do evento
-        res_temas = (
-            db_alunos.table("feira_temas")
-            .select("*")
-            .eq("evento_id", evento_id)
-            .execute()
-        )
-        # Busca todas as inscrições do evento
-        res_insc = (
-            db_provas.table("feira_inscricoes")
-            .select("*")
-            .eq("evento_id", evento_id)
-            .execute()
-        )
+        try:
+            res_temas = (
+                db_alunos.table("feira_temas")
+                .select("*")
+                .eq("evento_id", evento_id)
+                .execute()
+            )
+            # Busca todas as inscrições do evento
+            res_insc = (
+                db_provas.table("feira_inscricoes")
+                .select("*")
+                .eq("evento_id", evento_id)
+                .execute()
+            )
+        except Exception as e_dns_provas:
+            st.error("🚨 Erro de conexão com o Banco de Provas (DNS)")
+            st.info(f"Detalhe técnico: {e_dns_provas}")
+            st.stop()
 
         temas_df = pd.DataFrame(res_temas.data)
         inscricoes_df = pd.DataFrame(res_insc.data)
