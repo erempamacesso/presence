@@ -3,97 +3,71 @@ import pandas as pd
 
 
 def mostrar_painel_organizacao(db_alunos, db_provas):
-    st.title("📊 Painel de Monitoramento - Inscrições Realizadas")
+    st.title("📊 Painel de Monitoramento - Equipes")
     st.markdown("---")
 
-    # Verifica se a conexão necessária com o banco de provas está ativa
-    if db_provas is None:
-        st.error("🚨 Conexão com o Banco de Provas (Avaliador) não inicializada.")
+    if db_alunos is None or db_provas is None:
+        st.error("🚨 Conexões de banco de dados não inicializadas.")
         return
 
-    # 1. Coleta de Dados Direta e Isolada (Apenas no Banco de Provas)
+    # 1. Busca dos Dados nos dois bancos
     try:
-        with st.spinner("Carregando dados das inscrições..."):
+        with st.spinner("Sincronizando dados dos bancos..."):
+            # Busca temas (para ter o título do trabalho)
+            res_temas = (
+                db_alunos.table("feira_temas").select("id, titulo_trabalho").execute()
+            )
+            # Busca inscrições (para ter os membros e turma)
             res_inscricoes = db_provas.table("feira_inscricoes").select("*").execute()
-    except Exception as e_pr:
-        st.error("🚨 Erro de conexão com o Banco de Provas (Inscrições).")
-        st.info(
-            "Verifique se as credenciais do projeto Avaliador estão corretas nas Secrets."
-        )
-        with st.expander("Detalhes do erro técnico"):
-            st.code(str(e_pr))
+
+            df_temas = pd.DataFrame(res_temas.data)
+            df_inscricoes = pd.DataFrame(res_inscricoes.data)
+    except Exception as e:
+        st.error(f"Erro ao conectar com os bancos: {e}")
         return
 
-    # Se não houver nenhum dado registrado na tabela
-    if not res_inscricoes.data:
-        st.warning(
-            "Nenhuma inscrição encontrada na tabela 'feira_inscricoes' até o momento."
-        )
+    if df_inscricoes.empty:
+        st.warning("Nenhuma inscrição encontrada.")
         return
 
-    # 2. Convertendo os dados coletados em DataFrame
-    df_inscricoes = pd.DataFrame(res_inscricoes.data)
+    # 2. Integração (Transformar ID em Nome)
+    # Fazemos um merge: para cada inscrição, buscamos o título do tema correspondente
+    df_consolidado = pd.merge(
+        df_inscricoes, df_temas, left_on="tema_id", right_on="id", how="left"
+    )
 
-    # 3. Painel Superior de Indicadores (Métricas Rápidas)
-    total_equipes = len(df_inscricoes)
+    # 3. Filtro de Turma
+    turmas = sorted(df_consolidado["turma"].dropna().unique())
+    turma_selecionada = st.selectbox("Filtrar por Turma:", ["Todas"] + turmas)
 
-    # Contagem de turmas únicas registradas
-    if "turma" in df_inscricoes.columns:
-        total_turmas = df_inscricoes["turma"].nunique()
+    if turma_selecionada != "Todas":
+        df_exibicao = df_consolidado[df_consolidado["turma"] == turma_selecionada]
     else:
-        total_turmas = 0
+        df_exibicao = df_consolidado
 
-    col_m1, col_m2 = st.columns(2)
-    col_m1.metric("Total de Equipes Inscritas", total_equipes)
-    col_m2.metric("Turmas Engajadas", total_turmas)
-    st.markdown("---")
+    # 4. Exibição dos cards
+    st.subheader(f"📋 Total de Equipes: {len(df_exibicao)}")
 
-    # 4. Filtro Interativo por Turma (Criado dinamicamente com base nas turmas existentes)
-    if "turma" in df_inscricoes.columns and total_turmas > 0:
-        lista_turmas = sorted(df_inscricoes["turma"].dropna().unique())
-        lista_turmas.insert(0, "Todas as Turmas")
-        turma_selecionada = st.selectbox(
-            "Filtrar visualização por Turma:", options=lista_turmas
-        )
+    for _, row in df_exibicao.iterrows():
+        # Trata o título (pega do banco de temas ou avisa se não achar)
+        titulo = row.get("titulo_trabalho", "Título não localizado")
 
-        # Aplica o filtro caso o usuário escolha uma turma específica
-        if turma_selecionada != "Todas as Turmas":
-            df_exibicao = df_inscricoes[df_inscricoes["turma"] == turma_selecionada]
-        else:
-            df_exibicao = df_inscricoes
-    else:
-        df_exibicao = df_inscricoes
-
-    # 5. Apresentação das Equipes em Formato de Cartões (Cards)
-    st.subheader(f"📋 Listagem de Equipes ({len(df_exibicao)})")
-
-    for idx, row in df_exibicao.iterrows():
         with st.container(border=True):
-            col_info, col_status = st.columns([3, 1])
+            col1, col2 = st.columns([3, 1])
 
-            with col_info:
-                # Como não temos o texto do título neste banco, identificamos pelo código/ID do tema de forma limpa
-                id_tema_curto = str(row.get("tema_id", "N/A"))
-                st.markdown(f"### 👥 Equipe — Código do Tema: `{id_tema_curto}`")
+            with col1:
+                st.markdown(f"### 📘 {titulo}")
+                st.markdown(f"🏫 **Turma:** {row.get('turma', 'N/A')}")
 
-                # Exibe a Turma de forma destacada
-                st.markdown(f"🏫 **Turma:** {row.get('turma', 'Não informada')}")
+            with col2:
+                st.success("✅ INSCRITO")
 
-                # Renderiza e formata os membros da equipe
-                membros_raw = row.get("nomes_membros", "")
+            # Recurso de Sanfona para os membros
+            membros_raw = row.get("nomes_membros", "")
+            with st.expander("👤 Ver Membros da Equipe"):
                 if membros_raw:
-                    st.markdown("**Membros Integrantes:**")
-                    membros = str(membros_raw).split(",")
+                    membros = [m.strip() for m in str(membros_raw).split(",")]
                     for m in membros:
-                        st.markdown(f"- {m.strip()}")
+                        st.markdown(f"• {m}")
                 else:
-                    st.caption("*Nenhum nome de membro preenchido nesta inscrição.*")
-
-            with col_status:
-                # Adiciona um marcador visual verde indicando que o registro está ativo e confirmado neste banco
-                st.success("🔒 CONFIRMADO")
-
-                # Informação complementar se houver coluna de data de criação
-                if "created_at" in row and pd.notna(row["created_at"]):
-                    data_formatada = str(row["created_at"]).split("T")[0]
-                    st.caption(f"Registrado em: {data_formatada}")
+                    st.caption("Nenhum membro listado.")
