@@ -3,6 +3,7 @@ import pandas as pd
 
 
 def mostrar_painel_organizacao(db_alunos, db_provas):
+    print(f"URL ALUNOS: {os.getenv('SUPABASE_URL_ALUNOS')}")
     st.title("📊 Painel de Monitoramento - Equipes")
     st.markdown("---")
 
