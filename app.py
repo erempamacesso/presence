@@ -65,6 +65,7 @@ except Exception as e:
 try:
     URL_SUPABASE = st.secrets["SUPABASE_URL_ALUNOS"]
     CHAVE_SUPABASE = st.secrets["SUPABASE_KEY_ALUNOS"]
+
     supabase: Client = create_client(URL_SUPABASE, CHAVE_SUPABASE)
 
     URL_SUPABASE_PROVAS = st.secrets["SUPABASE_URL_PROVAS"]
@@ -73,6 +74,8 @@ try:
     supabase_provas: Client = create_client(URL_SUPABASE_PROVAS, CHAVE_SUPABASE_PROVAS)
 
 except Exception as e:
+    st.error(f"🚨 Erro ao conectar no Supabase: {e}")
+    st.stop()
 
     # ==========================================
     # 4. GERENCIADOR DE ESTADO E LINKS DIRETOS
@@ -280,7 +283,4 @@ elif st.session_state.pagina == "importacao":
     exibir_importacao(supabase)
 
 elif st.session_state.pagina == "gestao_feira":
-    exibir_gestao_feira(
-        supabase,
-        supabase_provas
-    )
+    exibir_gestao_feira(supabase, supabase_provas)
