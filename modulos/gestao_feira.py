@@ -4,10 +4,7 @@ import time
 from github import Github
 
 
-def exibir_gestao_feira(
-    db_alunos,
-    db_provas
-):
+def exibir_gestao_feira(db_alunos, db_provas):
 
     supabase_conn = db_alunos
 
@@ -772,7 +769,11 @@ def exibir_gestao_feira(
     # ABA 4: GESTÃO DE TRABALHOS (CADASTRO E EDIÇÃO)
     # ==========================================
     with aba_trabalhos:
-        sub_tab_labels = ["➕ Novo Trabalho", "🔧 Editar / Excluir","📊 Monitoramento por Turma"]
+        sub_tab_labels = [
+            "➕ Novo Trabalho",
+            "🔧 Editar / Excluir",
+            "📊 Monitoramento por Turma",
+        ]
 
         # Renderiza as sub-abas
         aba_cad, aba_edit, aba_monitor = st.tabs(sub_tab_labels)
@@ -905,9 +906,13 @@ def exibir_gestao_feira(
 
                             # --- MOSTRAR RESUMO DO TRABALHO ---
                             with st.container(border=True):
-                                st.markdown(f"#### 📋 Resumo: {t_edit['titulo_trabalho']}")
+                                st.markdown(
+                                    f"#### 📋 Resumo: {t_edit['titulo_trabalho']}"
+                                )
                                 c_res1, c_res2, c_res3 = st.columns(3)
-                                c_res1.write(f"**Professor:**\n{t_edit['professor_nome']}")
+                                c_res1.write(
+                                    f"**Professor:**\n{t_edit['professor_nome']}"
+                                )
                                 c_res2.write(f"**Disciplina:**\n{t_edit['disciplina']}")
                                 c_res3.write(f"**Série:**\n{t_edit['Serie']}")
                                 st.write(f"**Vagas:** {t_edit['vagas_grupos']} grupos")
@@ -916,7 +921,9 @@ def exibir_gestao_feira(
 
                             # --- FORMULÁRIO DE EDIÇÃO ---
                             with st.form(f"form_edit_full_{t_edit['id']}"):
-                                st.markdown(f"### ✍️ Editando: {t_edit['titulo_trabalho']}")
+                                st.markdown(
+                                    f"### ✍️ Editando: {t_edit['titulo_trabalho']}"
+                                )
 
                                 novo_titulo = st.text_input(
                                     "Título do Trabalho",
@@ -1018,183 +1025,139 @@ def exibir_gestao_feira(
                                     st.rerun()
             except Exception as e:
                 st.error(f"Erro na gestão de trabalhos: {e}")
-                
-           
+
         with aba_monitor:
-                st.subheader("📊 Monitoramento das Inscrições por Turma")
+            st.subheader("📊 Monitoramento das Inscrições por Turma")
 
-                try:
-                    res_eventos = (
-                        supabase_conn.table("feira_eventos")
-                        .select("id,nome")
-                        .execute()
-                    )
+            try:
+                res_eventos = (
+                    supabase_conn.table("feira_eventos").select("id,nome").execute()
+                )
 
-                    if not res_eventos.data:
-                        st.info("Nenhum evento cadastrado.")
-                        st.stop()
+                if not res_eventos.data:
+                    st.info("Nenhum evento cadastrado.")
+                    st.stop()
 
-                    eventos_dict = {
-                        item["nome"]: item["id"]
-                        for item in res_eventos.data
-                    }
+                eventos_dict = {item["nome"]: item["id"] for item in res_eventos.data}
 
-                    evento_nome = st.selectbox(
-                        "Selecione o Evento",
-                        list(eventos_dict.keys()),
-                        key="monitor_evento"
-                    )
+                evento_nome = st.selectbox(
+                    "Selecione o Evento",
+                    list(eventos_dict.keys()),
+                    key="monitor_evento",
+                )
 
-                    evento_id = eventos_dict[evento_nome]
+                evento_id = eventos_dict[evento_nome]
 
-                    # --------------------------
-                    # BUSCA TEMAS
-                    # --------------------------
+                # --------------------------
+                # BUSCA TEMAS
+                # --------------------------
 
-                    res_temas = (
-                        supabase_conn.table("feira_temas")
-                        .select("*")
-                        .eq("evento_id", evento_id)
-                        .execute()
-                    )
+                res_temas = (
+                    supabase_conn.table("feira_temas")
+                    .select("*")
+                    .eq("evento_id", evento_id)
+                    .execute()
+                )
 
-                    temas = res_temas.data or []
+                temas = res_temas.data or []
 
-                    # --------------------------
-                    # BUSCA INSCRIÇÕES
-                    # --------------------------
+                # --------------------------
+                # BUSCA INSCRIÇÕES
+                # --------------------------
 
-                    res_insc = (
-                        supabase_conn.table("feira_inscricoes")
-                        .select("*")
-                        .eq("evento_id", evento_id)
-                        .execute()
-                    )
+                res_insc = (
+                    db_provas.table("feira_inscricoes")
+                    .select("*")
+                    .eq("evento_id", evento_id)
+                    .execute()
+                )
 
-                    inscricoes = res_insc.data or []
+                inscricoes = res_insc.data or []
 
-                    turmas = [
-                        "1ºA","1ºB","1ºC",
-                        "2ºA","2ºB","2ºC",
-                        "3ºA","3ºB","3ºC"
-                    ]
+                turmas = ["1ºA", "1ºB", "1ºC", "2ºA", "2ºB", "2ºC", "3ºA", "3ºB", "3ºC"]
 
-                    turma_sel = st.selectbox(
-                        "Selecione a Turma",
-                        turmas,
-                        key="monitor_turma"
-                    )
+                turma_sel = st.selectbox(
+                    "Selecione a Turma", turmas, key="monitor_turma"
+                )
 
-                    # --------------------------
-                    # INSCRIÇÕES DA TURMA
-                    # --------------------------
+                # --------------------------
+                # INSCRIÇÕES DA TURMA
+                # --------------------------
 
-                    inscricoes_turma = [
-                        x for x in inscricoes
-                        if str(x.get("turma","")).strip() == turma_sel
-                    ]
+                inscricoes_turma = [
+                    x
+                    for x in inscricoes
+                    if str(x.get("turma", "")).strip() == turma_sel
+                ]
 
-                    temas_inscritos_ids = [
-                        x["tema_id"]
-                        for x in inscricoes_turma
-                        if x.get("tema_id")
-                    ]
+                temas_inscritos_ids = [
+                    x["tema_id"] for x in inscricoes_turma if x.get("tema_id")
+                ]
 
-                    trabalhos_inscritos = [
-                        t for t in temas
-                        if t["id"] in temas_inscritos_ids
-                    ]
+                trabalhos_inscritos = [
+                    t for t in temas if t["id"] in temas_inscritos_ids
+                ]
 
-                    trabalhos_vagos = [
-                        t for t in temas
-                        if t["id"] not in temas_inscritos_ids
-                    ]
+                trabalhos_vagos = [
+                    t for t in temas if t["id"] not in temas_inscritos_ids
+                ]
 
-                    c1, c2, c3 = st.columns(3)
+                c1, c2, c3 = st.columns(3)
 
-                    c1.metric(
-                        "Total Trabalhos",
-                        len(temas)
-                    )
+                c1.metric("Total Trabalhos", len(temas))
 
-                    c2.metric(
-                        "Inscritos",
-                        len(trabalhos_inscritos)
-                    )
+                c2.metric("Inscritos", len(trabalhos_inscritos))
 
-                    c3.metric(
-                        "Sem Inscrição",
-                        len(trabalhos_vagos)
-                    )
+                c3.metric("Sem Inscrição", len(trabalhos_vagos))
 
-                    st.divider()
+                st.divider()
 
-                    # ==================================
-                    # INSCRITOS
-                    # ==================================
+                # ==================================
+                # INSCRITOS
+                # ==================================
 
-                    st.markdown("## ✅ Trabalhos já inscritos")
+                st.markdown("## ✅ Trabalhos já inscritos")
 
-                    if not trabalhos_inscritos:
-                        st.info("Nenhum trabalho inscrito nesta turma.")
-                    else:
+                if not trabalhos_inscritos:
+                    st.info("Nenhum trabalho inscrito nesta turma.")
+                else:
 
-                        for tema in trabalhos_inscritos:
+                    for tema in trabalhos_inscritos:
 
-                            with st.container(border=True):
+                        with st.container(border=True):
 
-                                st.markdown(
-                                    f"### {tema['titulo_trabalho']}"
-                                )
+                            st.markdown(f"### {tema['titulo_trabalho']}")
 
-                                st.write(
-                                    f"👨‍🏫 Professor: {tema['professor_nome']}"
-                                )
+                            st.write(f"👨‍🏫 Professor: {tema['professor_nome']}")
 
-                                st.write(
-                                    f"🧪 Disciplina: {tema['disciplina']}"
-                                )
+                            st.write(f"🧪 Disciplina: {tema['disciplina']}")
 
-                                st.write(
-                                    f"🎓 Série: {tema['Serie']}"
-                                )
+                            st.write(f"🎓 Série: {tema['Serie']}")
 
-                    st.divider()
+                st.divider()
 
-                    # ==================================
-                    # VAGOS
-                    # ==================================
+                # ==================================
+                # VAGOS
+                # ==================================
 
-                    st.markdown("## ⚪ Trabalhos sem inscrição")
+                st.markdown("## ⚪ Trabalhos sem inscrição")
 
-                    if not trabalhos_vagos:
-                        st.success(
-                            "Todos os trabalhos já receberam inscrição."
-                        )
+                if not trabalhos_vagos:
+                    st.success("Todos os trabalhos já receberam inscrição.")
 
-                    else:
+                else:
 
-                        for tema in trabalhos_vagos:
+                    for tema in trabalhos_vagos:
 
-                            with st.container(border=True):
+                        with st.container(border=True):
 
-                                st.markdown(
-                                    f"### {tema['titulo_trabalho']}"
-                                )
+                            st.markdown(f"### {tema['titulo_trabalho']}")
 
-                                st.write(
-                                    f"👨‍🏫 Professor: {tema['professor_nome']}"
-                                )
+                            st.write(f"👨‍🏫 Professor: {tema['professor_nome']}")
 
-                                st.write(
-                                    f"🧪 Disciplina: {tema['disciplina']}"
-                                )
+                            st.write(f"🧪 Disciplina: {tema['disciplina']}")
 
-                                st.write(
-                                    f"🎓 Série: {tema['Serie']}"
-                                )
+                            st.write(f"🎓 Série: {tema['Serie']}")
 
-                except Exception as e:
-                    st.error(
-                        f"Erro no monitoramento: {e}"
-                    )
+            except Exception as e:
+                st.error(f"Erro no monitoramento: {e}")
