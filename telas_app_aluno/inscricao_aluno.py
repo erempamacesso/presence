@@ -539,18 +539,21 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                                                 .eq("turma", turma_aluno)
                                                 .execute()
                                             )
-                                            todos_turma = [
+                                            # Todos da turma exceto o líder
+                                            todos_nomes_turma = [
                                                 c["nome"]
                                                 for c in res_c.data
                                                 if c["nome"] != aluno.get("nome")
                                             ]
 
-                                            # 2. Buscar quem já está em OUTRAS equipes do mesmo evento
+                                            # 2. Buscar quem já está ocupado em OUTRAS equipes do mesmo evento
                                             res_o = (
                                                 db_provas.table("feira_inscricoes")
                                                 .select("nomes_membros")
                                                 .eq("evento_id", insc["evento_id"])
-                                                .neq("id", insc["id"])
+                                                .neq(
+                                                    "id", insc["id"]
+                                                )  # Exclui a minha inscrição da trava
                                                 .execute()
                                             )
                                             ocupados_outros = set()
@@ -564,10 +567,11 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                                                     ocupados_outros.add(m)
 
                                             # 3. Filtrar disponíveis
+                                            # Estudantes disponíveis = (Todos da Turma) - (Ocupados em outros grupos)
                                             disp_edit = sorted(
                                                 [
                                                     n
-                                                    for n in todos_turma
+                                                    for n in todos_nomes_turma
                                                     if n not in ocupados_outros
                                                 ]
                                             )
