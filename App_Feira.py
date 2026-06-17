@@ -1,4 +1,6 @@
 import streamlit as st
+import os
+import sys
 from supabase import create_client
 
 # ==========================================
@@ -10,6 +12,11 @@ st.set_page_config(
     page_icon="🌍",
     initial_sidebar_state="collapsed",
 )
+
+# Força o reconhecimento do diretório raiz para evitar o erro "No module named 'telas_gestao'"
+root_path = os.path.dirname(os.path.abspath(__file__))
+if root_path not in sys.path:
+    sys.path.insert(0, root_path)
 
 # ==========================================
 # IMPORTAÇÕES DAS TELAS (Nova Pasta!)
@@ -30,17 +37,29 @@ except ImportError as e:
 @st.cache_resource
 def init_connections():
     try:
-        # O .strip(" '\"") remove espaços e aspas (simples ou duplas) acidentais
-        url_alunos = st.secrets["SUPABASE_URL_ALUNOS"].strip(" '\"")
-        key_alunos = st.secrets["SUPABASE_KEY_ALUNOS"].strip(" '\"")
-        url_provas = st.secrets["SUPABASE_URL_PROVAS"].strip(" '\"")
-        key_provas = st.secrets["SUPABASE_KEY_PROVAS"].strip(" '\"")
+
+        def clean_secret(key):
+            # Remove aspas, espaços, quebras de linha e caracteres invisíveis (como \xa0)
+            val = str(st.secrets.get(key, "")).strip(" \n\r\t'\"")
+            val = val.replace("\xa0", "").replace("\u200b", "")
+            return val
+
+        url_alunos = clean_secret("SUPABASE_URL_ALUNOS")
+        key_alunos = clean_secret("SUPABASE_KEY_ALUNOS")
+        url_provas = clean_secret("SUPABASE_URL_PROVAS")
+        key_provas = clean_secret("SUPABASE_KEY_PROVAS")
+
+        # Validação de segurança: se a URL não começar com http, algo está errado nos Secrets
+        for label, url in [("Alunos", url_alunos), ("Provas", url_provas)]:
+            if url and not url.startswith("http"):
+                st.error(f"🚨 A URL do Banco de {label} parece inválida: {url}")
+                st.stop()
 
         db_alunos = create_client(url_alunos, key_alunos)
         db_provas = create_client(url_provas, key_provas)
         return db_alunos, db_provas
     except Exception as e:
-        st.error(f"🚨 Erro ao carregar as credenciais: {e}")
+        st.error(f"🚨 Falha crítica na conexão: {e}")
         st.stop()
 
 

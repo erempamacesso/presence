@@ -49,18 +49,28 @@ def mostrar_painel_organizacao(db_alunos, db_provas):
         )
         if serie_selecionada != "Geral":
             query_temas = query_temas.eq("Serie", serie_selecionada)
-        res_temas = query_temas.execute()
+        
+        try:
+            # Tenta buscar temas no Banco de Alunos
+            res_temas = query_temas.execute()
+        except Exception as e_al:
+            st.error(f"🚨 Erro de conexão com o Banco de Alunos (Temas): {e_al}")
+            return
 
-        # Busca inscrições no Projeto Provas (Banco 2)
-        res_inscricoes = (
-            db_provas.table("feira_inscricoes")
-            .select("*")
-            .eq("evento_id", evento_id)
-            .execute()
-        )
-
-    except Exception as e_busca:
-        st.error(f"Erro ao consultar tabelas nos bancos: {e_busca}")
+        try:
+            # Tenta buscar inscrições no Banco de Provas (Onde ocorre o erro de DNS)
+            res_inscricoes = (
+                db_provas.table("feira_inscricoes")
+                .select("*")
+                .eq("evento_id", evento_id)
+                .execute()
+            )
+        except Exception as e_pr:
+            st.error(f"🚨 Erro de conexão com o Banco de Provas (Inscrições): {e_pr}")
+            st.info("Dica: Verifique se não há espaços ou aspas sobrando no segredo 'SUPABASE_URL_PROVAS' no painel do Streamlit Cloud.")
+            return
+    except Exception as e_geral:
+        st.error(f"🚨 Erro inesperado ao processar dados de gestão: {e_geral}")
         return
 
     if not res_temas.data:
