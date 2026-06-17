@@ -13,7 +13,7 @@ def mostrar_painel_organizacao(db_alunos, db_provas):
     # 1. Busca dos Dados
     try:
         with st.spinner("Sincronizando dados dos bancos..."):
-            # Adicionamos 'professor_nome' e 'disciplina' na busca
+            # Selecionamos professor_nome e disciplina para usar nos filtros e cards
             res_temas = (
                 db_alunos.table("feira_temas")
                 .select("id, titulo_trabalho, professor_nome, disciplina")
@@ -36,17 +36,28 @@ def mostrar_painel_organizacao(db_alunos, db_provas):
         df_inscricoes, df_temas, left_on="tema_id", right_on="id", how="left"
     )
 
-    # 3. Filtro de Turma
-    turmas = sorted(df_consolidado["turma"].dropna().unique())
-    turma_selecionada = st.selectbox("Filtrar por Turma:", ["Todas"] + turmas)
+    # 3. Filtros (Turma e Professor)
+    col_f1, col_f2 = st.columns(2)
 
-    if turma_selecionada != "Todas":
-        df_exibicao = df_consolidado[df_consolidado["turma"] == turma_selecionada]
-    else:
-        df_exibicao = df_consolidado
+    # Filtro de Turma
+    turmas = sorted(df_consolidado["turma"].dropna().unique())
+    turma_sel = col_f1.selectbox("Filtrar por Turma:", ["Todas"] + turmas)
+
+    # Filtro de Professor (Multiselect para permitir selecionar vários)
+    professores = sorted(df_consolidado["professor_nome"].dropna().unique())
+    prof_sel = col_f2.multiselect("Filtrar por Professor(es):", professores)
+
+    # Aplicando os filtros
+    df_exibicao = df_consolidado.copy()
+
+    if turma_sel != "Todas":
+        df_exibicao = df_exibicao[df_exibicao["turma"] == turma_sel]
+
+    if prof_sel:
+        df_exibicao = df_exibicao[df_exibicao["professor_nome"].isin(prof_sel)]
 
     # 4. Exibição dos cards
-    st.subheader(f"📋 Total de Equipes: {len(df_exibicao)}")
+    st.subheader(f"📋 Total de Equipes Filtradas: {len(df_exibicao)}")
 
     for _, row in df_exibicao.iterrows():
         titulo = row.get("titulo_trabalho", "Título não localizado")
@@ -58,7 +69,6 @@ def mostrar_painel_organizacao(db_alunos, db_provas):
 
             with col1:
                 st.markdown(f"### 📘 {titulo}")
-                # Exibindo o Professor e Disciplina logo abaixo do título
                 st.caption(f"👨‍🏫 **Orientador:** {prof} | 🧪 **Disciplina:** {disc}")
                 st.markdown(f"🏫 **Turma:** {row.get('turma', 'N/A')}")
 
