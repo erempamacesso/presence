@@ -1,6 +1,4 @@
 import streamlit as st
-import sys
-import os
 from supabase import create_client
 
 # ==========================================
@@ -12,11 +10,6 @@ st.set_page_config(
     page_icon="🌍",
     initial_sidebar_state="collapsed",
 )
-
-# Força o reconhecimento das pastas de telas para evitar o erro 'No module named'
-projeto_raiz = os.path.abspath(os.path.dirname(__file__))
-if projeto_raiz not in sys.path:
-    sys.path.insert(0, projeto_raiz)
 
 # ==========================================
 # IMPORTAÇÕES DAS TELAS (Nova Pasta!)
@@ -37,11 +30,11 @@ except ImportError as e:
 @st.cache_resource
 def init_connections():
     try:
-        # O .strip() remove espaços acidentais que causam o erro 'Name or service not known'
-        url_alunos = st.secrets["SUPABASE_URL_ALUNOS"].strip()
-        key_alunos = st.secrets["SUPABASE_KEY_ALUNOS"].strip()
-        url_provas = st.secrets["SUPABASE_URL_PROVAS"].strip()
-        key_provas = st.secrets["SUPABASE_KEY_PROVAS"].strip()
+        # O .strip(" '\"") remove espaços, aspas simples e duplas acidentais
+        url_alunos = st.secrets["SUPABASE_URL_ALUNOS"].strip(" '\"")
+        key_alunos = st.secrets["SUPABASE_KEY_ALUNOS"].strip(" '\"")
+        url_provas = st.secrets["SUPABASE_URL_PROVAS"].strip(" '\"")
+        key_provas = st.secrets["SUPABASE_KEY_PROVAS"].strip(" '\"")
 
         db_alunos = create_client(url_alunos, key_alunos)
         db_provas = create_client(url_provas, key_provas)
