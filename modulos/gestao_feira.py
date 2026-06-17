@@ -4,9 +4,12 @@ import time
 from github import Github
 
 
-def exibir_gestao_feira(supabase_conn):
-    st.title("🎪 Central de Eventos e Feiras")
-    st.markdown("Gerencie os eventos, banners, editais e linhas de pesquisa da escola.")
+def exibir_gestao_feira(
+    db_alunos,
+    db_provas
+):
+
+    supabase_conn = db_alunos
 
     # Função para formatar data ISO (2025-05-20) para BR (20/05/2025)
     def formatar_data_br(data_iso):

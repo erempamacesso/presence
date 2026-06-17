@@ -66,17 +66,21 @@ try:
     URL_SUPABASE = st.secrets["SUPABASE_URL_ALUNOS"]
     CHAVE_SUPABASE = st.secrets["SUPABASE_KEY_ALUNOS"]
     supabase: Client = create_client(URL_SUPABASE, CHAVE_SUPABASE)
+
+    URL_SUPABASE_PROVAS = st.secrets["SUPABASE_URL_PROVAS"]
+    CHAVE_SUPABASE_PROVAS = st.secrets["SUPABASE_KEY_PROVAS"]
+
+    supabase_provas: Client = create_client(URL_SUPABASE_PROVAS, CHAVE_SUPABASE_PROVAS)
+
 except Exception as e:
-    st.error(f"🚨 Erro ao conectar no Supabase: {e}")
-    st.stop()
 
-# ==========================================
-# 4. GERENCIADOR DE ESTADO E LINKS DIRETOS
-# ==========================================
+    # ==========================================
+    # 4. GERENCIADOR DE ESTADO E LINKS DIRETOS
+    # ==========================================
 
-# 1. O SENSOR DE URL: Verifica se alguém clicou em um link direto
-if "page" in st.query_params:
-    pagina_destino = st.query_params.get("page")
+    # 1. O SENSOR DE URL: Verifica se alguém clicou em um link direto
+    if "page" in st.query_params:
+        pagina_destino = st.query_params.get("page")
 
     # Se o link tiver "?page=eventos_erempam", direciona para a tela correta
     if pagina_destino in ["criar_evento", "eventos_erempam"]:
@@ -276,4 +280,7 @@ elif st.session_state.pagina == "importacao":
     exibir_importacao(supabase)
 
 elif st.session_state.pagina == "gestao_feira":
-    exibir_gestao_feira(supabase)
+    exibir_gestao_feira(
+        supabase,
+        supabase_provas
+    )
