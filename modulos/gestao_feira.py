@@ -1030,9 +1030,14 @@ def exibir_gestao_feira(db_alunos, db_provas):
             st.subheader("📊 Monitoramento das Inscrições por Turma")
 
             try:
-                res_eventos = (
-                    supabase_conn.table("feira_eventos").select("id,nome").execute()
-                )
+                with st.spinner("Conectando ao banco de dados..."):
+                    try:
+                        res_eventos = (
+                            supabase_conn.table("feira_eventos").select("id,nome").execute()
+                        )
+                    except Exception as e_dns:
+                        st.error(f"🚨 Falha de conexão com o Banco de Alunos. Verifique a URL do Supabase. Erro: {e_dns}")
+                        st.stop()
 
                 if not res_eventos.data:
                     st.info("Nenhum evento cadastrado.")
@@ -1065,12 +1070,16 @@ def exibir_gestao_feira(db_alunos, db_provas):
                 # BUSCA INSCRIÇÕES
                 # --------------------------
 
-                res_insc = (
-                    db_provas.table("feira_inscricoes")
-                    .select("*")
-                    .eq("evento_id", evento_id)
-                    .execute()
-                )
+                try:
+                    res_insc = (
+                        db_provas.table("feira_inscricoes")
+                        .select("*")
+                        .eq("evento_id", evento_id)
+                        .execute()
+                    )
+                except Exception as e_dns_p:
+                    st.error(f"🚨 Falha de conexão com o Banco de Provas. Erro: {e_dns_p}")
+                    st.stop()
 
                 inscricoes = res_insc.data or []
 
