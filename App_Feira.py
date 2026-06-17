@@ -17,7 +17,8 @@ st.set_page_config(
 try:
     from telas_app_aluno.login import mostrar_tela_login
     from telas_app_aluno.ante_sala import mostrar_ante_sala
-    from telas_app_aluno.inscricao_aluno import mostrar_modulo_eventos
+    from telas_app_aluno.inscricao_aluno import mostrar_inscricao_aluno
+    from telas_gestao.visualizacao_equipes import mostrar_painel_organizacao
 except ImportError as e:
     st.error(f"❌ Erro ao importar módulos: {e}")
     st.stop()
@@ -64,5 +65,8 @@ if st.session_state.etapa == "login":
 elif st.session_state.etapa == "ante_sala":
     mostrar_ante_sala()  # O HUB Central (Ecossistema)
 
-elif st.session_state.etapa == "eventos_erempam":
-    mostrar_modulo_eventos(db_alunos, db_provas)
+elif st.session_state.etapa == "inscricao_aluno":
+    mostrar_inscricao_aluno(db_alunos, db_provas)
+
+elif st.session_state.etapa == "gestao_organizacao":
+    mostrar_painel_organizacao(db_alunos, db_provas)
