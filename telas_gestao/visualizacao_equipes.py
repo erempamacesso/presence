@@ -1,87 +1,86 @@
 import streamlit as st
 import pandas as pd
 
-def obter_dados_teste():
-    """Gera dados fictícios simulando o Supabase para testes locais sem internet/DNS"""
-    temas_fakes = [
-        {"id": "ee09dbeb-af9f-4b37-9bf1-b603d6a6144a", "evento_id": "1", "titulo_trabalho": "Robótica Sustentável com Arduino", "professor_nome": "Fábio Souza", "disciplina": "Física", "Serie": "1º", "descricao": "Protótipos usando lixo eletrônico."},
-        {"id": "aa123456-bb88-9999-0000-abcdefcccccc", "evento_id": "1", "titulo_trabalho": "Análise da Água do Rio Local", "professor_nome": "Maria Silva", "disciplina": "Química", "Serie": "2º", "descricao": "Coleta e verificação de pH."},
-        {"id": "cc987654-dd11-2222-3333-xyzxyzxyzxyz", "evento_id": "1", "titulo_trabalho": "Desenvolvimento de Jogos Educativos", "professor_nome": "José Santos", "disciplina": "Matemática", "Serie": "3º", "descricao": "Criação de jogos lógicos no Scratch."}
-    ]
-    inscricoes_fakes = [
-        {"tema_id": "ee09dbeb-af9f-4b37-9bf1-b603d6a6144a", "evento_id": "1", "turma": "1º Ano A", "nomes_membros": "José Silva, Lucas Almeida, Mariana Costa"}
-    ]
-    return temas_fakes, inscricoes_fakes
 
 def mostrar_painel_organizacao(db_alunos, db_provas):
     st.title("📊 Painel de Monitoramento - Equipes")
     st.markdown("---")
 
-    eventos_dict = {}
-    usando_dados_teste = False
-
-    # 1. Tenta carregar a lista de eventos do banco real
-    try:
-        res_eventos = db_alunos.table("feira_eventos").select("id, nome").eq("ativo", True).execute()
-        if res_eventos.data:
-            eventos_dict = {ev["nome"]: ev["id"] for ev in res_eventos.data}
-    except Exception:
-        # Se falhar o DNS/Rede aqui, ativa o fallback de teste
-        usando_dados_teste = True
-
-    # Se o banco falhou ou retornou vazio, preenche com os dados de demonstração
-    if usando_dados_teste or not eventos_dict:
-        usando_dados_teste = True
-        st.info("💡 Conexão com o Supabase indisponível (Erro de DNS/Rede). Ativando Modo de Demonstração Local.")
-        eventos_dict = {"NATUMAT 2026 (Demonstração)": "1"}
-
-    # Componentes visuais desenhados APENAS UMA VEZ (Evita o StreamlitDuplicateElementId)
-    nome_evento = st.selectbox("Selecione o Evento:", options=list(eventos_dict.keys()))
-    evento_id = eventos_dict[nome_evento]
-    
-    serie_selecionada = st.radio("Filtrar por Série:", ["1º", "2º", "3º", "Geral"], horizontal=True)
-
-    temas_data = []
-    inscricoes_data = []
-
-    # 2. Coleta dos dados dependendo do modo (Real ou Demonstração)
-    if not usando_dados_teste:
-        try:
-            query_temas = db_alunos.table("feira_temas").select("*").eq("evento_id", evento_id)
-            if serie_selecionada != "Geral":
-                query_temas = query_temas.eq("Serie", serie_selecionada)
-            temas_data = query_temas.execute().data
-
-            inscricoes_data = db_provas.table("feira_inscricoes").select("*").eq("evento_id", evento_id).execute().data
-        except Exception as e_dados:
-            st.error(f"Erro ao buscar os dados do evento: {e_dados}")
-            return
-    else:
-        # Carrega os dados simulados
-        f_temas, f_insc = obter_dados_teste()
-        if serie_selecionada != "Geral":
-            temas_data = [t for t in f_temas if t["Serie"] == serie_selecionada]
-        else:
-            temas_data = f_temas
-        inscricoes_data = f_insc
-
-    # 3. Validação e Renderização
-    if not temas_data:
-        st.info(f"Nenhum tema disponível para exibição nesta categoria.")
+    # Garante que os objetos de conexão passados pelo gestao_feira.py existem
+    if db_alunos is None or db_provas is None:
+        st.error(
+            "🚨 Conexões de banco de dados não inicializadas no arquivo principal."
+        )
         return
 
-    df_temas = pd.DataFrame(temas_data)
-    df_inscricoes = pd.DataFrame(inscricoes_data)
+    # 1. Componentes de Filtro Visuais (Criados apenas uma vez)
+    try:
+        res_eventos = (
+            db_alunos.table("feira_eventos")
+            .select("id, nome")
+            .eq("ativo", True)
+            .execute()
+        )
+        if not res_eventos.data:
+            st.warning("Não há eventos ativos no momento.")
+            return
+        eventos_dict = {ev["nome"]: ev["id"] for ev in res_eventos.data}
+    except Exception as e_net:
+        st.error("🚨 Erro de Rede/DNS ao alcançar o servidor do Supabase.")
+        st.info(
+            "Verifique se as chaves estão corretas nas Settings do Streamlit Cloud."
+        )
+        with st.expander("Detalhes do erro técnico"):
+            st.code(str(e_net))
+        return
 
-    # Executa o cruzamento (Merge em memória)
+    nome_evento = st.selectbox("Selecione o Evento:", options=list(eventos_dict.keys()))
+    evento_id = eventos_dict[nome_evento]
+
+    serie_selecionada = st.radio(
+        "Filtrar por Série:", ["1º", "2º", "3º", "Geral"], horizontal=True
+    )
+
+    # 2. Coleta de Dados Brutos nos dois bancos isolados
+    try:
+        # Busca temas no Projeto Alunos (Banco 1)
+        query_temas = (
+            db_alunos.table("feira_temas").select("*").eq("evento_id", evento_id)
+        )
+        if serie_selecionada != "Geral":
+            query_temas = query_temas.eq("Serie", serie_selecionada)
+        res_temas = query_temas.execute()
+
+        # Busca inscrições no Projeto Provas (Banco 2)
+        res_inscricoes = (
+            db_provas.table("feira_inscricoes")
+            .select("*")
+            .eq("evento_id", evento_id)
+            .execute()
+        )
+
+    except Exception as e_busca:
+        st.error(f"Erro ao consultar tabelas nos bancos: {e_busca}")
+        return
+
+    if not res_temas.data:
+        st.info(
+            f"Nenhum tema cadastrado para a série {serie_selecionada} neste evento."
+        )
+        return
+
+    # 3. Integração em Memória com Pandas (O "Join" dos dois Bancos)
+    df_temas = pd.DataFrame(res_temas.data)
+    df_inscricoes = pd.DataFrame(res_inscricoes.data)
+
     if not df_inscricoes.empty:
         df_consolidado = pd.merge(
             df_temas,
             df_inscricoes,
-            left_on="id",       
-            right_on="tema_id", 
+            left_on="id",  # Coluna 'id' da imagem da tabela feira_temas
+            right_on="tema_id",  # Coluna 'tema_id' da imagem da tabela feira_inscricoes
             how="left",
-            suffixes=("_tema", "_insc")
+            suffixes=("_tema", "_insc"),
         )
     else:
         df_consolidado = df_temas.copy()
@@ -89,9 +88,13 @@ def mostrar_painel_organizacao(db_alunos, db_provas):
         df_consolidado["nomes_membros"] = None
         df_consolidado["tema_id"] = None
 
-    # Painel de Métricas do topo
+    # 4. Painel de Indicadores
     total_temas = len(df_consolidado)
-    vagas_ocupadas = df_consolidado["tema_id"].notna().sum() if "tema_id" in df_consolidado.columns else 0
+    vagas_ocupadas = (
+        df_consolidado["tema_id"].notna().sum()
+        if "tema_id" in df_consolidado.columns
+        else 0
+    )
     vagas_disponiveis = max(0, total_temas - vagas_ocupadas)
 
     m1, m2, m3 = st.columns(3)
@@ -100,16 +103,17 @@ def mostrar_painel_organizacao(db_alunos, db_provas):
     m3.metric("Temas Disponíveis", vagas_disponiveis)
     st.markdown("---")
 
-    # Renderização dos cartões visuais com a tradução correta
+    # 5. Apresentação dos Cards Traduzidos
     for _, row in df_consolidado.iterrows():
         with st.container(border=True):
             col_t, col_s = st.columns([3, 1])
 
             with col_t:
+                # TRADUÇÃO CONCLUÍDA: Mostra o Nome Real do trabalho em vez do ID alfanumérico!
                 st.markdown(f"### 📘 {row['titulo_trabalho']}")
-                st.caption(f"🧪 {row['disciplina']} | 👨‍🏫 Prof. {row.get('professor_nome', 'N/A')} | 📅 Série: {row['Serie']}")
-                if pd.notna(row.get('descricao')) and row['descricao']:
-                    st.markdown(f"*{row['descricao']}*")
+                st.caption(
+                    f"🧪 {row['disciplina']} | 👨‍🏫 Prof. {row.get('professor_nome', 'N/A')} | 📅 Série: {row['Serie']}"
+                )
 
             with col_s:
                 if "tema_id" in row and pd.notna(row["tema_id"]):
@@ -117,6 +121,7 @@ def mostrar_painel_organizacao(db_alunos, db_provas):
                 else:
                     st.warning("⚪ VAGO")
 
+            # Se houver uma equipe casada a este tema, detalha o grupo
             if "tema_id" in row and pd.notna(row["tema_id"]):
                 with st.expander("🔍 Ver Detalhes da Equipe"):
                     st.write(f"**Turma:** {row.get('turma', 'Não informada')}")
