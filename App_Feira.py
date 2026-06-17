@@ -13,7 +13,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# Força o reconhecimento das pastas de telas
+# Força o reconhecimento das pastas de telas para evitar o erro 'No module named'
 projeto_raiz = os.path.abspath(os.path.dirname(__file__))
 if projeto_raiz not in sys.path:
     sys.path.insert(0, projeto_raiz)
