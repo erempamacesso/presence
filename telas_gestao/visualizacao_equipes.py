@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import os
 
 
 def mostrar_painel_organizacao(db_alunos, db_provas):
