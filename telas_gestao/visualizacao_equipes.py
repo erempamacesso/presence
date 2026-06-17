@@ -10,14 +10,15 @@ def mostrar_painel_organizacao(db_alunos, db_provas):
         st.error("🚨 Conexões de banco de dados não inicializadas.")
         return
 
-    # 1. Busca dos Dados nos dois bancos
+    # 1. Busca dos Dados
     try:
         with st.spinner("Sincronizando dados dos bancos..."):
-            # Busca temas (para ter o título do trabalho)
+            # Adicionamos 'professor_nome' e 'disciplina' na busca
             res_temas = (
-                db_alunos.table("feira_temas").select("id, titulo_trabalho").execute()
+                db_alunos.table("feira_temas")
+                .select("id, titulo_trabalho, professor_nome, disciplina")
+                .execute()
             )
-            # Busca inscrições (para ter os membros e turma)
             res_inscricoes = db_provas.table("feira_inscricoes").select("*").execute()
 
             df_temas = pd.DataFrame(res_temas.data)
@@ -30,8 +31,7 @@ def mostrar_painel_organizacao(db_alunos, db_provas):
         st.warning("Nenhuma inscrição encontrada.")
         return
 
-    # 2. Integração (Transformar ID em Nome)
-    # Fazemos um merge: para cada inscrição, buscamos o título do tema correspondente
+    # 2. Integração
     df_consolidado = pd.merge(
         df_inscricoes, df_temas, left_on="tema_id", right_on="id", how="left"
     )
@@ -49,14 +49,17 @@ def mostrar_painel_organizacao(db_alunos, db_provas):
     st.subheader(f"📋 Total de Equipes: {len(df_exibicao)}")
 
     for _, row in df_exibicao.iterrows():
-        # Trata o título (pega do banco de temas ou avisa se não achar)
         titulo = row.get("titulo_trabalho", "Título não localizado")
+        prof = row.get("professor_nome", "Não informado")
+        disc = row.get("disciplina", "Não informada")
 
         with st.container(border=True):
             col1, col2 = st.columns([3, 1])
 
             with col1:
                 st.markdown(f"### 📘 {titulo}")
+                # Exibindo o Professor e Disciplina logo abaixo do título
+                st.caption(f"👨‍🏫 **Orientador:** {prof} | 🧪 **Disciplina:** {disc}")
                 st.markdown(f"🏫 **Turma:** {row.get('turma', 'N/A')}")
 
             with col2:
