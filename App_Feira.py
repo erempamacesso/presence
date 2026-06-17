@@ -37,16 +37,17 @@ except ImportError as e:
 @st.cache_resource
 def init_connections():
     try:
-        url_alunos = st.secrets["SUPABASE_URL_ALUNOS"]
-        key_alunos = st.secrets["SUPABASE_KEY_ALUNOS"]
-        url_provas = st.secrets["SUPABASE_URL_PROVAS"]
-        key_provas = st.secrets["SUPABASE_KEY_PROVAS"]
+        # O .strip() remove espaços acidentais que causam o erro 'Name or service not known'
+        url_alunos = st.secrets["SUPABASE_URL_ALUNOS"].strip()
+        key_alunos = st.secrets["SUPABASE_KEY_ALUNOS"].strip()
+        url_provas = st.secrets["SUPABASE_URL_PROVAS"].strip()
+        key_provas = st.secrets["SUPABASE_KEY_PROVAS"].strip()
 
         db_alunos = create_client(url_alunos, key_alunos)
         db_provas = create_client(url_provas, key_provas)
         return db_alunos, db_provas
     except Exception as e:
-        st.error("🚨 Erro ao carregar as credenciais.")
+        st.error(f"🚨 Erro ao carregar as credenciais: {e}")
         st.stop()
 
 

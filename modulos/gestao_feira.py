@@ -1033,10 +1033,14 @@ def exibir_gestao_feira(db_alunos, db_provas):
                 with st.spinner("Conectando ao banco de dados..."):
                     try:
                         res_eventos = (
-                            supabase_conn.table("feira_eventos").select("id,nome").execute()
+                            supabase_conn.table("feira_eventos")
+                            .select("id,nome")
+                            .execute()
                         )
                     except Exception as e_dns:
-                        st.error(f"🚨 Falha de conexão com o Banco de Alunos. Verifique a URL do Supabase. Erro: {e_dns}")
+                        st.error(
+                            f"🚨 Falha de conexão com o Banco de Alunos. Verifique a URL do Supabase. Erro: {e_dns}"
+                        )
                         st.stop()
 
                 if not res_eventos.data:
@@ -1078,7 +1082,12 @@ def exibir_gestao_feira(db_alunos, db_provas):
                         .execute()
                     )
                 except Exception as e_dns_p:
-                    st.error(f"🚨 Falha de conexão com o Banco de Provas. Erro: {e_dns_p}")
+                    url_erro = st.secrets.get(
+                        "SUPABASE_URL_PROVAS", "URL não encontrada"
+                    )
+                    st.error(f"🚨 Falha de conexão com o Banco de Provas.")
+                    st.warning(f"Verifique se esta URL está correta: {url_erro}")
+                    st.error(f"Erro técnico: {e_dns_p}")
                     st.stop()
 
                 inscricoes = res_insc.data or []
