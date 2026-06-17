@@ -769,10 +769,10 @@ def exibir_gestao_feira(supabase_conn):
     # ABA 4: GESTÃO DE TRABALHOS (CADASTRO E EDIÇÃO)
     # ==========================================
     with aba_trabalhos:
-        sub_tab_labels = ["➕ Novo Trabalho", "🔧 Editar / Excluir"]
+        sub_tab_labels = ["➕ Novo Trabalho", "🔧 Editar / Excluir","📊 Monitoramento por Turma"]
 
         # Renderiza as sub-abas
-        aba_cad, aba_edit = st.tabs(sub_tab_labels)
+        aba_cad, aba_edit, aba_monitor = st.tabs(sub_tab_labels)
 
         with aba_cad:
             st.subheader("Cadastro de Linhas de Pesquisa / Temas")
@@ -1015,3 +1015,183 @@ def exibir_gestao_feira(supabase_conn):
                                     st.rerun()
             except Exception as e:
                 st.error(f"Erro na gestão de trabalhos: {e}")
+                
+           
+        with aba_monitor:
+                st.subheader("📊 Monitoramento das Inscrições por Turma")
+
+                try:
+                    res_eventos = (
+                        supabase_conn.table("feira_eventos")
+                        .select("id,nome")
+                        .execute()
+                    )
+
+                    if not res_eventos.data:
+                        st.info("Nenhum evento cadastrado.")
+                        st.stop()
+
+                    eventos_dict = {
+                        item["nome"]: item["id"]
+                        for item in res_eventos.data
+                    }
+
+                    evento_nome = st.selectbox(
+                        "Selecione o Evento",
+                        list(eventos_dict.keys()),
+                        key="monitor_evento"
+                    )
+
+                    evento_id = eventos_dict[evento_nome]
+
+                    # --------------------------
+                    # BUSCA TEMAS
+                    # --------------------------
+
+                    res_temas = (
+                        supabase_conn.table("feira_temas")
+                        .select("*")
+                        .eq("evento_id", evento_id)
+                        .execute()
+                    )
+
+                    temas = res_temas.data or []
+
+                    # --------------------------
+                    # BUSCA INSCRIÇÕES
+                    # --------------------------
+
+                    res_insc = (
+                        supabase_conn.table("feira_inscricoes")
+                        .select("*")
+                        .eq("evento_id", evento_id)
+                        .execute()
+                    )
+
+                    inscricoes = res_insc.data or []
+
+                    turmas = [
+                        "1ºA","1ºB","1ºC",
+                        "2ºA","2ºB","2ºC",
+                        "3ºA","3ºB","3ºC"
+                    ]
+
+                    turma_sel = st.selectbox(
+                        "Selecione a Turma",
+                        turmas,
+                        key="monitor_turma"
+                    )
+
+                    # --------------------------
+                    # INSCRIÇÕES DA TURMA
+                    # --------------------------
+
+                    inscricoes_turma = [
+                        x for x in inscricoes
+                        if str(x.get("turma","")).strip() == turma_sel
+                    ]
+
+                    temas_inscritos_ids = [
+                        x["tema_id"]
+                        for x in inscricoes_turma
+                        if x.get("tema_id")
+                    ]
+
+                    trabalhos_inscritos = [
+                        t for t in temas
+                        if t["id"] in temas_inscritos_ids
+                    ]
+
+                    trabalhos_vagos = [
+                        t for t in temas
+                        if t["id"] not in temas_inscritos_ids
+                    ]
+
+                    c1, c2, c3 = st.columns(3)
+
+                    c1.metric(
+                        "Total Trabalhos",
+                        len(temas)
+                    )
+
+                    c2.metric(
+                        "Inscritos",
+                        len(trabalhos_inscritos)
+                    )
+
+                    c3.metric(
+                        "Sem Inscrição",
+                        len(trabalhos_vagos)
+                    )
+
+                    st.divider()
+
+                    # ==================================
+                    # INSCRITOS
+                    # ==================================
+
+                    st.markdown("## ✅ Trabalhos já inscritos")
+
+                    if not trabalhos_inscritos:
+                        st.info("Nenhum trabalho inscrito nesta turma.")
+                    else:
+
+                        for tema in trabalhos_inscritos:
+
+                            with st.container(border=True):
+
+                                st.markdown(
+                                    f"### {tema['titulo_trabalho']}"
+                                )
+
+                                st.write(
+                                    f"👨‍🏫 Professor: {tema['professor_nome']}"
+                                )
+
+                                st.write(
+                                    f"🧪 Disciplina: {tema['disciplina']}"
+                                )
+
+                                st.write(
+                                    f"🎓 Série: {tema['Serie']}"
+                                )
+
+                    st.divider()
+
+                    # ==================================
+                    # VAGOS
+                    # ==================================
+
+                    st.markdown("## ⚪ Trabalhos sem inscrição")
+
+                    if not trabalhos_vagos:
+                        st.success(
+                            "Todos os trabalhos já receberam inscrição."
+                        )
+
+                    else:
+
+                        for tema in trabalhos_vagos:
+
+                            with st.container(border=True):
+
+                                st.markdown(
+                                    f"### {tema['titulo_trabalho']}"
+                                )
+
+                                st.write(
+                                    f"👨‍🏫 Professor: {tema['professor_nome']}"
+                                )
+
+                                st.write(
+                                    f"🧪 Disciplina: {tema['disciplina']}"
+                                )
+
+                                st.write(
+                                    f"🎓 Série: {tema['Serie']}"
+                                )
+
+                except Exception as e:
+                    st.error(
+                        f"Erro no monitoramento: {e}"
+                    )
