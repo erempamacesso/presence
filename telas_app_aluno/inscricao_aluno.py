@@ -423,6 +423,108 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                             if str(insc.get("lider_id")) == id_aluno:
                                 st.success("🌟 Você é o Líder")
 
+                                # --- NOVO: FUNCIONALIDADE DE ALTERAR TEMA ---
+                                with st.popover(
+                                    "📝 Alterar Tema", use_container_width=True
+                                ):
+                                    st.markdown("##### Escolha um novo Tema")
+                                    try:
+                                        # 1. Buscar todos os temas do evento
+                                        res_t = (
+                                            db_alunos.table("feira_temas")
+                                            .select("*")
+                                            .eq("evento_id", insc["evento_id"])
+                                            .execute()
+                                        )
+                                        temas_evento = res_t.data or []
+                                        todos_t_dict = {
+                                            t["id"]: t for t in temas_evento
+                                        }
+
+                                        # 2. Buscar outras inscrições para travas (excluindo a própria para liberar o tema atual)
+                                        res_i = (
+                                            db_provas.table("feira_inscricoes")
+                                            .select("tema_id, turma")
+                                            .eq("evento_id", insc["evento_id"])
+                                            .neq("id", insc["id"])
+                                            .execute()
+                                        )
+                                        outras_insc = res_i.data or []
+
+                                        temas_ocupados = [
+                                            i["tema_id"] for i in outras_insc
+                                        ]
+                                        disc_bloqueadas = {
+                                            todos_t_dict[i["tema_id"]].get("disciplina")
+                                            for i in outras_insc
+                                            if i["turma"] == turma_aluno
+                                            and i["tema_id"] in todos_t_dict
+                                        }
+
+                                        # 3. Filtrar temas por série e disponibilidade (Trava Dupla)
+                                        opcoes_tema = {}
+                                        for t in temas_evento:
+                                            if str(t.get("Serie")).strip() in (
+                                                serie_aluno,
+                                                "Geral",
+                                            ):
+                                                # Disponível se não ocupado por outro grupo E disciplina não bloqueada pela turma
+                                                if (
+                                                    t["id"] not in temas_ocupados
+                                                    and t.get("disciplina")
+                                                    not in disc_bloqueadas
+                                                ):
+                                                    opcoes_tema[
+                                                        f"{t['titulo_trabalho']} ({t['disciplina']})"
+                                                    ] = t["id"]
+
+                                        if not opcoes_tema:
+                                            st.warning(
+                                                "Não há outros temas disponíveis no momento."
+                                            )
+                                        else:
+                                            tema_atual_id = insc["tema_id"]
+                                            lista_nomes = list(opcoes_tema.keys())
+                                            idx_padrao = 0
+                                            for i, nome in enumerate(lista_nomes):
+                                                if opcoes_tema[nome] == tema_atual_id:
+                                                    idx_padrao = i
+                                                    break
+
+                                            novo_tema_nome = st.selectbox(
+                                                "Selecione o novo tema:",
+                                                options=lista_nomes,
+                                                index=idx_padrao,
+                                                key=f"sel_t_edit_{insc['id']}",
+                                            )
+
+                                            if st.button(
+                                                "💾 Confirmar Novo Tema",
+                                                key=f"save_t_edit_{insc['id']}",
+                                                type="primary",
+                                                use_container_width=True,
+                                            ):
+                                                db_provas.table(
+                                                    "feira_inscricoes"
+                                                ).update(
+                                                    {
+                                                        "tema_id": opcoes_tema[
+                                                            novo_tema_nome
+                                                        ]
+                                                    }
+                                                ).eq(
+                                                    "id", insc["id"]
+                                                ).execute()
+                                                st.success(
+                                                    "✅ Tema atualizado com sucesso!"
+                                                )
+                                                time.sleep(1)
+                                                st.rerun()
+                                    except Exception as e_t:
+                                        st.error(
+                                            f"Erro ao carregar temas para edição: {e_t}"
+                                        )
+
                                 # --- NOVO: FUNCIONALIDADE DE EDIÇÃO DE EQUIPE ---
                                 with st.popover(
                                     "👥 Gerenciar Membros", use_container_width=True
