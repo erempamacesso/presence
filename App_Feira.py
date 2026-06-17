@@ -1,4 +1,6 @@
 import streamlit as st
+import sys
+import os
 from supabase import create_client
 
 # ==========================================
@@ -10,6 +12,11 @@ st.set_page_config(
     page_icon="🌍",
     initial_sidebar_state="collapsed",
 )
+
+# Força o reconhecimento das pastas de telas
+projeto_raiz = os.path.abspath(os.path.dirname(__file__))
+if projeto_raiz not in sys.path:
+    sys.path.insert(0, projeto_raiz)
 
 # ==========================================
 # IMPORTAÇÕES DAS TELAS (Nova Pasta!)
