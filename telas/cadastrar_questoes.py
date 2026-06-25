@@ -380,15 +380,17 @@ def mostrar_tela_cadastrar_questoes(supabase):
                     st.error(f"🔴 {n_erradas} questão(ões) com frente incorreta ou ausente.")
 
                     # Tabela de problemas
-                    df_problemas = df_assunto[df_assunto['status_frente'] != "✅ Correta"][
-                        ['preview', 'serie', 'frente', 'status_frente']
-                    ].rename(columns={
-                        'preview': 'Questão',
-                        'serie': 'Série',
-                        'frente': 'Frente Atual',
-                        'status_frente': 'Status',
-                    })
-                    st.dataframe(df_problemas, use_container_width=True, hide_index=True)
+                    df_erradas = df_assunto[df_assunto['status_frente'] != "✅ Correta"]
+                    ids_errados = df_erradas['id'].tolist()
+                    st.dataframe(
+                        df_erradas[['preview', 'serie', 'frente', 'status_frente']].rename(columns={
+                            'preview': 'Questão',
+                            'serie': 'Série',
+                            'frente': 'Frente Atual',
+                            'status_frente': 'Status',
+                        }),
+                        use_container_width=True, hide_index=True,
+                    )
 
                     st.divider()
                     st.write("### 🔧 Correção em Massa")
@@ -401,8 +403,6 @@ def mostrar_tela_cadastrar_questoes(supabase):
                         format_func=lambda x: x if x else "Selecione...",
                         key="frente_correcao_massa",
                     )
-
-                    ids_errados = df_problemas['ID'].tolist()
                     btn_label = f"⚡ Corrigir {len(ids_errados)} questão(ões) → {frente_correcao or '...'}"
 
                     if st.button(btn_label, type="primary", disabled=not frente_correcao, use_container_width=True):
