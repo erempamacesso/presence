@@ -316,7 +316,7 @@ def mostrar_tela_cadastrar_questoes(supabase):
             "e corrija todas de uma vez."
         )
 
-        res_all = supabase.table("questoes").select("*").execute()
+        res_all = supabase.table("questoes").select("id, assunto, frente, serie").execute()
 
         if not res_all.data:
             st.info("Nenhuma questão cadastrada.")
