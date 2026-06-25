@@ -6,7 +6,6 @@ import pandas as pd
 import re
 from telas.config_frentes import (
     FRENTES,
-    FRENTE_DESCRICAO,
     ASSUNTOS_POR_FRENTE,
     FRENTE_POR_ASSUNTO,
     sugerir_frente,
@@ -56,7 +55,7 @@ def mostrar_tela_cadastrar_questoes(supabase):
             frente = col_f.selectbox(
                 "Frente",
                 frente_options,
-                format_func=lambda x: f"{x} – {FRENTE_DESCRICAO[x]}" if x else "Selecione...",
+                format_func=lambda x: x if x else "Selecione...",
             )
 
             st.divider()
@@ -90,7 +89,7 @@ def mostrar_tela_cadastrar_questoes(supabase):
                             "enunciado": enunciado,
                             "serie": serie,
                             "assunto": assunto,
-                            "frentes": frente,
+                            "frente": frente,
                             "alternativas": alts_dados,
                             "resposta_correta": correta,
                             "revisada": True
@@ -105,7 +104,7 @@ def mostrar_tela_cadastrar_questoes(supabase):
         if assunto:
             sugestao = sugerir_frente(assunto)
             if sugestao:
-                st.info(f"💡 Frente sugerida para **{assunto}**: **{sugestao} – {FRENTE_DESCRICAO[sugestao]}**")
+                st.info(f"💡 Frente sugerida para **{assunto}**: **{sugestao}**")
 
     # ==========================================
     # ABA 2: IMPORTAÇÃO FLASH
@@ -118,7 +117,7 @@ def mostrar_tela_cadastrar_questoes(supabase):
     "enunciado": "Qual o estado físico da água a 100°C ao nível do mar?",
     "serie": "2º ano",
     "assunto": "Termoquímica",
-    "frentes": "Frente 2",
+    "frente": "Frente 2",
     "alternativas": {
       "A": {"texto": "Sólido", "imagem": ""},
       "B": {"texto": "Líquido", "imagem": ""},
@@ -160,11 +159,11 @@ def mostrar_tela_cadastrar_questoes(supabase):
             df_q = pd.DataFrame(res_q.data)
 
             if 'revisada' not in df_q.columns: df_q['revisada'] = False
-            if 'frentes' not in df_q.columns: df_q['frentes'] = ""
+            if 'frente' not in df_q.columns: df_q['frente'] = ""
             df_q['revisada'] = df_q['revisada'].fillna(False)
             df_q['serie'] = df_q['serie'].fillna("Não definida")
             df_q['assunto'] = df_q['assunto'].fillna("Sem assunto")
-            df_q['frentes'] = df_q['frentes'].fillna("")
+            df_q['frente'] = df_q['frente'].fillna("")
 
             st.write("### 🔍 Filtros de Busca")
             c_f1, c_f2, c_f3 = st.columns([1, 1, 1])
@@ -221,14 +220,14 @@ def mostrar_tela_cadastrar_questoes(supabase):
                         serie_edit = col1.selectbox("Série", lista_series, index=idx_serie, key=f"serie_{id_q}")
                         assunto_edit = col2.text_input("Assunto", value=q_data.get('assunto', ''), key=f"assunto_{id_q}")
 
-                        frente_atual = q_data.get('frentes', '') or ''
+                        frente_atual = q_data.get('frente', '') or ''
                         frente_options_edit = [""] + FRENTES
                         idx_frente = frente_options_edit.index(frente_atual) if frente_atual in frente_options_edit else 0
                         frente_edit = col3.selectbox(
                             "Frente",
                             frente_options_edit,
                             index=idx_frente,
-                            format_func=lambda x: f"{x} – {FRENTE_DESCRICAO[x]}" if x else "Selecione...",
+                            format_func=lambda x: x if x else "Selecione...",
                             key=f"frente_{id_q}",
                         )
 
@@ -291,7 +290,7 @@ def mostrar_tela_cadastrar_questoes(supabase):
                                     "enunciado": enunc_edit,
                                     "serie": serie_edit,
                                     "assunto": assunto_edit,
-                                    "frentes": frente_edit,
+                                    "frente": frente_edit,
                                     "alternativas": alts_novas,
                                     "resposta_correta": correta_edit,
                                     "revisada": marcar_revisada
@@ -317,15 +316,15 @@ def mostrar_tela_cadastrar_questoes(supabase):
             "e corrija todas de uma vez."
         )
 
-        res_all = supabase.table("questoes").select("id, assunto, frentes, serie").execute()
+        res_all = supabase.table("questoes").select("*").execute()
 
         if not res_all.data:
             st.info("Nenhuma questão cadastrada.")
         else:
             df_all = pd.DataFrame(res_all.data)
-            if 'frentes' not in df_all.columns:
-                df_all['frentes'] = ""
-            df_all['frentes'] = df_all['frentes'].fillna("")
+            if 'frente' not in df_all.columns:
+                df_all['frente'] = ""
+            df_all['frente'] = df_all['frente'].fillna("")
             df_all['assunto'] = df_all['assunto'].fillna("Sem assunto")
 
             assuntos_unicos = sorted(df_all['assunto'].unique())
@@ -341,7 +340,7 @@ def mostrar_tela_cadastrar_questoes(supabase):
                 if frente_esperada:
                     col_info2.metric(
                         "Frente esperada",
-                        f"{frente_esperada} – {FRENTE_DESCRICAO[frente_esperada]}",
+                        frente_esperada,
                     )
                 else:
                     col_info2.warning(
@@ -351,10 +350,10 @@ def mostrar_tela_cadastrar_questoes(supabase):
 
                 # Classifica cada questão
                 def _status(row):
-                    if not row['frentes']:
+                    if not row['frente']:
                         return "❌ Sem frente"
-                    if frente_esperada and row['frentes'] != frente_esperada:
-                        return f"⚠️ Incorreta ({row['frentes']})"
+                    if frente_esperada and row['frente'] != frente_esperada:
+                        return f"⚠️ Incorreta ({row['frente']})"
                     return "✅ Correta"
 
                 df_assunto['status_frente'] = df_assunto.apply(_status, axis=1)
@@ -371,12 +370,12 @@ def mostrar_tela_cadastrar_questoes(supabase):
 
                     # Tabela de problemas
                     df_problemas = df_assunto[df_assunto['status_frente'] != "✅ Correta"][
-                        ['id', 'serie', 'assunto', 'frentes', 'status_frente']
+                        ['id', 'serie', 'assunto', 'frente', 'status_frente']
                     ].rename(columns={
                         'id': 'ID',
                         'serie': 'Série',
                         'assunto': 'Assunto',
-                        'frentes': 'Frente Atual',
+                        'frente': 'Frente Atual',
                         'status_frente': 'Status',
                     })
                     st.dataframe(df_problemas, use_container_width=True, hide_index=True)
@@ -389,7 +388,7 @@ def mostrar_tela_cadastrar_questoes(supabase):
                         "Definir frente correta para TODAS as questões problemáticas:",
                         frente_options_fix,
                         index=frente_options_fix.index(frente_esperada) if frente_esperada else 0,
-                        format_func=lambda x: f"{x} – {FRENTE_DESCRICAO[x]}" if x else "Selecione...",
+                        format_func=lambda x: x if x else "Selecione...",
                         key="frente_correcao_massa",
                     )
 
@@ -401,7 +400,7 @@ def mostrar_tela_cadastrar_questoes(supabase):
                             erros = []
                             for qid in ids_errados:
                                 try:
-                                    supabase.table("questoes").update({"frentes": frente_correcao}).eq("id", qid).execute()
+                                    supabase.table("questoes").update({"frente": frente_correcao}).eq("id", qid).execute()
                                 except Exception as e:
                                     erros.append(str(e))
                         if erros:
@@ -415,6 +414,6 @@ def mostrar_tela_cadastrar_questoes(supabase):
                 if n_corretas > 0:
                     with st.expander(f"Ver {n_corretas} questão(ões) com frente ✅ correta"):
                         df_ok = df_assunto[df_assunto['status_frente'] == "✅ Correta"][
-                            ['id', 'serie', 'assunto', 'frentes']
-                        ].rename(columns={'id': 'ID', 'serie': 'Série', 'assunto': 'Assunto', 'frentes': 'Frente'})
+                            ['id', 'serie', 'assunto', 'frente']
+                        ].rename(columns={'id': 'ID', 'serie': 'Série', 'assunto': 'Assunto', 'frente': 'Frente'})
                         st.dataframe(df_ok, use_container_width=True, hide_index=True)

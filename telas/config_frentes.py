@@ -1,16 +1,17 @@
 # Mapeamento canônico de assunto → frente para Química vestibular
-# Frente 1 = Química Geral | Frente 2 = Físico-Química | Frente 3 = Química Orgânica
+# Valores espelhados do banco: "Química Geral", "Físico-Química", "Química Orgânica"
 
-FRENTES = ["Frente 1", "Frente 2", "Frente 3"]
-
-FRENTE_DESCRICAO = {
-    "Frente 1": "Química Geral",
-    "Frente 2": "Físico-Química",
-    "Frente 3": "Química Orgânica",
-}
+FRENTES = ["Química Geral", "Físico-Química", "Química Orgânica"]
 
 ASSUNTOS_POR_FRENTE = {
-    "Frente 1": [
+    "Química Geral": [
+        "CALCULO DE DE MASSA MOLECULAR/MOLAR",
+        "Classificação de Sistemas e Misturas",
+        "Estequiometria (Cálculos em Reações)",
+        "Grandezas Químicas e Mol",
+        "Massa Molar e Molecular",
+        "RELAÇÕES ESTEQUIOMÉTRICAS",
+        "RELAÇÕES MOLARES E TRANSFORMAÇÕES DE UNIDADES",
         "Matéria e Propriedades",
         "Misturas e Separação de Misturas",
         "Atomística",
@@ -25,31 +26,47 @@ ASSUNTOS_POR_FRENTE = {
         "Nomenclatura Inorgânica",
         "Reações Inorgânicas",
         "Estequiometria",
-        "Gases",
     ],
-    "Frente 2": [
+    "Físico-Química": [
+        "Densidade",
+        "Diluição de Soluções",
+        "Estudo dos Gases",
+        "Mistura de Soluções",
+        "Radioatividade",
+        "Solubilidade e Cristalização",
+        "Soluções (Concentração)",
+        "Soluções Verdadeiras - Coeficiente de Solubilidade",
+        "Soluções Verdadeiras - Concentração Molar",
+        "Soluções Verdadeiras - Curvas de Solubilidade",
+        "Soluções Verdadeiras - Concentração Comum",
+        "Soluções Verdadeiras - Densidade",
+        "Soluções Verdadeiras - Purificação e Recristalização",
+        "Soluções Verdadeiras - Relação entre Concentrações",
+        "Soluções Verdadeiras - Soluto e Solvente",
+        "Soluções Verdadeiras - Título Percentual",
         "Termoquímica",
         "Cinética Química",
         "Equilíbrio Químico",
         "Equilíbrio Iônico",
-        "Soluções",
-        "Concentração de Soluções",
         "Propriedades Coligativas",
         "Eletroquímica",
         "Pilhas e Baterias",
         "Eletrólise",
-        "Radioatividade",
     ],
-    "Frente 3": [
+    "Química Orgânica": [
+        "Classificação de Cadeias Carbônicas",
+        "Funções Orgânicas Mistas",
+        "Funções Orgânicas Nitrogenadas",
+        "Funções Orgânicas Oxigenadas",
+        "Hibridização do Carbono",
         "Introdução à Química Orgânica",
+        "Nomenclatura Hidrocarbonetos IUPAC",
         "Cadeias Carbônicas",
         "Hidrocarbonetos",
-        "Funções Orgânicas Oxigenadas",
         "Alcoóis e Fenóis",
         "Éteres",
         "Aldeídos e Cetonas",
         "Ácidos Carboxílicos e Ésteres",
-        "Funções Orgânicas Nitrogenadas",
         "Aminas e Amidas",
         "Reações Orgânicas",
         "Isomeria",
@@ -69,7 +86,10 @@ FRENTE_POR_ASSUNTO: dict[str, str] = {
 
 def sugerir_frente(assunto: str) -> str | None:
     """Retorna a frente esperada para um assunto (case-insensitive, correspondência parcial)."""
+    if not assunto:
+        return None
     assunto_lower = assunto.strip().lower()
+    # Busca exata
     for key, frente in FRENTE_POR_ASSUNTO.items():
         if key.lower() == assunto_lower:
             return frente

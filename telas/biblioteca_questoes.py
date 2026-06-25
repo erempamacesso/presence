@@ -3,7 +3,7 @@ import pandas as pd
 import json
 import time
 import re
-from telas.config_frentes import FRENTES, FRENTE_DESCRICAO
+from telas.config_frentes import FRENTES
 
 def mostrar_tela_biblioteca(supabase):
     st.title("📚 Biblioteca de Questões")
@@ -15,11 +15,11 @@ def mostrar_tela_biblioteca(supabase):
 
         if 'serie' not in df_q.columns: df_q['serie'] = "Geral"
         if 'assunto' not in df_q.columns: df_q['assunto'] = "Sem Assunto"
-        if 'frentes' not in df_q.columns: df_q['frentes'] = ""
+        if 'frente' not in df_q.columns: df_q['frente'] = ""
         if 'revisada' not in df_q.columns: df_q['revisada'] = False
         df_q['revisada'] = df_q['revisada'].fillna(False)
         df_q['assunto'] = df_q['assunto'].fillna("Sem Assunto")
-        df_q['frentes'] = df_q['frentes'].fillna("")
+        df_q['frente'] = df_q['frente'].fillna("")
 
         def clean_html(raw_html):
             if not raw_html: return ""
@@ -48,7 +48,7 @@ def mostrar_tela_biblioteca(supabase):
             filtro_frente = st.multiselect(
                 "Por Frente:",
                 options=FRENTES,
-                format_func=lambda x: f"{x} – {FRENTE_DESCRICAO[x]}",
+                format_func=lambda x: x,
             )
 
         with col_f4:
@@ -57,7 +57,7 @@ def mostrar_tela_biblioteca(supabase):
         # Aplicando os filtros
         if filtro_serie: df_q = df_q[df_q['serie'].isin(filtro_serie)]
         if filtro_assunto: df_q = df_q[df_q['assunto'].isin(filtro_assunto)]
-        if filtro_frente: df_q = df_q[df_q['frentes'].isin(filtro_frente)]
+        if filtro_frente: df_q = df_q[df_q['frente'].isin(filtro_frente)]
 
         if filtro_rev == "✅ Revisadas": df_q = df_q[df_q['revisada'] == True]
         elif filtro_rev == "⚠️ Pendentes": df_q = df_q[df_q['revisada'] == False]
@@ -69,7 +69,7 @@ def mostrar_tela_biblioteca(supabase):
         for _, row in df_q.iterrows():
             is_rev = row.get('revisada', False)
             status_icon = "✅" if is_rev else "⚠️"
-            frente_txt = row.get('frentes', '') or ''
+            frente_txt = row.get('frente', '') or ''
 
             titulo_expander = f"{status_icon} 📌 {row['assunto']} | {clean_html(row['enunciado'])}"
 
@@ -79,7 +79,7 @@ def mostrar_tela_biblioteca(supabase):
 
                 serie_info = row['serie']
                 assunto_info = row['assunto']
-                frente_label = f"{frente_txt} – {FRENTE_DESCRICAO.get(frente_txt, '')}" if frente_txt else "—"
+                frente_label = frente_txt if frente_txt else "—"
                 st.caption(f"📍 Série: {serie_info} | Assunto: {assunto_info} | Frente: {frente_label}")
 
                 st.markdown(row['enunciado'], unsafe_allow_html=True)
