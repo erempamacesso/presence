@@ -417,3 +417,35 @@ def mostrar_tela_cadastrar_questoes(supabase):
                             ['id', 'serie', 'assunto', 'frente']
                         ].rename(columns={'id': 'ID', 'serie': 'Série', 'assunto': 'Assunto', 'frente': 'Frente'})
                         st.dataframe(df_ok, use_container_width=True, hide_index=True)
+
+                # Correção manual — sempre visível para substituir TODAS as questões do assunto
+                st.divider()
+                with st.expander("✏️ Redefinir frente de TODAS as questões deste assunto (correção manual)"):
+                    st.caption("Use quando o mapeamento automático estiver errado e você queira forçar uma frente específica.")
+                    frente_manual = st.selectbox(
+                        "Nova frente para todas as questões de **" + assunto_sel + "**:",
+                        [""] + FRENTES,
+                        format_func=lambda x: x if x else "Selecione...",
+                        key="frente_manual_todos",
+                    )
+                    ids_todos = df_assunto['id'].tolist()
+                    if st.button(
+                        f"🔄 Aplicar '{frente_manual}' em todas as {len(ids_todos)} questões",
+                        type="secondary",
+                        disabled=not frente_manual,
+                        use_container_width=True,
+                        key="btn_manual_todos",
+                    ):
+                        with st.spinner(f"Atualizando {len(ids_todos)} questões..."):
+                            erros = []
+                            for qid in ids_todos:
+                                try:
+                                    supabase.table("questoes").update({"frente": frente_manual}).eq("id", qid).execute()
+                                except Exception as e:
+                                    erros.append(str(e))
+                        if erros:
+                            st.error(f"Erros: {erros}")
+                        else:
+                            st.success(f"✅ {len(ids_todos)} questões atualizadas para **{frente_manual}**!")
+                            time.sleep(1)
+                            st.rerun()
