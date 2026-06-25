@@ -334,6 +334,17 @@ def mostrar_tela_cadastrar_questoes(supabase):
                 frente_esperada = sugerir_frente(assunto_sel)
                 df_assunto = df_all[df_all['assunto'] == assunto_sel].copy()
 
+                # Busca enunciados apenas das questões deste assunto
+                ids_assunto = df_assunto['id'].tolist()
+                res_enunc = supabase.table("questoes").select("id, enunciado").in_("id", ids_assunto).execute()
+                enunc_map = {}
+                if res_enunc.data:
+                    for q in res_enunc.data:
+                        texto = re.sub(r'<[^>]+>', ' ', q.get('enunciado') or '')
+                        texto = re.sub(r'\s+', ' ', texto).strip()
+                        enunc_map[q['id']] = texto[:80] + "..." if len(texto) > 80 else texto
+                df_assunto['preview'] = df_assunto['id'].map(enunc_map).fillna("(sem enunciado)")
+
                 col_info1, col_info2 = st.columns(2)
                 col_info1.metric("Total de questões neste assunto", len(df_assunto))
 
@@ -370,11 +381,10 @@ def mostrar_tela_cadastrar_questoes(supabase):
 
                     # Tabela de problemas
                     df_problemas = df_assunto[df_assunto['status_frente'] != "✅ Correta"][
-                        ['id', 'serie', 'assunto', 'frente', 'status_frente']
+                        ['preview', 'serie', 'frente', 'status_frente']
                     ].rename(columns={
-                        'id': 'ID',
+                        'preview': 'Questão',
                         'serie': 'Série',
-                        'assunto': 'Assunto',
                         'frente': 'Frente Atual',
                         'status_frente': 'Status',
                     })
@@ -414,8 +424,8 @@ def mostrar_tela_cadastrar_questoes(supabase):
                 if n_corretas > 0:
                     with st.expander(f"Ver {n_corretas} questão(ões) com frente ✅ correta"):
                         df_ok = df_assunto[df_assunto['status_frente'] == "✅ Correta"][
-                            ['id', 'serie', 'assunto', 'frente']
-                        ].rename(columns={'id': 'ID', 'serie': 'Série', 'assunto': 'Assunto', 'frente': 'Frente'})
+                            ['preview', 'serie', 'frente']
+                        ].rename(columns={'preview': 'Questão', 'serie': 'Série', 'frente': 'Frente'})
                         st.dataframe(df_ok, use_container_width=True, hide_index=True)
 
                 # Correção manual — sempre visível para substituir TODAS as questões do assunto
