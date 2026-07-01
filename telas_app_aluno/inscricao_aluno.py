@@ -585,44 +585,43 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                                                 if "(Líder)" not in m
                                             ]
 
-                                            novos_membros = st.multiselect(
-                                                "Selecione os integrantes:",
-                                                options=disp_edit,
-                                                default=[
-                                                    m for m in atuais if m in disp_edit
-                                                ],
-                                                key=f"edit_m_{insc['id']}",
-                                            )
+                                            with st.form(key=f"form_edit_m_{insc['id']}"):
+                                                novos_membros = st.multiselect(
+                                                    "Selecione os integrantes:",
+                                                    options=disp_edit,
+                                                    default=[
+                                                        m for m in atuais if m in disp_edit
+                                                    ],
+                                                )
 
-                                            if st.button(
-                                                "💾 Atualizar Equipe",
-                                                key=f"save_{insc['id']}",
-                                                use_container_width=True,
-                                                type="primary",
-                                            ):
-                                                total = len(novos_membros) + 1
-                                                min_e = int(ev_d.get("min_membros", 1))
-                                                max_e = int(ev_d.get("max_membros", 8))
+                                                if st.form_submit_button(
+                                                    "💾 Atualizar Equipe",
+                                                    use_container_width=True,
+                                                    type="primary",
+                                                ):
+                                                    total = len(novos_membros) + 1
+                                                    min_e = int(ev_d.get("min_membros", 1))
+                                                    max_e = int(ev_d.get("max_membros", 8))
 
-                                                if total < min_e or total > max_e:
-                                                    st.error(
-                                                        f"A equipe deve ter entre {min_e} e {max_e} integrantes."
-                                                    )
-                                                else:
-                                                    equipe_final = (
-                                                        f"{aluno.get('nome')} (Líder), "
-                                                        + ", ".join(novos_membros)
-                                                    )
-                                                    db_provas.table(
-                                                        "feira_inscricoes"
-                                                    ).update(
-                                                        {"nomes_membros": equipe_final}
-                                                    ).eq(
-                                                        "id", insc["id"]
-                                                    ).execute()
-                                                    st.success("✅ Equipe atualizada!")
-                                                    time.sleep(1)
-                                                    st.rerun()
+                                                    if total < min_e or total > max_e:
+                                                        st.error(
+                                                            f"A equipe deve ter entre {min_e} e {max_e} integrantes."
+                                                        )
+                                                    else:
+                                                        equipe_final = (
+                                                            f"{aluno.get('nome')} (Líder), "
+                                                            + ", ".join(novos_membros)
+                                                        )
+                                                        db_provas.table(
+                                                            "feira_inscricoes"
+                                                        ).update(
+                                                            {"nomes_membros": equipe_final}
+                                                        ).eq(
+                                                            "id", insc["id"]
+                                                        ).execute()
+                                                        st.success("✅ Equipe atualizada!")
+                                                        time.sleep(1)
+                                                        st.rerun()
 
                                         except Exception as e_edit:
                                             st.error(
