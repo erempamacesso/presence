@@ -43,6 +43,12 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
         unsafe_allow_html=True,
     )
 
+    # Reseta o flag de carregamento de inscrições ao entrar nesta página
+    # (garante dados frescos sempre que o usuário navegar para cá)
+    if st.session_state.get("_prev_etapa") != "inscricao_aluno":
+        st.session_state.pop("_minhas_insc_carregado", None)
+    st.session_state["_prev_etapa"] = "inscricao_aluno"
+
     # Identificação da estudante
     aluno = st.session_state.get("aluno", {})
     turma_aluno = aluno.get("turma", "Sem Turma")
@@ -368,7 +374,18 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
     # ABA 2: MINHAS INSCRIÇÕES (Visualização e Gestão pelo Líder)
     # =========================================================================
     with tab_minhas:
-        st.subheader("📋 Inscrições em que você participa")
+        # st.tabs não dispara rerun ao trocar de aba — forçamos aqui na primeira abertura
+        if not st.session_state.get("_minhas_insc_carregado"):
+            st.session_state["_minhas_insc_carregado"] = True
+            st.rerun()
+
+        col_titulo, col_refresh = st.columns([5, 1])
+        with col_titulo:
+            st.subheader("📋 Inscrições em que você participa")
+        with col_refresh:
+            if st.button("🔄", help="Atualizar lista", use_container_width=True):
+                st.rerun()
+
         try:
             # Busca todas as inscrições para filtrar localmente (garante encontrar o aluno como membro ou líder)
             res_all = db_provas.table("feira_inscricoes").select("*").execute()
