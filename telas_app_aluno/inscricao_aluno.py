@@ -373,12 +373,13 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
             # Busca todas as inscrições para filtrar localmente (garante encontrar o aluno como membro ou líder)
             res_all = db_provas.table("feira_inscricoes").select("*").execute()
             minhas_insc = []
-            nome_procurado = aluno.get("nome", "")
+            nome_procurado = aluno.get("nome", "").strip()
 
             for insc in res_all.data or []:
                 membros_limpos = [
                     m.replace(" (Líder)", "").strip()
                     for m in insc.get("nomes_membros", "").split(",")
+                    if m.strip()
                 ]
                 if nome_procurado in membros_limpos:
                     minhas_insc.append(insc)
