@@ -18,9 +18,7 @@ def mostrar_tela_login(supabase_conn):
                     continue
         return None
 
-    img_b64 = get_base64_image("fundo_app.png") or get_base64_image(
-        "fundo_app.jpg"
-    )
+    img_b64 = get_base64_image("fundo_app.png") or get_base64_image("fundo_app.jpg")
     bg_style = f"url('data:image/jpeg;base64,{img_b64}')" if img_b64 else "none"
 
     # ---------------------------------------------------------
@@ -49,28 +47,23 @@ def mostrar_tela_login(supabase_conn):
             flex-direction: column;
         }}
 
-        div[data-baseweb="input"], div[data-baseweb="base-input"] {{
-            background-color: transparent !important;
-            border: none !important;
-        }}
-
-        /* 🎯 CORREÇÃO DEFINITIVA DO CAMPO DE TEXTO E BASEWEB */
+        /* 🎯 CAMPO DE TEXTO COM FONTE PRETA E FUNDO CLARO */
         div[data-testid="stTextInput"] input,
         div[data-baseweb="input"] input,
         div[data-baseweb="base-input"] input,
         input[type="text"] {{
-            color: #ffffff !important;
-            -webkit-text-fill-color: #ffffff !important; /* Força a cor do texto para branco */
-            caret-color: #ffffff !important; /* Cor do cursor piscante */
-            background-color: transparent !important;
-            border: none !important;
-            border-bottom: 2px solid rgba(255, 255, 255, 0.8) !important;
-            border-radius: 0px !important;
-            font-size: 1.3rem !important;
-            text-align: left !important; 
+            color: #000000 !important; /* Texto Preto */
+            -webkit-text-fill-color: #000000 !important; /* Força texto Preto no Chrome/Safari */
+            caret-color: #000000 !important; /* Cursor Preto */
+            background-color: rgba(255, 255, 255, 0.9) !important; /* Fundo branco levemente translúcido */
+            border: 1px solid rgba(255, 255, 255, 0.8) !important;
+            border-radius: 25px !important; /* Bordas arredondadas para estilo moderno */
+            font-size: 1.1rem !important;
+            font-weight: 600 !important;
+            text-align: center !important; 
             width: 100% !important;
-            padding-bottom: 8px !important;
-            box-shadow: none !important;
+            padding: 10px 15px !important;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
         }}
 
         /* TRATAMENTO PARA AUTOFILL DO NAVEGADOR */
@@ -78,15 +71,15 @@ def mostrar_tela_login(supabase_conn):
         input:-webkit-autofill:hover, 
         input:-webkit-autofill:focus, 
         input:-webkit-autofill:active {{
-            -webkit-text-fill-color: #ffffff !important;
+            -webkit-text-fill-color: #000000 !important;
             transition: background-color 5000s ease-in-out 0s !important;
         }}
         
         input::placeholder {{
-            color: rgba(255, 255, 255, 0.8) !important;
-            -webkit-text-fill-color: rgba(255, 255, 255, 0.8) !important;
+            color: #666666 !important;
+            -webkit-text-fill-color: #666666 !important;
             opacity: 1 !important;
-            text-align: left !important; 
+            text-align: center !important; 
         }}
 
         div[data-testid="InputInstructions"] {{ display: none !important; }}
@@ -103,6 +96,7 @@ def mostrar_tela_login(supabase_conn):
             padding: 0.6rem !important;
             width: 100% !important; 
             transition: 0.3s;
+            margin-top: 10px;
         }}
 
         div[data-testid="stFormSubmitButton"] > button:hover {{
@@ -128,7 +122,7 @@ def mostrar_tela_login(supabase_conn):
         .subtitulo-eco {{
             font-size: 1.1rem;
             font-weight: 700;
-            background: linear-gradient(90deg, #00f2fe, #4facfe); /* Corrigido: inserida a vírgula */
+            background: linear-gradient(90deg, #00f2fe, #4facfe);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             letter-spacing: 1px;
@@ -146,8 +140,6 @@ def mostrar_tela_login(supabase_conn):
         matricula = st.text_input(
             "Matrícula", placeholder="Matrícula", label_visibility="collapsed"
         )
-
-        st.write("")  # Dá um espacinho entre a linha e o botão
 
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
