@@ -1,6 +1,6 @@
-import streamlit as st
 import base64
 import os
+import streamlit as st
 
 
 def mostrar_tela_login(supabase_conn):
@@ -18,7 +18,9 @@ def mostrar_tela_login(supabase_conn):
                     continue
         return None
 
-    img_b64 = get_base64_image("fundo_app.png") or get_base64_image("fundo_app.jpg")
+    img_b64 = get_base64_image("fundo_app.png") or get_base64_image(
+        "fundo_app.jpg"
+    )
     bg_style = f"url('data:image/jpeg;base64,{img_b64}')" if img_b64 else "none"
 
     # ---------------------------------------------------------
@@ -52,19 +54,32 @@ def mostrar_tela_login(supabase_conn):
             border: none !important;
         }}
 
-        /* 🎯 CORREÇÃO DO CAMPO DE TEXTO AQUI */
-        input[type="text"], div[data-testid="stTextInput"] input {{
+        /* 🎯 CORREÇÃO DEFINITIVA DO CAMPO DE TEXTO E BASEWEB */
+        div[data-testid="stTextInput"] input,
+        div[data-baseweb="input"] input,
+        div[data-baseweb="base-input"] input,
+        input[type="text"] {{
+            color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important; /* Força a cor do texto para branco */
+            caret-color: #ffffff !important; /* Cor do cursor piscante */
             background-color: transparent !important;
-            color: white !important;
-            -webkit-text-fill-color: white !important; /* Força a cor do texto a ser branca */
-            caret-color: white !important; /* Força a cor do cursor (barrinha de digitar) a ser branca */
+            border: none !important;
             border-bottom: 2px solid rgba(255, 255, 255, 0.8) !important;
             border-radius: 0px !important;
             font-size: 1.3rem !important;
             text-align: left !important; 
             width: 100% !important;
             padding-bottom: 8px !important;
-            box-shadow: none !important; /* Evita sombras indesejadas que o navegador possa adicionar */
+            box-shadow: none !important;
+        }}
+
+        /* TRATAMENTO PARA AUTOFILL DO NAVEGADOR */
+        input:-webkit-autofill,
+        input:-webkit-autofill:hover, 
+        input:-webkit-autofill:focus, 
+        input:-webkit-autofill:active {{
+            -webkit-text-fill-color: #ffffff !important;
+            transition: background-color 5000s ease-in-out 0s !important;
         }}
         
         input::placeholder {{
@@ -113,7 +128,7 @@ def mostrar_tela_login(supabase_conn):
         .subtitulo-eco {{
             font-size: 1.1rem;
             font-weight: 700;
-            background: linear-gradient(90deg, #00f2fe #4facfe);
+            background: linear-gradient(90deg, #00f2fe, #4facfe); /* Corrigido: inserida a vírgula */
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             letter-spacing: 1px;
@@ -134,7 +149,6 @@ def mostrar_tela_login(supabase_conn):
 
         st.write("")  # Dá um espacinho entre a linha e o botão
 
-        # O TRUQUE MÁGICO: 3 colunas (espaço vazio, botão, espaço vazio)
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             submit = st.form_submit_button("ENTRAR", use_container_width=True)
@@ -157,7 +171,7 @@ def mostrar_tela_login(supabase_conn):
                 except Exception as e:
                     st.error(f"Erro: {e}")
 
-    # Textos abaixo (Agora com a logo!)
+    # Textos abaixo
     st.markdown(
         """
         <div class="textos-abaixo">
