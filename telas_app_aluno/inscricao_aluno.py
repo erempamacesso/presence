@@ -43,11 +43,6 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
         unsafe_allow_html=True,
     )
 
-    # Reseta o flag de carregamento de inscrições ao entrar nesta página
-    if st.session_state.get("_prev_etapa") != "inscricao_aluno":
-        st.session_state.pop("_minhas_insc_carregado", None)
-    st.session_state["_prev_etapa"] = "inscricao_aluno"
-
     # Identificação da estudante (garantindo id como string limpa)
     aluno = st.session_state.get("aluno", {})
     turma_aluno = aluno.get("turma", "Sem Turma")
@@ -73,7 +68,7 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
     )
 
     # =========================================================================
-    # ABA 1: REALIZAR INSCRIÇÃO (Lógica Original do Stepper)
+    # ABA 1: REALIZAR INSCRIÇÃO
     # =========================================================================
     with tab_insc:
         if "passo_insc" not in st.session_state:
@@ -109,11 +104,13 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                     .eq("ativo", True)
                     .execute()
                 )
-                if not res_eventos.data:
+                dados_eventos = res_eventos.data if (res_eventos and hasattr(res_eventos, "data") and res_eventos.data) else []
+
+                if not dados_eventos:
                     st.info("No momento não há eventos com inscrições abertas.")
                 else:
                     agora = datetime.datetime.now()
-                    for evento in res_eventos.data:
+                    for evento in dados_eventos:
                         with st.container(border=True):
 
                             def parse_dt(v, default_d):
@@ -168,7 +165,8 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                                 .eq("evento_id", evento["id"])
                                 .execute()
                             )
-                            for insc in res_ver.data:
+                            dados_ver = res_ver.data if (res_ver and hasattr(res_ver, "data") and res_ver.data) else []
+                            for insc in dados_ver:
                                 if aluno.get("nome") in [
                                     m.replace(" (Líder)", "").strip()
                                     for m in insc.get("nomes_membros", "").split(",")
@@ -231,7 +229,9 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                     .eq("evento_id", evento["id"])
                     .execute()
                 )
-                temas_bloqueados = [i["tema_id"] for i in res_insc.data]
+                dados_insc_temas = res_insc.data if (res_insc and hasattr(res_insc, "data") and res_insc.data) else []
+                temas_bloqueados = [i["tema_id"] for i in dados_insc_temas if "tema_id" in i]
+
                 disc_bloqueadas_turma = set()
                 res_t_all = (
                     db_alunos.table("feira_temas")
@@ -239,16 +239,18 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                     .eq("evento_id", evento["id"])
                     .execute()
                 )
-                todos_dict = {t["id"]: t for t in res_t_all.data}
-                for i in res_insc.data:
-                    if i["turma"] == turma_aluno and i["tema_id"] in todos_dict:
+                dados_temas_all = res_t_all.data if (res_t_all and hasattr(res_t_all, "data") and res_t_all.data) else []
+                todos_dict = {t["id"]: t for t in dados_temas_all}
+
+                for i in dados_insc_temas:
+                    if i.get("turma") == turma_aluno and i.get("tema_id") in todos_dict:
                         disc_bloqueadas_turma.add(
                             todos_dict[i["tema_id"]].get("disciplina", "")
                         )
 
                 temas_f = [
                     t
-                    for t in res_t_all.data
+                    for t in dados_temas_all
                     if str(t.get("Serie")).strip() in (serie_aluno, "Geral")
                 ]
                 temas_por_d = defaultdict(list)
@@ -267,7 +269,7 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                             for tema in temas_por_d[d]:
                                 bloq_g = tema["id"] in temas_bloqueados
                                 st.markdown(
-                                    f'<div class="tema-card {"tema-card-bloqueado" if bloq_g else ""}">',
+                                    f'<div class="tema-card {"tema-card-bloqueado" if bloq_g else ""}">' ,
                                     unsafe_allow_html=True,
                                 )
                                 c1, c2 = st.columns([3, 1])
@@ -309,9 +311,11 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                     .eq("turma", turma_aluno)
                     .execute()
                 )
+                dados_colegas = res_col.data if (res_col and hasattr(res_col, "data") and res_col.data) else []
                 t_turma = [
-                    c["nome"] for c in res_col.data if c["nome"] != aluno.get("nome")
+                    c["nome"] for c in dados_colegas if c.get("nome") != aluno.get("nome")
                 ]
+
                 res_oc = (
                     db_provas.table("feira_inscricoes")
                     .select("nomes_membros")
@@ -319,8 +323,9 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                     .eq("turma", turma_aluno)
                     .execute()
                 )
+                dados_ocupados_passo3 = res_oc.data if (res_oc and hasattr(res_oc, "data") and res_oc.data) else []
                 ja_em_grupo = set()
-                for insc in res_oc.data:
+                for insc in dados_ocupados_passo3:
                     for m in [
                         x.replace(" (Líder)", "").strip()
                         for x in insc.get("nomes_membros", "").split(",")
@@ -353,7 +358,7 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                                     "tema_id": tema["id"],
                                     "lider_id": id_aluno,
                                     "turma": turma_aluno,
-                                    "nomes_membros": f"{aluno.get('nome')} (Líder), {', '.join(m_sel)}",
+                                    "nomes_membros": f"{aluno.get('nome')} (Líder), {', '.join(m_sel)}" if m_sel else f"{aluno.get('nome')} (Líder)",
                                     "data_inscricao": str(datetime.date.today()),
                                 }
                             ).execute()
@@ -615,6 +620,7 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                                                     default=[
                                                         m for m in atuais if m in disp_edit
                                                     ],
+                                                    key=f"ms_membros_{insc['id']}"
                                                 )
 
                                                 if st.form_submit_button(
@@ -631,10 +637,14 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                                                             f"A equipe deve ter entre {min_e} e {max_e} integrantes."
                                                         )
                                                     else:
-                                                        equipe_final = (
-                                                            f"{aluno.get('nome')} (Líder), "
-                                                            + ", ".join(novos_membros)
-                                                        )
+                                                        if novos_membros:
+                                                            equipe_final = (
+                                                                f"{aluno.get('nome').strip()} (Líder), "
+                                                                + ", ".join(novos_membros)
+                                                            )
+                                                        else:
+                                                            equipe_final = f"{aluno.get('nome').strip()} (Líder)"
+
                                                         db_provas.table(
                                                             "feira_inscricoes"
                                                         ).update(
