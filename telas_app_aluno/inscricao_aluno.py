@@ -44,15 +44,14 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
     )
 
     # Reseta o flag de carregamento de inscrições ao entrar nesta página
-    # (garante dados frescos sempre que o usuário navegar para cá)
     if st.session_state.get("_prev_etapa") != "inscricao_aluno":
         st.session_state.pop("_minhas_insc_carregado", None)
     st.session_state["_prev_etapa"] = "inscricao_aluno"
 
-    # Identificação da estudante
+    # Identificação da estudante (garantindo id como string limpa)
     aluno = st.session_state.get("aluno", {})
     turma_aluno = aluno.get("turma", "Sem Turma")
-    id_aluno = str(aluno.get("id", ""))
+    id_aluno = str(aluno.get("id", "")).strip()
 
     # Lógica de extração da série
     serie_aluno = "Geral"
@@ -374,7 +373,6 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
     # ABA 2: MINHAS INSCRIÇÕES (Visualização e Gestão pelo Líder)
     # =========================================================================
     with tab_minhas:
-        # st.tabs não dispara rerun ao trocar de aba — forçamos aqui na primeira abertura
         if not st.session_state.get("_minhas_insc_carregado"):
             st.session_state["_minhas_insc_carregado"] = True
             st.rerun()
@@ -387,7 +385,6 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                 st.rerun()
 
         try:
-            # Busca todas as inscrições para filtrar localmente (garante encontrar o aluno como membro ou líder)
             res_all = db_provas.table("feira_inscricoes").select("*").execute()
             minhas_insc = []
             nome_procurado = aluno.get("nome", "").strip()
@@ -405,7 +402,6 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                 st.info("Você ainda não está em nenhuma equipe inscrita.")
             else:
                 for insc in minhas_insc:
-                    # Busca nomes reais do evento e tema para exibição
                     res_ev_meta = (
                         db_alunos.table("feira_eventos")
                         .select("nome, min_membros, max_membros")
@@ -437,17 +433,26 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                             st.write(f"👥 **Equipe:** {insc['nomes_membros']}")
 
                         with c_ops:
-                            # Verificação de Liderança
-                            if str(insc.get("lider_id")) == id_aluno:
+                            # VERIFICAÇÃO DE LIDERANÇA DUPLA (ID do banco OU Rótulo do Nome)
+                            lider_id_db = str(insc.get("lider_id", "")).strip()
+                            aluno_id_sessao = str(id_aluno).strip()
+                            nome_lider_rotulo = (
+                                f"{aluno.get('nome', '').strip()} (Líder)"
+                            )
+
+                            eh_lider = (
+                                lider_id_db and lider_id_db == aluno_id_sessao
+                            ) or (nome_lider_rotulo in insc.get("nomes_membros", ""))
+
+                            if eh_lider:
                                 st.success("🌟 Você é o Líder")
 
-                                # --- NOVO: FUNCIONALIDADE DE ALTERAR TEMA ---
+                                # --- ALTERAR TEMA ---
                                 with st.popover(
                                     "📝 Alterar Tema", use_container_width=True
                                 ):
                                     st.markdown("##### Escolha um novo Tema")
                                     try:
-                                        # 1. Buscar todos os temas do evento
                                         res_t = (
                                             db_alunos.table("feira_temas")
                                             .select("*")
@@ -459,7 +464,6 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                                             t["id"]: t for t in temas_evento
                                         }
 
-                                        # 2. Buscar outras inscrições para travas (excluindo a própria para liberar o tema atual)
                                         res_i = (
                                             db_provas.table("feira_inscricoes")
                                             .select("tema_id, turma")
@@ -479,14 +483,12 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                                             and i["tema_id"] in todos_t_dict
                                         }
 
-                                        # 3. Filtrar temas por série e disponibilidade (Trava Dupla)
                                         opcoes_tema = {}
                                         for t in temas_evento:
                                             if str(t.get("Serie")).strip() in (
                                                 serie_aluno,
                                                 "Geral",
                                             ):
-                                                # Disponível se não ocupado por outro grupo E disciplina não bloqueada pela turma
                                                 if (
                                                     t["id"] not in temas_ocupados
                                                     and t.get("disciplina")
@@ -543,39 +545,34 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                                             f"Erro ao carregar temas para edição: {e_t}"
                                         )
 
-                                # --- NOVO: FUNCIONALIDADE DE EDIÇÃO DE EQUIPE ---
+                                # --- GERENCIAR MEMBROS ---
                                 with st.popover(
                                     "👥 Gerenciar Membros", use_container_width=True
                                 ):
                                     st.markdown("##### Editar Integrantes")
                                     if ev_d:
                                         try:
-                                            # 1. Buscar todos os colegas da turma
                                             res_c = (
                                                 db_alunos.table("alunos")
                                                 .select("nome")
                                                 .eq("turma", turma_aluno)
                                                 .execute()
                                             )
-                                            # Todos da turma exceto o líder
                                             todos_nomes_turma = [
                                                 c["nome"]
                                                 for c in res_c.data
                                                 if c["nome"] != aluno.get("nome")
                                             ]
 
-                                            # 2. Buscar quem já está ocupado em OUTRAS equipes do mesmo evento
                                             res_o = (
                                                 db_provas.table("feira_inscricoes")
                                                 .select("nomes_membros")
                                                 .eq("evento_id", insc["evento_id"])
-                                                .neq(
-                                                    "id", insc["id"]
-                                                )  # Exclui a minha inscrição da trava
+                                                .neq("id", insc["id"])
                                                 .execute()
                                             )
                                             ocupados_outros = set()
-                                            for out in res_o.data:
+                                            for out in res_o.data or []:
                                                 for m in [
                                                     x.replace(" (Líder)", "").strip()
                                                     for x in out.get(
@@ -584,8 +581,6 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                                                 ]:
                                                     ocupados_outros.add(m)
 
-                                            # 3. Filtrar disponíveis
-                                            # Estudantes disponíveis = (Todos da Turma) - (Ocupados em outros grupos)
                                             disp_edit = sorted(
                                                 [
                                                     n
@@ -594,7 +589,6 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                                                 ]
                                             )
 
-                                            # 4. Identificar membros atuais
                                             atuais = [
                                                 m.replace(" (Líder)", "").strip()
                                                 for m in insc.get(
@@ -603,12 +597,16 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                                                 if "(Líder)" not in m
                                             ]
 
-                                            with st.form(key=f"form_edit_m_{insc['id']}"):
+                                            with st.form(
+                                                key=f"form_edit_m_{insc['id']}"
+                                            ):
                                                 novos_membros = st.multiselect(
                                                     "Selecione os integrantes:",
                                                     options=disp_edit,
                                                     default=[
-                                                        m for m in atuais if m in disp_edit
+                                                        m
+                                                        for m in atuais
+                                                        if m in disp_edit
                                                     ],
                                                 )
 
@@ -618,8 +616,12 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                                                     type="primary",
                                                 ):
                                                     total = len(novos_membros) + 1
-                                                    min_e = int(ev_d.get("min_membros", 1))
-                                                    max_e = int(ev_d.get("max_membros", 8))
+                                                    min_e = int(
+                                                        ev_d.get("min_membros", 1)
+                                                    )
+                                                    max_e = int(
+                                                        ev_d.get("max_membros", 8)
+                                                    )
 
                                                     if total < min_e or total > max_e:
                                                         st.error(
@@ -633,11 +635,15 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                                                         db_provas.table(
                                                             "feira_inscricoes"
                                                         ).update(
-                                                            {"nomes_membros": equipe_final}
+                                                            {
+                                                                "nomes_membros": equipe_final
+                                                            }
                                                         ).eq(
                                                             "id", insc["id"]
                                                         ).execute()
-                                                        st.success("✅ Equipe atualizada!")
+                                                        st.success(
+                                                            "✅ Equipe atualizada!"
+                                                        )
                                                         time.sleep(1)
                                                         st.rerun()
 
