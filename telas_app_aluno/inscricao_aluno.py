@@ -10,7 +10,7 @@ def mostrar_inscricao_aluno(
     serie_aluno=None,
     turma_aluno=None,
 ):
-    # Recuperação automática de dados da sessão caso não sejam passados explicitamente
+    # Recuperação de dados da sessão
     if aluno is None:
         aluno = st.session_state.get("aluno", {})
     if id_aluno is None:
@@ -30,7 +30,6 @@ def mostrar_inscricao_aluno(
 
     st.title("🚀 Central de Inscrições")
 
-    # Criar as abas do aluno
     tab_nova, tab_minhas = st.tabs(
         ["🚀 Realizar Nova Inscrição", "📋 Minhas Inscrições"]
     )
@@ -44,7 +43,7 @@ def mostrar_inscricao_aluno(
         )
 
     # =========================================================================
-    # ABA 2: MINHAS INSCRIÇÕES (Visualização e Gestão pelo Líder)
+    # ABA 2: MINHAS INSCRIÇÕES (Visualização e Gestão)
     # =========================================================================
     with tab_minhas:
         col_titulo, col_refresh = st.columns([5, 1])
@@ -69,18 +68,22 @@ def mostrar_inscricao_aluno(
 
             for insc in dados_inscricoes:
                 membros_limpos = [
-                    m.replace(" (Líder)", "").strip()
+                    m.replace(" (Líder)", "").replace(" (Lider)", "").strip()
                     for m in insc.get("nomes_membros", "").split(",")
                     if m.strip()
                 ]
-                if nome_procurado in membros_limpos:
+                if (
+                    nome_procurado in membros_limpos
+                    or str(insc.get("lider_id", "")).strip()
+                    == str(id_aluno).strip()
+                ):
                     minhas_insc.append(insc)
 
             if not minhas_insc:
                 st.info("Você ainda não está em nenhuma equipe inscrita.")
             else:
                 for insc in minhas_insc:
-                    # Busca segura do Evento
+                    # Busca de metadados do Evento
                     ev_d = None
                     try:
                         res_ev_meta = (
@@ -95,7 +98,7 @@ def mostrar_inscricao_aluno(
                     except Exception:
                         ev_d = None
 
-                    # Busca segura do Tema
+                    # Busca de metadados do Tema
                     tm_d = None
                     try:
                         res_tm_meta = (
@@ -139,7 +142,7 @@ def mostrar_inscricao_aluno(
                             )
 
                         with c_ops:
-                            # VERIFICAÇÃO DE LIDERANÇA DUPLA
+                            # Checagem de Liderança
                             lider_id_db = str(
                                 insc.get("lider_id", "")
                             ).strip()
@@ -152,6 +155,11 @@ def mostrar_inscricao_aluno(
                                 (lider_id_db and lider_id_db == aluno_id_sessao)
                                 or (
                                     nome_lider_rotulo
+                                    in insc.get("nomes_membros", "")
+                                )
+                                or (
+                                    "(Líder)" in insc.get("nomes_membros", "")
+                                    and aluno.get("nome", "").strip()
                                     in insc.get("nomes_membros", "")
                                 )
                             )
@@ -253,41 +261,44 @@ def mostrar_inscricao_aluno(
                                                     idx_padrao = i
                                                     break
 
-                                            novo_tema_nome = st.selectbox(
-                                                "Selecione o novo tema:",
-                                                options=lista_nomes,
-                                                index=idx_padrao,
-                                                key=f"sel_t_edit_{insc['id']}",
-                                            )
-
-                                            if st.button(
-                                                "💾 Confirmar Novo Tema",
-                                                key=f"save_t_edit_{insc['id']}",
-                                                type="primary",
-                                                use_container_width=True,
+                                            with st.form(
+                                                key=f"form_tema_{insc['id']}"
                                             ):
-                                                db_provas.table(
-                                                    "feira_inscricoes"
-                                                ).update(
-                                                    {
-                                                        "tema_id": opcoes_tema[
-                                                            novo_tema_nome
-                                                        ]
-                                                    }
-                                                ).eq(
-                                                    "id", insc["id"]
-                                                ).execute()
-                                                st.success(
-                                                    "✅ Tema atualizado com sucesso!"
+                                                novo_tema_nome = st.selectbox(
+                                                    "Selecione o novo tema:",
+                                                    options=lista_nomes,
+                                                    index=idx_padrao,
                                                 )
-                                                time.sleep(1)
-                                                st.rerun()
+
+                                                sub_t = st.form_submit_button(
+                                                    "💾 Confirmar Novo Tema",
+                                                    type="primary",
+                                                    use_container_width=True,
+                                                )
+
+                                                if sub_t:
+                                                    db_provas.table(
+                                                        "feira_inscricoes"
+                                                    ).update(
+                                                        {
+                                                            "tema_id": opcoes_tema[
+                                                                novo_tema_nome
+                                                            ]
+                                                        }
+                                                    ).eq(
+                                                        "id", insc["id"]
+                                                    ).execute()
+                                                    st.success(
+                                                        "✅ Tema atualizado com sucesso!"
+                                                    )
+                                                    time.sleep(1)
+                                                    st.rerun()
                                     except Exception as e_t:
                                         st.error(
                                             f"Erro ao carregar temas para edição: {e_t}"
                                         )
 
-                                # --- GERENCIAR MEMBROS ---
+                                # --- GERENCIAR MEMBROS (CORRIGIDO VIA FORM) ---
                                 with st.popover(
                                     "👥 Gerenciar Membros",
                                     use_container_width=True,
@@ -295,7 +306,7 @@ def mostrar_inscricao_aluno(
                                     st.markdown("##### Editar Integrantes")
                                     if ev_d and isinstance(ev_d, dict):
                                         try:
-                                            # Busca alunos da mesma turma
+                                            # 1. Alunos da mesma turma
                                             res_c = (
                                                 db_alunos.table("alunos")
                                                 .select("nome")
@@ -312,13 +323,12 @@ def mostrar_inscricao_aluno(
                                                 else []
                                             )
                                             todos_nomes_turma = [
-                                                c["nome"]
+                                                c["nome"].strip()
                                                 for c in dados_alunos
                                                 if c.get("nome")
-                                                != aluno.get("nome")
                                             ]
 
-                                            # Busca quem já está em outras equipes
+                                            # 2. Ocupados em outras equipes do mesmo evento
                                             res_o = (
                                                 db_provas.table(
                                                     "feira_inscricoes"
@@ -343,92 +353,112 @@ def mostrar_inscricao_aluno(
                                             ocupados_outros = set()
                                             for out in dados_outros:
                                                 for m in [
-                                                    x.replace(
-                                                        " (Líder)", ""
-                                                    ).strip()
+                                                    x.replace(" (Líder)", "")
+                                                    .replace(" (Lider)", "")
+                                                    .strip()
                                                     for x in out.get(
                                                         "nomes_membros", ""
                                                     ).split(",")
+                                                    if x.strip()
                                                 ]:
                                                     ocupados_outros.add(m)
 
-                                            disp_edit = sorted(
-                                                [
-                                                    n
-                                                    for n in todos_nomes_turma
-                                                    if n not in ocupados_outros
-                                                ]
-                                            )
-
-                                            # Membros atualmente cadastrados
-                                            atuais = [
-                                                m.replace(
-                                                    " (Líder)", ""
-                                                ).strip()
-                                                for m in insc.get(
+                                            # 3. Membros da equipe atual e identificação do Líder
+                                            membros_atuais_raw = [
+                                                x.strip()
+                                                for x in insc.get(
                                                     "nomes_membros", ""
                                                 ).split(",")
-                                                if "(Líder)" not in m
+                                                if x.strip()
                                             ]
-
-                                            ms_key = (
-                                                f"ms_membros_{insc['id']}"
-                                            )
-                                            if ms_key not in st.session_state:
-                                                st.session_state[ms_key] = [
-                                                    m
-                                                    for m in atuais
-                                                    if m in disp_edit
-                                                ]
-
-                                            novos_membros = st.multiselect(
-                                                "Selecione os integrantes:",
-                                                options=disp_edit,
-                                                key=ms_key,
-                                            )
-
-                                            if st.button(
-                                                "💾 Atualizar Equipe",
-                                                key=f"btn_save_m_{insc['id']}",
-                                                use_container_width=True,
-                                                type="primary",
-                                            ):
-                                                total = len(novos_membros) + 1
-                                                min_e = int(
-                                                    ev_d.get("min_membros", 1)
-                                                )
-                                                max_e = int(
-                                                    ev_d.get("max_membros", 8)
-                                                )
-
+                                            atuais_membros = []
+                                            nome_lider_da_equipe = ""
+                                            for m in membros_atuais_raw:
                                                 if (
-                                                    total < min_e
-                                                    or total > max_e
+                                                    "(Líder)" in m
+                                                    or "(Lider)" in m
                                                 ):
-                                                    st.error(
-                                                        f"⚠️ A equipe deve ter entre {min_e} e {max_e} integrantes. (Atual: {total})"
+                                                    nome_lider_da_equipe = (
+                                                        m.replace(
+                                                            "(Líder)", ""
+                                                        )
+                                                        .replace("(Lider)", "")
+                                                        .strip()
                                                     )
                                                 else:
-                                                    nome_lider = (
-                                                        aluno.get(
-                                                            "nome", ""
-                                                        ).strip()
-                                                        if isinstance(
-                                                            aluno, dict
-                                                        )
-                                                        else ""
+                                                    atuais_membros.append(m)
+
+                                            if not nome_lider_da_equipe:
+                                                nome_lider_da_equipe = (
+                                                    aluno.get("nome", "").strip()
+                                                )
+
+                                            # 4. Alunos disponíveis para seleção
+                                            disponiveis = [
+                                                n
+                                                for n in todos_nomes_turma
+                                                if n not in ocupados_outros
+                                                and n != nome_lider_da_equipe
+                                            ]
+
+                                            opcoes_multiselect = sorted(
+                                                list(
+                                                    set(disponiveis)
+                                                    | set(atuais_membros)
+                                                )
+                                            )
+
+                                            # 5. Formulário de edição
+                                            with st.form(
+                                                key=f"form_membros_{insc['id']}"
+                                            ):
+                                                novos_membros = st.multiselect(
+                                                    "Selecione os integrantes:",
+                                                    options=opcoes_multiselect,
+                                                    default=atuais_membros,
+                                                )
+
+                                                submit_membros = (
+                                                    st.form_submit_button(
+                                                        "💾 Atualizar Equipe",
+                                                        use_container_width=True,
+                                                        type="primary",
                                                     )
-                                                    if novos_membros:
-                                                        equipe_final = (
-                                                            f"{nome_lider} (Líder), "
-                                                            + ", ".join(
-                                                                novos_membros
-                                                            )
+                                                )
+
+                                                if submit_membros:
+                                                    total = (
+                                                        len(novos_membros) + 1
+                                                    )  # +1 do Líder
+                                                    min_e = int(
+                                                        ev_d.get(
+                                                            "min_membros", 1
+                                                        )
+                                                    )
+                                                    max_e = int(
+                                                        ev_d.get(
+                                                            "max_membros", 8
+                                                        )
+                                                    )
+
+                                                    if (
+                                                        total < min_e
+                                                        or total > max_e
+                                                    ):
+                                                        st.error(
+                                                            f"⚠️ A equipe deve ter entre {min_e} e {max_e} integrantes. (Sua seleção possui {total})"
                                                         )
                                                     else:
-                                                        equipe_final = f"{nome_lider} (Líder)"
+                                                        if novos_membros:
+                                                            equipe_final = (
+                                                                f"{nome_lider_da_equipe} (Líder), "
+                                                                + ", ".join(
+                                                                    novos_membros
+                                                                )
+                                                            )
+                                                        else:
+                                                            equipe_final = f"{nome_lider_da_equipe} (Líder)"
 
-                                                    try:
                                                         db_provas.table(
                                                             "feira_inscricoes"
                                                         ).update(
@@ -442,16 +472,8 @@ def mostrar_inscricao_aluno(
                                                         st.success(
                                                             "✅ Equipe atualizada com sucesso!"
                                                         )
-                                                        st.session_state.pop(
-                                                            ms_key, None
-                                                        )
                                                         time.sleep(1)
                                                         st.rerun()
-
-                                                    except Exception as err_up:
-                                                        st.error(
-                                                            f"❌ Erro ao salvar no banco: {err_up}"
-                                                        )
 
                                         except Exception as e_edit:
                                             st.error(
