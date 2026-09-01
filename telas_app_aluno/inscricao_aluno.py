@@ -35,12 +35,241 @@ def mostrar_inscricao_aluno(
     )
 
     # =========================================================================
-    # ABA 1: NOVA INSCRIÇÃO
+    # ABA 1: NOVA INSCRIÇÃO (SISTEMA COMPLETO DE INSCRICÃO DE EQUIPE)
     # =========================================================================
     with tab_nova:
-        st.info(
-            "Selecione um evento na lista abaixo para realizar sua inscrição."
-        )
+        st.subheader("🚀 Eventos Disponíveis para Inscrição")
+        nome_aluno_sessao = aluno.get("nome", "").strip()
+
+        try:
+            # 1. Buscar todos os eventos cadastrados
+            res_ev = db_alunos.table("feira_eventos").select("*").execute()
+            eventos = (
+                res_ev.data
+                if (res_ev and hasattr(res_ev, "data") and res_ev.data)
+                else []
+            )
+
+            # 2. Buscar inscrições existentes para saber em quais o aluno já participa
+            res_insc_all = (
+                db_provas.table("feira_inscricoes").select("*").execute()
+            )
+            inscricoes_all = (
+                res_insc_all.data
+                if (
+                    res_insc_all
+                    and hasattr(res_insc_all, "data")
+                    and res_insc_all.data
+                )
+                else []
+            )
+
+            eventos_ja_inscrito = set()
+            for insc in inscricoes_all:
+                membros_list = [
+                    m.replace(" (Líder)", "").replace(" (Lider)", "").strip()
+                    for m in insc.get("nomes_membros", "").split(",")
+                    if m.strip()
+                ]
+                if (
+                    nome_aluno_sessao in membros_list
+                    or str(insc.get("lider_id", "")).strip()
+                    == str(id_aluno).strip()
+                ):
+                    eventos_ja_inscrito.add(insc.get("evento_id"))
+
+            # 3. Filtrar eventos nos quais o aluno ainda não se inscreveu
+            eventos_disponiveis = [
+                ev for ev in eventos if ev.get("id") not in eventos_ja_inscrito
+            ]
+
+            if not eventos_disponiveis:
+                st.info(
+                    "Você não possui novos eventos disponíveis no momento (ou já está inscrito em todos os eventos ativos)."
+                )
+            else:
+                for ev in eventos_disponiveis:
+                    with st.container(border=True):
+                        st.markdown(f"### 🏆 {ev.get('nome', 'Evento')}")
+                        min_m = int(ev.get("min_membros", 1))
+                        max_m = int(ev.get("max_membros", 8))
+                        st.caption(
+                            f"👥 **Tamanho da Equipe:** Mínimo de {min_m} e máximo de {max_m} integrantes (incluindo o Líder)."
+                        )
+
+                        # Buscar temas disponíveis para o evento
+                        res_temas = (
+                            db_alunos.table("feira_temas")
+                            .select("*")
+                            .eq("evento_id", ev["id"])
+                            .execute()
+                        )
+                        temas_ev = (
+                            res_temas.data
+                            if (
+                                res_temas
+                                and hasattr(res_temas, "data")
+                                and res_temas.data
+                            )
+                            else []
+                        )
+
+                        # Inscrições já feitas neste evento especifico
+                        insc_deste_evento = [
+                            i
+                            for i in inscricoes_all
+                            if i.get("evento_id") == ev["id"]
+                        ]
+                        temas_ocupados = {
+                            i.get("tema_id")
+                            for i in insc_deste_evento
+                            if i.get("tema_id")
+                        }
+
+                        # Identificar integrantes e disciplinas bloqueadas por turma
+                        ocupados_evento = set()
+                        disc_bloqueadas_turma = set()
+                        dict_temas_todos = {t["id"]: t for t in temas_ev}
+
+                        for i in insc_deste_evento:
+                            for m in [
+                                x.replace(" (Líder)", "")
+                                .replace(" (Lider)", "")
+                                .strip()
+                                for x in i.get("nomes_membros", "").split(",")
+                                if x.strip()
+                            ]:
+                                ocupados_evento.add(m)
+
+                            if (
+                                i.get("turma") == turma_aluno
+                                and i.get("tema_id") in dict_temas_todos
+                            ):
+                                disc_bloqueadas_turma.add(
+                                    dict_temas_todos[i["tema_id"]].get(
+                                        "disciplina"
+                                    )
+                                )
+
+                        # Filtrar temas por série e disponibilidade
+                        opcoes_temas = {}
+                        for t in temas_ev:
+                            serie_tema = str(
+                                t.get("Serie") or t.get("serie", "")
+                            ).strip()
+                            if serie_tema in (serie_aluno, "Geral", ""):
+                                if (
+                                    t["id"] not in temas_ocupados
+                                    and t.get("disciplina")
+                                    not in disc_bloqueadas_turma
+                                ):
+                                    opcoes_temas[
+                                        f"{t['titulo_trabalho']} ({t['disciplina']})"
+                                    ] = t["id"]
+
+                        # Buscar colegas de turma disponíveis
+                        res_colegas = (
+                            db_alunos.table("alunos")
+                            .select("nome")
+                            .eq("turma", turma_aluno)
+                            .execute()
+                        )
+                        colegas_data = (
+                            res_colegas.data
+                            if (
+                                res_colegas
+                                and hasattr(res_colegas, "data")
+                                and res_colegas.data
+                            )
+                            else []
+                        )
+
+                        colegas_disponiveis = sorted(
+                            [
+                                c["nome"].strip()
+                                for c in colegas_data
+                                if c.get("nome")
+                                and c["nome"].strip() != nome_aluno_sessao
+                                and c["nome"].strip() not in ocupados_evento
+                            ]
+                        )
+
+                        if not opcoes_temas:
+                            st.warning(
+                                "⚠️ Não há temas disponíveis para a sua turma ou série neste evento."
+                            )
+                        else:
+                            with st.form(key=f"form_nova_insc_{ev['id']}"):
+                                tema_sel_nome = st.selectbox(
+                                    "Selecione o Tema do Trabalho:",
+                                    options=list(opcoes_temas.keys()),
+                                )
+                                membros_sel = st.multiselect(
+                                    "Selecione os integrantes da sua turma:",
+                                    options=colegas_disponiveis,
+                                    help="Você já é incluído automaticamente como Líder.",
+                                )
+
+                                btn_inscrever = st.form_submit_button(
+                                    "🚀 Finalizar Inscrição",
+                                    type="primary",
+                                    use_container_width=True,
+                                )
+
+                                if btn_inscrever:
+                                    total_equipe = (
+                                        len(membros_sel) + 1
+                                    )  # +1 para o próprio aluno (líder)
+                                    if (
+                                        total_equipe < min_m
+                                        or total_equipe > max_m
+                                    ):
+                                        st.error(
+                                            f"⚠️ A equipe precisa ter entre {min_m} e {max_m} integrantes. Você selecionou {total_equipe} (Você como Líder + {len(membros_sel)} membro(s))."
+                                        )
+                                    else:
+                                        lider_rotulo = (
+                                            f"{nome_aluno_sessao} (Líder)"
+                                        )
+                                        if membros_sel:
+                                            equipe_str = (
+                                                f"{lider_rotulo}, "
+                                                + ", ".join(membros_sel)
+                                            )
+                                        else:
+                                            equipe_str = lider_rotulo
+
+                                        dados_nova_insc = {
+                                            "evento_id": ev["id"],
+                                            "tema_id": opcoes_temas[
+                                                tema_sel_nome
+                                            ],
+                                            "lider_id": str(id_aluno),
+                                            "turma": turma_aluno,
+                                            "nomes_membros": equipe_str,
+                                        }
+
+                                        res_ins = (
+                                            db_provas.table("feira_inscricoes")
+                                            .insert(dados_nova_insc)
+                                            .execute()
+                                        )
+                                        if (
+                                            res_ins
+                                            and hasattr(res_ins, "data")
+                                            and res_ins.data
+                                        ):
+                                            st.success(
+                                                "🎉 Inscrição realizada com sucesso!"
+                                            )
+                                            time.sleep(1.5)
+                                            st.rerun()
+                                        else:
+                                            st.error(
+                                                "❌ Erro ao gravar inscrição no Supabase. Verifique se o RLS está desativado na tabela 'feira_inscricoes'."
+                                            )
+        except Exception as e_nova:
+            st.error(f"Erro ao carregar formulário de inscrição: {e_nova}")
 
     # =========================================================================
     # ABA 2: MINHAS INSCRIÇÕES (Visualização e Gestão)
@@ -83,7 +312,6 @@ def mostrar_inscricao_aluno(
                 st.info("Você ainda não está em nenhuma equipe inscrita.")
             else:
                 for insc in minhas_insc:
-                    # Busca de metadados do Evento
                     ev_d = None
                     try:
                         res_ev_meta = (
@@ -98,7 +326,6 @@ def mostrar_inscricao_aluno(
                     except Exception:
                         ev_d = None
 
-                    # Busca de metadados do Tema
                     tm_d = None
                     try:
                         res_tm_meta = (
@@ -142,7 +369,6 @@ def mostrar_inscricao_aluno(
                             )
 
                         with c_ops:
-                            # Checagem de Liderança
                             lider_id_db = str(
                                 insc.get("lider_id", "")
                             ).strip()
@@ -167,7 +393,6 @@ def mostrar_inscricao_aluno(
                             if eh_lider:
                                 st.success("🌟 Você é o Líder")
 
-                                # --- ALTERAR TEMA ---
                                 with st.popover(
                                     "📝 Alterar Tema", use_container_width=True
                                 ):
@@ -277,28 +502,42 @@ def mostrar_inscricao_aluno(
                                                 )
 
                                                 if sub_t:
-                                                    db_provas.table(
-                                                        "feira_inscricoes"
-                                                    ).update(
-                                                        {
-                                                            "tema_id": opcoes_tema[
-                                                                novo_tema_nome
-                                                            ]
-                                                        }
-                                                    ).eq(
-                                                        "id", insc["id"]
-                                                    ).execute()
-                                                    st.success(
-                                                        "✅ Tema atualizado com sucesso!"
+                                                    up_res = (
+                                                        db_provas.table(
+                                                            "feira_inscricoes"
+                                                        )
+                                                        .update(
+                                                            {
+                                                                "tema_id": opcoes_tema[
+                                                                    novo_tema_nome
+                                                                ]
+                                                            }
+                                                        )
+                                                        .eq("id", insc["id"])
+                                                        .execute()
                                                     )
-                                                    time.sleep(1)
-                                                    st.rerun()
+
+                                                    if (
+                                                        up_res
+                                                        and hasattr(
+                                                            up_res, "data"
+                                                        )
+                                                        and up_res.data
+                                                    ):
+                                                        st.success(
+                                                            "✅ Tema atualizado com sucesso!"
+                                                        )
+                                                        time.sleep(1)
+                                                        st.rerun()
+                                                    else:
+                                                        st.error(
+                                                            "❌ O Supabase recusou a alteração. Desative o RLS da tabela 'feira_inscricoes'."
+                                                        )
                                     except Exception as e_t:
                                         st.error(
                                             f"Erro ao carregar temas para edição: {e_t}"
                                         )
 
-                                # --- GERENCIAR MEMBROS (CORRIGIDO VIA FORM) ---
                                 with st.popover(
                                     "👥 Gerenciar Membros",
                                     use_container_width=True,
@@ -306,7 +545,6 @@ def mostrar_inscricao_aluno(
                                     st.markdown("##### Editar Integrantes")
                                     if ev_d and isinstance(ev_d, dict):
                                         try:
-                                            # 1. Alunos da mesma turma
                                             res_c = (
                                                 db_alunos.table("alunos")
                                                 .select("nome")
@@ -328,7 +566,6 @@ def mostrar_inscricao_aluno(
                                                 if c.get("nome")
                                             ]
 
-                                            # 2. Ocupados em outras equipes do mesmo evento
                                             res_o = (
                                                 db_provas.table(
                                                     "feira_inscricoes"
@@ -363,7 +600,6 @@ def mostrar_inscricao_aluno(
                                                 ]:
                                                     ocupados_outros.add(m)
 
-                                            # 3. Membros da equipe atual e identificação do Líder
                                             membros_atuais_raw = [
                                                 x.strip()
                                                 for x in insc.get(
@@ -393,7 +629,6 @@ def mostrar_inscricao_aluno(
                                                     aluno.get("nome", "").strip()
                                                 )
 
-                                            # 4. Alunos disponíveis para seleção
                                             disponiveis = [
                                                 n
                                                 for n in todos_nomes_turma
@@ -408,7 +643,6 @@ def mostrar_inscricao_aluno(
                                                 )
                                             )
 
-                                            # 5. Formulário de edição
                                             with st.form(
                                                 key=f"form_membros_{insc['id']}"
                                             ):
@@ -429,7 +663,7 @@ def mostrar_inscricao_aluno(
                                                 if submit_membros:
                                                     total = (
                                                         len(novos_membros) + 1
-                                                    )  # +1 do Líder
+                                                    )
                                                     min_e = int(
                                                         ev_d.get(
                                                             "min_membros", 1
@@ -446,7 +680,7 @@ def mostrar_inscricao_aluno(
                                                         or total > max_e
                                                     ):
                                                         st.error(
-                                                            f"⚠️ A equipe deve ter entre {min_e} e {max_e} integrantes. (Sua seleção possui {total})"
+                                                            f"⚠️ A equipe deve ter entre {min_e} e {max_e} integrantes. (Atual: {total})"
                                                         )
                                                     else:
                                                         if novos_membros:
@@ -459,21 +693,38 @@ def mostrar_inscricao_aluno(
                                                         else:
                                                             equipe_final = f"{nome_lider_da_equipe} (Líder)"
 
-                                                        db_provas.table(
-                                                            "feira_inscricoes"
-                                                        ).update(
-                                                            {
-                                                                "nomes_membros": equipe_final
-                                                            }
-                                                        ).eq(
-                                                            "id", insc["id"]
-                                                        ).execute()
-
-                                                        st.success(
-                                                            "✅ Equipe atualizada com sucesso!"
+                                                        resp_up = (
+                                                            db_provas.table(
+                                                                "feira_inscricoes"
+                                                            )
+                                                            .update(
+                                                                {
+                                                                    "nomes_membros": equipe_final
+                                                                }
+                                                            )
+                                                            .eq(
+                                                                "id",
+                                                                insc["id"],
+                                                            )
+                                                            .execute()
                                                         )
-                                                        time.sleep(1)
-                                                        st.rerun()
+
+                                                        if (
+                                                            resp_up
+                                                            and hasattr(
+                                                                resp_up, "data"
+                                                            )
+                                                            and resp_up.data
+                                                        ):
+                                                            st.success(
+                                                                "✅ Equipe atualizada com sucesso!"
+                                                            )
+                                                            time.sleep(1)
+                                                            st.rerun()
+                                                        else:
+                                                            st.error(
+                                                                "❌ O Supabase rejeitou a gravação! Verifique se o RLS está desativado na tabela 'feira_inscricoes'."
+                                                            )
 
                                         except Exception as e_edit:
                                             st.error(
