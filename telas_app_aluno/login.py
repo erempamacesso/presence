@@ -2,6 +2,7 @@ import streamlit as st
 import base64
 import os
 
+
 def mostrar_tela_login(supabase_conn):
     # ---------------------------------------------------------
     # 1. FUNÇÃO PARA CARREGAR IMAGEM DE FUNDO
@@ -23,7 +24,8 @@ def mostrar_tela_login(supabase_conn):
     # ---------------------------------------------------------
     # 2. MÁGICA DO CSS
     # ---------------------------------------------------------
-    st.markdown(f"""
+    st.markdown(
+        f"""
         <style>
         .stApp {{
             background: linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.7)), 
@@ -50,19 +52,24 @@ def mostrar_tela_login(supabase_conn):
             border: none !important;
         }}
 
-        input[type="text"] {{
+        /* 🎯 CORREÇÃO DO CAMPO DE TEXTO AQUI */
+        input[type="text"], div[data-testid="stTextInput"] input {{
             background-color: transparent !important;
             color: white !important;
+            -webkit-text-fill-color: white !important; /* Força a cor do texto a ser branca */
+            caret-color: white !important; /* Força a cor do cursor (barrinha de digitar) a ser branca */
             border-bottom: 2px solid rgba(255, 255, 255, 0.8) !important;
             border-radius: 0px !important;
             font-size: 1.3rem !important;
             text-align: left !important; 
             width: 100% !important;
             padding-bottom: 8px !important;
+            box-shadow: none !important; /* Evita sombras indesejadas que o navegador possa adicionar */
         }}
         
         input::placeholder {{
-            color: white !important;
+            color: rgba(255, 255, 255, 0.8) !important;
+            -webkit-text-fill-color: rgba(255, 255, 255, 0.8) !important;
             opacity: 1 !important;
             text-align: left !important; 
         }}
@@ -90,7 +97,7 @@ def mostrar_tela_login(supabase_conn):
 
         .textos-abaixo {{
             text-align: center;
-            margin-top: -10px; /* 🎯 AJUSTE AQUI: Mudei de 2rem para -10px para colar no botão */
+            margin-top: -10px; 
             width: 100%;
         }}
 
@@ -106,33 +113,41 @@ def mostrar_tela_login(supabase_conn):
         .subtitulo-eco {{
             font-size: 1.1rem;
             font-weight: 700;
-            background: linear-gradient(90deg, #00f2fe 0%, #4facfe 100%);
+            background: linear-gradient(90deg, #00f2fe #4facfe);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             letter-spacing: 1px;
             margin-top: 5px;
         }}
         </style>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
     # ---------------------------------------------------------
     # 3. INTERFACE DE LOGIN
     # ---------------------------------------------------------
     with st.form("login_aluno"):
-        matricula = st.text_input("Matrícula", placeholder="Matrícula", label_visibility="collapsed")
-        
-        st.write("") # Dá um espacinho entre a linha e o botão
-        
+        matricula = st.text_input(
+            "Matrícula", placeholder="Matrícula", label_visibility="collapsed"
+        )
+
+        st.write("")  # Dá um espacinho entre a linha e o botão
+
         # O TRUQUE MÁGICO: 3 colunas (espaço vazio, botão, espaço vazio)
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            # use_container_width=True faz ele esticar perfeitamente na coluna 2
             submit = st.form_submit_button("ENTRAR", use_container_width=True)
-            
+
         if submit:
             if matricula:
                 try:
-                    res = supabase_conn.table("alunos").select("*").eq("numero_matricula", matricula).execute()
+                    res = (
+                        supabase_conn.table("alunos")
+                        .select("*")
+                        .eq("numero_matricula", matricula)
+                        .execute()
+                    )
                     if res.data:
                         st.session_state.aluno = res.data[0]
                         st.session_state.etapa = "ante_sala"
@@ -142,8 +157,9 @@ def mostrar_tela_login(supabase_conn):
                 except Exception as e:
                     st.error(f"Erro: {e}")
 
-   # Textos abaixo (Agora com a logo!)
-    st.markdown("""
+    # Textos abaixo (Agora com a logo!)
+    st.markdown(
+        """
         <div class="textos-abaixo">
             <img src="https://raw.githubusercontent.com/erempamacesso/presence/main/logo_erempam.png" 
                  alt="Logo EREMPAM" 
@@ -151,4 +167,6 @@ def mostrar_tela_login(supabase_conn):
             <p class="titulo-escola">EREMPAM</p>
             <p class="subtitulo-eco">ECOSSISTEMA DO ALUNO</p>
         </div>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
