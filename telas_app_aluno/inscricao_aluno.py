@@ -373,10 +373,6 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
     # ABA 2: MINHAS INSCRIÇÕES (Visualização e Gestão pelo Líder)
     # =========================================================================
     with tab_minhas:
-        if not st.session_state.get("_minhas_insc_carregado"):
-            st.session_state["_minhas_insc_carregado"] = True
-            st.rerun()
-
         col_titulo, col_refresh = st.columns([5, 1])
         with col_titulo:
             st.subheader("📋 Inscrições em que você participa")
@@ -389,7 +385,9 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
             minhas_insc = []
             nome_procurado = aluno.get("nome", "").strip()
 
-            for insc in res_all.data or []:
+            dados_inscricoes = res_all.data if (res_all and hasattr(res_all, "data") and res_all.data) else []
+
+            for insc in dados_inscricoes:
                 membros_limpos = [
                     m.replace(" (Líder)", "").strip()
                     for m in insc.get("nomes_membros", "").split(",")
@@ -402,38 +400,50 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                 st.info("Você ainda não está em nenhuma equipe inscrita.")
             else:
                 for insc in minhas_insc:
-                    res_ev_meta = (
-                        db_alunos.table("feira_eventos")
-                        .select("nome, min_membros, max_membros")
-                        .eq("id", insc["evento_id"])
-                        .maybe_single()
-                        .execute()
-                    )
-                    ev_d = res_ev_meta.data if res_ev_meta else None
+                    # Busca segura do Evento
+                    ev_d = None
+                    try:
+                        res_ev_meta = (
+                            db_alunos.table("feira_eventos")
+                            .select("nome, min_membros, max_membros")
+                            .eq("id", insc["evento_id"])
+                            .maybe_single()
+                            .execute()
+                        )
+                        if res_ev_meta and hasattr(res_ev_meta, "data"):
+                            ev_d = res_ev_meta.data
+                    except Exception:
+                        ev_d = None
 
-                    tm_d = (
-                        db_alunos.table("feira_temas")
-                        .select("titulo_trabalho, disciplina")
-                        .eq("id", insc["tema_id"])
-                        .maybe_single()
-                        .execute()
-                        .data
-                    )
+                    # Busca segura do Tema
+                    tm_d = None
+                    try:
+                        res_tm_meta = (
+                            db_alunos.table("feira_temas")
+                            .select("titulo_trabalho, disciplina")
+                            .eq("id", insc["tema_id"])
+                            .maybe_single()
+                            .execute()
+                        )
+                        if res_tm_meta and hasattr(res_tm_meta, "data"):
+                            tm_d = res_tm_meta.data
+                    except Exception:
+                        tm_d = None
 
                     with st.container(border=True):
                         c_inf, c_ops = st.columns([3, 1])
                         with c_inf:
-                            st.markdown(f"#### 🏆 {ev_d['nome'] if ev_d else 'Evento'}")
-                            st.markdown(
-                                f"**Trabalho:** {tm_d['titulo_trabalho'] if tm_d else 'Tema'}"
-                            )
-                            st.caption(
-                                f"🧪 Disciplina: {tm_d['disciplina'] if tm_d else '-'}"
-                            )
-                            st.write(f"👥 **Equipe:** {insc['nomes_membros']}")
+                            nome_evento = ev_d.get("nome", "Evento") if isinstance(ev_d, dict) else "Evento"
+                            titulo_trabalho = tm_d.get("titulo_trabalho", "Tema não encontrado") if isinstance(tm_d, dict) else "Tema não encontrado"
+                            disciplina = tm_d.get("disciplina", "-") if isinstance(tm_d, dict) else "-"
+
+                            st.markdown(f"#### 🏆 {nome_evento}")
+                            st.markdown(f"**Trabalho:** {titulo_trabalho}")
+                            st.caption(f"🧪 Disciplina: {disciplina}")
+                            st.write(f"👥 **Equipe:** {insc.get('nomes_membros', '')}")
 
                         with c_ops:
-                            # VERIFICAÇÃO DE LIDERANÇA DUPLA (ID do banco OU Rótulo do Nome)
+                            # VERIFICAÇÃO DE LIDERANÇA DUPLA
                             lider_id_db = str(insc.get("lider_id", "")).strip()
                             aluno_id_sessao = str(id_aluno).strip()
                             nome_lider_rotulo = f"{aluno.get('nome', '').strip()} (Líder)"
@@ -458,7 +468,7 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                                             .eq("evento_id", insc["evento_id"])
                                             .execute()
                                         )
-                                        temas_evento = res_t.data or []
+                                        temas_evento = res_t.data if (res_t and hasattr(res_t, "data") and res_t.data) else []
                                         todos_t_dict = {
                                             t["id"]: t for t in temas_evento
                                         }
@@ -470,16 +480,16 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                                             .neq("id", insc["id"])
                                             .execute()
                                         )
-                                        outras_insc = res_i.data or []
+                                        outras_insc = res_i.data if (res_i and hasattr(res_i, "data") and res_i.data) else []
 
                                         temas_ocupados = [
-                                            i["tema_id"] for i in outras_insc
+                                            i["tema_id"] for i in outras_insc if "tema_id" in i
                                         ]
                                         disc_bloqueadas = {
                                             todos_t_dict[i["tema_id"]].get("disciplina")
                                             for i in outras_insc
-                                            if i["turma"] == turma_aluno
-                                            and i["tema_id"] in todos_t_dict
+                                            if i.get("turma") == turma_aluno
+                                            and i.get("tema_id") in todos_t_dict
                                         }
 
                                         opcoes_tema = {}
@@ -549,7 +559,7 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                                     "👥 Gerenciar Membros", use_container_width=True
                                 ):
                                     st.markdown("##### Editar Integrantes")
-                                    if ev_d:
+                                    if ev_d and isinstance(ev_d, dict):
                                         try:
                                             res_c = (
                                                 db_alunos.table("alunos")
@@ -557,10 +567,11 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                                                 .eq("turma", turma_aluno)
                                                 .execute()
                                             )
+                                            dados_alunos = res_c.data if (res_c and hasattr(res_c, "data") and res_c.data) else []
                                             todos_nomes_turma = [
                                                 c["nome"]
-                                                for c in res_c.data
-                                                if c["nome"] != aluno.get("nome")
+                                                for c in dados_alunos
+                                                if c.get("nome") != aluno.get("nome")
                                             ]
 
                                             res_o = (
@@ -570,8 +581,9 @@ def mostrar_inscricao_aluno(db_alunos, db_provas):
                                                 .neq("id", insc["id"])
                                                 .execute()
                                             )
+                                            dados_outros = res_o.data if (res_o and hasattr(res_o, "data") and res_o.data) else []
                                             ocupados_outros = set()
-                                            for out in res_o.data or []:
+                                            for out in dados_outros:
                                                 for m in [
                                                     x.replace(" (Líder)", "").strip()
                                                     for x in out.get(
