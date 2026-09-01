@@ -3,8 +3,31 @@ import streamlit as st
 
 
 def mostrar_inscricao_aluno(
-    db_alunos, db_provas, aluno, id_aluno, serie_aluno, turma_aluno
+    db_alunos,
+    db_provas,
+    aluno=None,
+    id_aluno=None,
+    serie_aluno=None,
+    turma_aluno=None,
 ):
+    # Recuperação automática de dados da sessão caso não sejam passados explicitamente
+    if aluno is None:
+        aluno = st.session_state.get("aluno", {})
+    if id_aluno is None:
+        id_aluno = (
+            aluno.get("id")
+            or st.session_state.get("id_aluno")
+            or st.session_state.get("usuario_id", "")
+        )
+    if serie_aluno is None:
+        serie_aluno = str(
+            aluno.get("serie") or st.session_state.get("serie_aluno", "")
+        ).strip()
+    if turma_aluno is None:
+        turma_aluno = str(
+            aluno.get("turma") or st.session_state.get("turma_aluno", "")
+        ).strip()
+
     st.title("🚀 Central de Inscrições")
 
     # Criar as abas do aluno
@@ -19,7 +42,6 @@ def mostrar_inscricao_aluno(
         st.info(
             "Selecione um evento na lista abaixo para realizar sua inscrição."
         )
-        # INSIRA O CÓDIGO DA SUA ABA DE NOVA INSCRIÇÃO AQUI SE HOUVER
 
     # =========================================================================
     # ABA 2: MINHAS INSCRIÇÕES (Visualização e Gestão pelo Líder)
@@ -127,10 +149,11 @@ def mostrar_inscricao_aluno(
                             )
 
                             eh_lider = (
-                                lider_id_db and lider_id_db == aluno_id_sessao
-                            ) or (
-                                nome_lider_rotulo
-                                in insc.get("nomes_membros", "")
+                                (lider_id_db and lider_id_db == aluno_id_sessao)
+                                or (
+                                    nome_lider_rotulo
+                                    in insc.get("nomes_membros", "")
+                                )
                             )
 
                             if eh_lider:
@@ -264,7 +287,7 @@ def mostrar_inscricao_aluno(
                                             f"Erro ao carregar temas para edição: {e_t}"
                                         )
 
-                                # --- GERENCIAR MEMBROS (CORRIGIDO) ---
+                                # --- GERENCIAR MEMBROS ---
                                 with st.popover(
                                     "👥 Gerenciar Membros",
                                     use_container_width=True,
@@ -337,7 +360,7 @@ def mostrar_inscricao_aluno(
                                                 ]
                                             )
 
-                                            # Membros cadastrados atualmente
+                                            # Membros atualmente cadastrados
                                             atuais = [
                                                 m.replace(
                                                     " (Líder)", ""
@@ -348,7 +371,6 @@ def mostrar_inscricao_aluno(
                                                 if "(Líder)" not in m
                                             ]
 
-                                            # Persistência do multiselect na sessão
                                             ms_key = (
                                                 f"ms_membros_{insc['id']}"
                                             )
@@ -387,15 +409,24 @@ def mostrar_inscricao_aluno(
                                                         f"⚠️ A equipe deve ter entre {min_e} e {max_e} integrantes. (Atual: {total})"
                                                     )
                                                 else:
+                                                    nome_lider = (
+                                                        aluno.get(
+                                                            "nome", ""
+                                                        ).strip()
+                                                        if isinstance(
+                                                            aluno, dict
+                                                        )
+                                                        else ""
+                                                    )
                                                     if novos_membros:
                                                         equipe_final = (
-                                                            f"{aluno.get('nome').strip()} (Líder), "
+                                                            f"{nome_lider} (Líder), "
                                                             + ", ".join(
                                                                 novos_membros
                                                             )
                                                         )
                                                     else:
-                                                        equipe_final = f"{aluno.get('nome').strip()} (Líder)"
+                                                        equipe_final = f"{nome_lider} (Líder)"
 
                                                     try:
                                                         db_provas.table(
