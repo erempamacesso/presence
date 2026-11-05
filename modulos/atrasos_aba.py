@@ -112,7 +112,10 @@ def _gerar_pdf_atrasados(data_ref, registros):
             pdf.cell(25, 8, chegada, 1)
             pdf.cell(65, 8, motivo, 1, ln=True)
 
-    return pdf.output(dest="S").encode("latin-1", errors="replace")
+    saida = pdf.output(dest="S")
+    if isinstance(saida, str):  # fpdf antigo (PyFPDF)
+        return saida.encode("latin-1", errors="replace")
+    return bytes(saida)  # fpdf2 retorna bytearray
 
 
 def _preparar_datas_df(df):
