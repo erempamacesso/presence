@@ -5,6 +5,8 @@ from fpdf import FPDF
 from datetime import datetime
 import simple_icd_10 as icd
 
+from modulos.pdf_utils import pdf_para_bytes
+
 
 # ==========================================
 # 🧠 MOTOR DE INTELIGÊNCIA (CIDs Múltiplos)
@@ -249,8 +251,7 @@ def gerar_pdf_pendencias(turma, alunos_pendentes):
         pdf.cell(140, 10, str(a["nome"])[:50], 1)
         pdf.cell(50, 10, "[ ] Foto Coletada", 1, ln=True, align="C")
     
-    # fpdf2 retorna bytearray; o Streamlit exige bytes
-    return bytes(pdf.output())
+    return pdf_para_bytes(pdf)
 
 
 def gerar_pdf_fotograma_impresso(turma, alunos):
@@ -282,7 +283,7 @@ def gerar_pdf_fotograma_impresso(turma, alunos):
         else:
             pdf.cell(col_width, row_height, "", border=1, ln=True)
 
-    return bytes(pdf.output())
+    return pdf_para_bytes(pdf)
 
 
 # ==========================================
@@ -341,29 +342,36 @@ def exibir_fotograma(supabase):
                 col_btn1, col_btn2 = st.columns(2)
 
                 with col_btn1:
-                    pdf_mapa = gerar_pdf_fotograma_impresso(turma_sel, alunos)
-                    st.download_button(
-                        "🖨️ Imprimir Mapa Nominal (PDF)",
-                        data=pdf_mapa,
-                        file_name=f"Mapa_Sala_{turma_sel}.pdf",
-                        mime="application/pdf",
-                        use_container_width=True,
-                    )
+                    # Isolado: se o PDF falhar, as fotos continuam aparecendo
+                    try:
+                        pdf_mapa = gerar_pdf_fotograma_impresso(turma_sel, alunos)
+                        st.download_button(
+                            "🖨️ Imprimir Mapa Nominal (PDF)",
+                            data=pdf_mapa,
+                            file_name=f"Mapa_Sala_{turma_sel}.pdf",
+                            mime="application/pdf",
+                            use_container_width=True,
+                        )
+                    except Exception as e:
+                        st.warning(f"PDF do mapa indisponível: {e}")
 
                 if alunos_sem_foto:
                     with col_btn2:
                         with st.popover(f"🚩 {len(alunos_sem_foto)} Fotos Pendentes nesta Turma", use_container_width=True):
                             st.write("Estes alunos precisam de foto atualizada:")
                             st.dataframe(pd.DataFrame([{"Nome": a["nome"]} for a in alunos_sem_foto]), hide_index=True)
-                            pdf_pend = gerar_pdf_pendencias(turma_sel, alunos_sem_foto)
-                            st.download_button(
-                                "📄 Baixar Lista de Busca",
-                                data=pdf_pend,
-                                file_name=f"Busca_Fotos_{turma_sel}.pdf",
-                                mime="application/pdf",
-                                use_container_width=True,
-                                type="primary",
-                            )
+                            try:
+                                pdf_pend = gerar_pdf_pendencias(turma_sel, alunos_sem_foto)
+                                st.download_button(
+                                    "📄 Baixar Lista de Busca",
+                                    data=pdf_pend,
+                                    file_name=f"Busca_Fotos_{turma_sel}.pdf",
+                                    mime="application/pdf",
+                                    use_container_width=True,
+                                    type="primary",
+                                )
+                            except Exception as e:
+                                st.warning(f"PDF de pendências indisponível: {e}")
 
                 st.divider()
 

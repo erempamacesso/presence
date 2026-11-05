@@ -6,6 +6,8 @@ import pandas as pd
 import streamlit as st
 from fpdf import FPDF
 
+from modulos.pdf_utils import pdf_para_bytes
+
 try:
     from modulos.fotograma_aba import limpar_texto, listar_fotos_github
 except Exception:
@@ -112,10 +114,7 @@ def _gerar_pdf_atrasados(data_ref, registros):
             pdf.cell(25, 8, chegada, 1)
             pdf.cell(65, 8, motivo, 1, ln=True)
 
-    saida = pdf.output(dest="S")
-    if isinstance(saida, str):  # fpdf antigo (PyFPDF)
-        return saida.encode("latin-1", errors="replace")
-    return bytes(saida)  # fpdf2 retorna bytearray
+    return pdf_para_bytes(pdf)
 
 
 def _preparar_datas_df(df):
